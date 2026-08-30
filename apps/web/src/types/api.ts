@@ -1,0 +1,327 @@
+export type UserRole = 'teacher' | 'student' | 'admin';
+
+/** Debe coincidir con el enum del backend (canvas.schemas.ts). */
+export const FONT_FAMILIES = [
+  'Lato', 'Cabin', 'Noto Sans', 'Nunito', 'Poppins', 'Quicksand',
+  'Merriweather', 'Lora',
+  'Fredoka', 'Baloo 2', 'Bangers', 'Luckiest Guy',
+  'Caveat', 'Patrick Hand', 'Indie Flower',
+  'OpenDyslexic', 'Atkinson Hyperlegible',
+] as const;
+export type FontFamily = (typeof FONT_FAMILIES)[number];
+
+/** Agrupacion mostrada en el selector de tipografia. */
+export const FONT_GROUPS: Array<{ label: string; fonts: readonly FontFamily[] }> = [
+  { label: 'Sin serifa', fonts: ['Lato', 'Cabin', 'Noto Sans', 'Nunito', 'Poppins', 'Quicksand'] },
+  { label: 'Con serifa', fonts: ['Merriweather', 'Lora'] },
+  { label: 'Titulares y comic', fonts: ['Fredoka', 'Baloo 2', 'Bangers', 'Luckiest Guy'] },
+  { label: 'Manuscritas', fonts: ['Caveat', 'Patrick Hand', 'Indie Flower'] },
+  { label: 'Accesibles', fonts: ['OpenDyslexic', 'Atkinson Hyperlegible'] },
+];
+
+export interface User {
+  id: string;
+  email: string;
+  fullName: string;
+  role: UserRole;
+  avatarUrl: string | null;
+  createdAt: string;
+}
+
+export interface Library {
+  id: string;
+  name: string;
+  codeInvite: string;
+  ownerId: string;
+  studentBookLimit: number;
+  studentEditable: boolean;
+  studentPublishable: boolean;
+  commentsEnabled: boolean;
+  createdAt: string;
+}
+
+export interface ClassViewBook {
+  id: string;
+  title: string;
+  layoutFormat: 'portrait' | 'square' | 'landscape';
+  isPublished: boolean;
+  pageCount: number;
+  elementCount: number;
+  updatedAt: string;
+}
+
+export interface ClassViewEntry {
+  studentId: string;
+  studentName: string;
+  avatarUrl: string | null;
+  bookCount: number;
+  publishedCount: number;
+  totalPages: number;
+  lastActivityAt: string | null;
+  books: ClassViewBook[];
+}
+
+export interface ClassView {
+  items: ClassViewEntry[];
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+}
+
+export interface LibraryMembers {
+  owner: { id: string; fullName: string; email: string };
+  teachers: Array<{ id: string; fullName: string; email: string }>;
+  students: Array<{ id: string; fullName: string; email: string }>;
+}
+
+export interface StudentCredential {
+  user: User;
+  qrToken: string;
+  qrDataUrl: string;
+}
+
+export type LayoutFormat = 'portrait' | 'square' | 'landscape';
+export type ElementType =
+  | 'text' | 'shape' | 'drawing' | 'image' | 'audio' | 'video'
+  | 'map' | 'icon' | 'embed' | 'question' | 'chart' | 'math';
+
+export type ChartType = 'bar' | 'column' | 'line' | 'area' | 'pie' | 'doughnut';
+
+export interface ChartSeries {
+  label: string;
+  value: number;
+  color?: string;
+}
+
+export interface ChartProperties {
+  chartType: ChartType;
+  title: string;
+  series: ChartSeries[];
+  showValues: boolean;
+  showLegend: boolean;
+  accentColor: string;
+}
+
+export type QuestionKind = 'single' | 'multiple' | 'order';
+
+export interface QuestionOption {
+  id: string;
+  text: string;
+  imageUrl?: string;
+  /** Solo llega a quien puede editar el libro; el lector la recibe sin ella. */
+  correct?: boolean;
+}
+
+export interface QuestionProperties {
+  kind: QuestionKind;
+  prompt: string;
+  promptImageUrl?: string;
+  options: QuestionOption[];
+  feedbackCorrect: string;
+  feedbackWrong: string;
+  accentColor: string;
+  allowRetry: boolean;
+}
+
+export interface AnswerResult {
+  correct: boolean;
+  solution: string[];
+  feedback: string;
+}
+
+export interface MediaResult {
+  id: string;
+  title: string;
+  url: string;
+  thumbnail: string;
+  creator: string;
+  creatorUrl: string | null;
+  licence: string;
+  licenceUrl: string | null;
+  sourceUrl: string | null;
+  provider: string;
+  width: number | null;
+  height: number | null;
+  attributionText: string;
+}
+
+export interface MediaSearchResponse {
+  results: MediaResult[];
+  page: number;
+  pageCount: number;
+  resultCount: number;
+}
+
+export interface GeocodeResult {
+  displayName: string;
+  latitude: number;
+  longitude: number;
+  type: string;
+}
+
+export interface UploadedFile {
+  fileUrl: string;
+  kind: 'audio' | 'video' | 'image';
+  bytes: number;
+  mimeType: string;
+}
+
+/** Coordenadas en porcentaje de la pagina, para que el lienzo escale sin recalcular posiciones. */
+export interface TransformMatrix {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  angle: number;
+}
+
+export interface TextProperties {
+  text: string;
+  fontFamily: FontFamily;
+  listStyle?: 'none' | 'bullet' | 'number';
+  lineHeight?: number;
+  letterSpacing?: number;
+  fontSize: number;
+  color: string;
+  backgroundColor: string;
+  textAlign: 'left' | 'center' | 'right';
+  columns: number;
+  bold: boolean;
+  italic: boolean;
+  underline: boolean;
+  strikethrough: boolean;
+  superscript: boolean;
+  subscript: boolean;
+  indent: number;
+}
+
+export interface ShapeProperties {
+  shape: 'rectangle' | 'ellipse' | 'triangle' | 'star' | 'arrow' | 'speech-bubble';
+  fillColor: string;
+  strokeColor: string;
+  strokeWidth: number;
+  cornerRadius: number;
+  label: string;
+}
+
+export interface CanvasElement {
+  id: string;
+  pageId: string;
+  type: ElementType;
+  zIndex: number;
+  transformMatrix: TransformMatrix;
+  properties: Record<string, unknown>;
+  isLocked: boolean;
+  opacity: number;
+  updatedAt: string;
+}
+
+export interface Page {
+  id: string;
+  bookId: string;
+  pageNumber: number;
+  backgroundColor: string;
+  backgroundPattern: string | null;
+  elements: CanvasElement[];
+}
+
+export interface BookPermissions {
+  canView: boolean;
+  canEdit: boolean;
+  canPublish: boolean;
+  isManager: boolean;
+}
+
+export interface Book {
+  id: string;
+  title: string;
+  /** null cuando el libro es personal y no pertenece a ninguna biblioteca. */
+  libraryId: string | null;
+  portfolioId: string | null;
+  creatorId: string | null;
+  layoutFormat: LayoutFormat;
+  isTemplate: boolean;
+  isPublished: boolean;
+  publishingSettings: Record<string, unknown> | null;
+  createdAt: string;
+  updatedAt: string;
+  pageCount?: number;
+  /** Primera pagina, para pintar la portada en las listas sin pedir el detalle. */
+  cover?: CoverPage | null;
+  shareVisibility?: ShareVisibility;
+  shareToken?: string | null;
+  collaborative?: boolean;
+}
+
+export type ShareVisibility = 'private' | 'library' | 'public';
+
+export interface ManagedUser {
+  id: string;
+  email: string;
+  fullName: string;
+  role: UserRole;
+  isActive: boolean;
+  externalSource: string | null;
+  hasPassword: boolean;
+  libraryCount: number;
+  bookCount: number;
+  createdAt: string;
+}
+
+export interface UserPage {
+  items: ManagedUser[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
+export interface UserStats {
+  total: number;
+  teachers: number;
+  students: number;
+  admins: number;
+  inactive: number;
+  fromPhidias: number;
+}
+
+export interface PhidiasSection {
+  id: number;
+  name: string;
+  course: string;
+  level: string;
+  studentCount: number;
+  withoutEmail: number;
+}
+
+export interface PhidiasImportResult {
+  libraryId: string;
+  libraryName: string;
+  codeInvite: string;
+  created: number;
+  reused: number;
+  enrolled: number;
+  skipped: number;
+}
+
+export interface ShareState {
+  visibility: ShareVisibility;
+  token: string | null;
+}
+
+export interface CoverPage {
+  backgroundColor: string;
+  backgroundPattern: string | null;
+  elements: CanvasElement[];
+}
+
+export interface BookDetail extends Book {
+  pages: Page[];
+  permissions: BookPermissions;
+}
+
+/** Libro abierto mediante enlace compartido: siempre de solo lectura. */
+export interface SharedBook extends BookDetail {
+  authorName: string | null;
+}

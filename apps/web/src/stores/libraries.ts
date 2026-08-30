@@ -1,0 +1,48 @@
+import { defineStore } from 'pinia';
+import { ref } from 'vue';
+import { librariesApi } from '@/services/api';
+import { errorMessage } from '@/services/http';
+import type { Library } from '@/types/api';
+
+export const useLibrariesStore = defineStore('libraries', () => {
+  const items = ref<Library[]>([]);
+  const loading = ref(false);
+  const error = ref<string | null>(null);
+
+  async function fetchAll(): Promise<void> {
+    loading.value = true;
+    error.value = null;
+    try {
+      items.value = await librariesApi.list();
+    } catch (err) {
+      error.value = errorMessage(err);
+    } finally {
+      loading.value = false;
+    }
+  }
+
+  async function create(name: string): Promise<Library> {
+    const library = await librariesApi.create({ name });
+    items.value = [library, ...items.value];
+    return library;
+  }
+
+  async function join(codeInvite: string): Promise<Library> {
+    const library = await librariesApi.join(codeInvite);
+    if (!items.value.some((l) => l.id === library.id)) items.value = [library, ...items.value];
+    return library;
+  }
+
+  async function remove(id: string): Promise<void> {
+    await librariesApi.remove(id);
+    items.value = items.value.filter((l) => l.id !== id);
+  }
+
+  function upsert(library: Library): void {
+    const index = items.value.findIndex((l) => l.id === library.id);
+    if (index === -1) items.value = [library, ...items.value];
+    else items.value[index] = library;
+  }
+
+  return { items, loading, error, fetchAll, create, join, remove, upsert };
+});

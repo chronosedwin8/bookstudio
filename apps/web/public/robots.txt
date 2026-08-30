@@ -1,0 +1,17 @@
+# BookStudio
+User-agent: *
+Allow: /$
+Allow: /clientes
+Allow: /login
+Allow: /register
+
+# El contenido de los libros es de sus autores: no se indexa.
+Disallow: /dashboard
+Disallow: /libraries/
+Disallow: /books/
+Disallow: /leer/
+Disallow: /unirse/
+Disallow: /admin/
+Disallow: /api/
+
+Sitemap: https://bookstudio.uk/sitemap.xml

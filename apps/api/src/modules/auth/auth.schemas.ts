@@ -1,0 +1,27 @@
+import { z } from 'zod';
+
+export const registerSchema = z.object({
+  email: z.string().email('Email invalido').max(255).toLowerCase().trim(),
+  password: z.string().min(8, 'La contrasena debe tener al menos 8 caracteres').max(128),
+  fullName: z.string().min(2).max(100).trim(),
+  role: z.enum(['teacher', 'student', 'admin']).default('teacher'),
+});
+
+export const loginSchema = z.object({
+  email: z.string().email('Email invalido').toLowerCase().trim(),
+  password: z.string().min(1, 'La contrasena es obligatoria'),
+});
+
+export const qrLoginSchema = z.object({
+  token: z.string().min(10, 'Token QR invalido'),
+});
+
+export const createStudentSchema = z.object({
+  fullName: z.string().min(2).max(100).trim(),
+  libraryId: z.string().uuid('libraryId debe ser un UUID'),
+});
+
+export type RegisterInput = z.infer<typeof registerSchema>;
+export type LoginInput = z.infer<typeof loginSchema>;
+export type QrLoginInput = z.infer<typeof qrLoginSchema>;
+export type CreateStudentInput = z.infer<typeof createStudentSchema>;

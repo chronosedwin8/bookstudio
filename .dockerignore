@@ -1,0 +1,16 @@
+node_modules
+**/node_modules
+dist
+**/dist
+.git
+.github
+.env
+.env.*
+!.env.example
+*.log
+apps/api/storage
+apps/web/.certs
+*.pem
+scripts
+PLAN-etapa5.md
+plan-desarrollo-open-book-creator.md

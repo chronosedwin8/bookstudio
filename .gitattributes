@@ -1,0 +1,20 @@
+# Normaliza los finales de linea en el repositorio.
+* text=auto eol=lf
+
+# Los scripts del contenedor DEBEN ir con LF: con CRLF, Docker falla al arrancar
+# con "bad interpreter: no such file or directory".
+*.sh text eol=lf
+Dockerfile text eol=lf
+docker-entrypoint.sh text eol=lf
+
+# Los scripts de PowerShell son para Windows.
+*.ps1 text eol=crlf
+
+# Binarios: sin conversion.
+*.png binary
+*.jpg binary
+*.gif binary
+*.webp binary
+*.woff binary
+*.woff2 binary
+*.pdf binary

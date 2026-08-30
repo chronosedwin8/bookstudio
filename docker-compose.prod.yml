@@ -1,0 +1,65 @@
+# Despliegue de produccion (Coolify) para bookstudio.uk
+#
+# Coolify se encarga del dominio, del certificado TLS y del proxy hacia el puerto
+# 4000. Aqui solo se declara la aplicacion y su base de datos.
+#
+# Variables que hay que definir en Coolify (nunca en el repositorio):
+#   POSTGRES_PASSWORD        contrasena de la base de datos
+#   JWT_SECRET               cadena larga y aleatoria (minimo 24 caracteres)
+#   PHIDIAS_TOKEN            opcional; sin el, la importacion de grupos se desactiva
+#   PHIDIAS_DEFAULT_PASSWORD opcional; contrasena inicial del alumnado importado
+
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-bookstudio}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?falta POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-bookstudio}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-bookstudio}']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+
+      PGHOST: db
+      PGPORT: 5432
+      PGUSER: ${POSTGRES_USER:-bookstudio}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?falta POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB:-bookstudio}
+
+      JWT_SECRET: ${JWT_SECRET:?falta JWT_SECRET}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-12h}
+      JWT_QR_EXPIRES_IN: ${JWT_QR_EXPIRES_IN:-365d}
+
+      # La aplicacion y la API comparten origen, asi que CORS solo hace falta
+      # si alguna vez se sirve el frontend desde otro dominio.
+      CORS_ORIGIN: ${CORS_ORIGIN:-https://bookstudio.uk}
+
+      PHIDIAS_BASE_URL: ${PHIDIAS_BASE_URL:-https://ds-barranquilla.phidias.co/rest}
+      PHIDIAS_TOKEN: ${PHIDIAS_TOKEN:-}
+      PHIDIAS_DEFAULT_PASSWORD: ${PHIDIAS_DEFAULT_PASSWORD:-bookstudio123}
+    volumes:
+      # Fotos, audios y videos subidos: sin este volumen se pierden al redesplegar.
+      - storage:/app/apps/api/storage
+    depends_on:
+      db:
+        condition: service_healthy
+    expose:
+      - '4000'
+
+volumes:
+  pgdata:
+  storage:

@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630">
+  <defs>
+    <linearGradient id="fondo" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#eff6ff"/>
+      <stop offset="1" stop-color="#ffffff"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#fondo)"/>
+
+  <g transform="translate(80 150)">
+    <rect width="64" height="64" rx="14" fill="#2563eb"/>
+    <text x="32" y="45" font-family="system-ui, sans-serif" font-size="40" font-weight="800"
+          fill="#ffffff" text-anchor="middle">B</text>
+    <text x="82" y="45" font-family="system-ui, sans-serif" font-size="38" font-weight="800"
+          fill="#1d4ed8">BookStudio</text>
+
+    <text x="0" y="150" font-family="system-ui, sans-serif" font-size="58" font-weight="800" fill="#0f172a">
+      Libros interactivos que el alumnado
+    </text>
+    <text x="0" y="220" font-family="system-ui, sans-serif" font-size="58" font-weight="800" fill="#2563eb">
+      crea, escucha y comparte
+    </text>
+    <text x="0" y="290" font-family="system-ui, sans-serif" font-size="28" fill="#475569">
+      Voz, video, mapas, graficas y preguntas que se corrigen solas.
+    </text>
+    <text x="0" y="330" font-family="system-ui, sans-serif" font-size="28" fill="#475569">
+      Software libre, en tu propio servidor.
+    </text>
+  </g>
+
+  <g transform="translate(760 120)" opacity="0.95">
+    <rect width="340" height="390" rx="18" fill="#ffffff" stroke="#e2e8f0" stroke-width="3"/>
+    <rect x="28" y="34" width="150" height="14" rx="7" fill="#bfdbfe"/>
+    <rect x="28" y="72" width="190" height="120" rx="12" fill="#fcd34d"/>
+    <rect x="232" y="72" width="80" height="120" rx="12" fill="#6ee7b7"/>
+    <rect x="28" y="212" width="284" height="12" rx="6" fill="#e2e8f0"/>
+    <rect x="28" y="238" width="230" height="12" rx="6" fill="#e2e8f0"/>
+    <circle cx="52" cy="300" r="24" fill="#8b5cf6"/>
+    <polygon points="46,290 46,310 64,300" fill="#ffffff"/>
+    <rect x="92" y="292" width="120" height="14" rx="7" fill="#e2e8f0"/>
+    <rect x="28" y="340" width="150" height="30" rx="8" fill="#d1fae5"/>
+    <text x="103" y="361" font-family="system-ui, sans-serif" font-size="17" font-weight="700"
+          fill="#047857" text-anchor="middle">¡Muy bien!</text>
+  </g>
+</svg>

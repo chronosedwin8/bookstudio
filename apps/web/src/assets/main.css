@@ -1,0 +1,96 @@
+/*
+ * Catalogo tipografico de Google Fonts, autoalojado con @fontsource: sin peticiones
+ * a CDN externos, asi el editor funciona en la red del colegio aunque no haya internet.
+ * El navegador solo descarga el archivo de la fuente que se usa de verdad.
+ */
+
+/* Sin serifa (lectura general) */
+@import '@fontsource/lato/400.css';
+@import '@fontsource/lato/700.css';
+@import '@fontsource/cabin/400.css';
+@import '@fontsource/cabin/700.css';
+@import '@fontsource/noto-sans/400.css';
+@import '@fontsource/noto-sans/700.css';
+@import '@fontsource/nunito/400.css';
+@import '@fontsource/nunito/700.css';
+@import '@fontsource/poppins/400.css';
+@import '@fontsource/poppins/700.css';
+@import '@fontsource/quicksand/400.css';
+@import '@fontsource/quicksand/700.css';
+
+/* Con serifa (textos largos) */
+@import '@fontsource/merriweather/400.css';
+@import '@fontsource/merriweather/700.css';
+@import '@fontsource/lora/400.css';
+@import '@fontsource/lora/700.css';
+
+/* Titulares y comic */
+@import '@fontsource/fredoka/400.css';
+@import '@fontsource/fredoka/700.css';
+@import '@fontsource/baloo-2/400.css';
+@import '@fontsource/baloo-2/700.css';
+@import '@fontsource/bangers/400.css';
+@import '@fontsource/luckiest-guy/400.css';
+
+/* Manuscritas */
+@import '@fontsource/caveat/400.css';
+@import '@fontsource/caveat/700.css';
+@import '@fontsource/patrick-hand/400.css';
+@import '@fontsource/indie-flower/400.css';
+
+/* Accesibilidad (dislexia y baja vision) */
+@import '@fontsource/opendyslexic/400.css';
+@import '@fontsource/opendyslexic/700.css';
+@import '@fontsource/atkinson-hyperlegible/400.css';
+@import '@fontsource/atkinson-hyperlegible/700.css';
+
+/* Estilos y fuentes de KaTeX, autoalojados con el paquete npm. */
+@import 'katex/dist/katex.min.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold
+           transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500
+           focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-primary {
+    @apply btn bg-brand-600 text-white hover:bg-brand-700;
+  }
+  .btn-secondary {
+    @apply btn border border-slate-300 bg-white text-slate-700 hover:bg-slate-50;
+  }
+  .btn-danger {
+    @apply btn border border-red-200 bg-white text-red-600 hover:bg-red-50;
+  }
+  .input {
+    @apply w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800
+           placeholder:text-slate-400 focus:border-brand-500 focus:outline-none
+           focus:ring-2 focus:ring-brand-200;
+  }
+  .label {
+    @apply mb-1 block text-sm font-medium text-slate-700;
+  }
+  .card {
+    @apply rounded-xl border border-slate-200 bg-white shadow-sm;
+  }
+  /* Cabecera de seccion plegable: se ve como un boton, no como una etiqueta suelta. */
+  .section-toggle {
+    @apply flex w-full cursor-pointer list-none items-center justify-between gap-2 rounded-lg
+           border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700
+           transition hover:bg-slate-50;
+  }
+  .section-toggle::-webkit-details-marker {
+    display: none;
+  }
+  .section-toggle::after {
+    content: '▾';
+    @apply text-xs text-slate-400 transition-transform;
+  }
+  details[open] > .section-toggle::after {
+    transform: rotate(180deg);
+  }
+}
