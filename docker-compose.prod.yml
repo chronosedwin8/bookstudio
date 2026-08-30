@@ -4,10 +4,21 @@
 # 4000. Aqui solo se declara la aplicacion y su base de datos.
 #
 # Variables que hay que definir en Coolify (nunca en el repositorio):
+# Obligatorias:
 #   POSTGRES_PASSWORD        contrasena de la base de datos
 #   JWT_SECRET               cadena larga y aleatoria (minimo 24 caracteres)
-#   PHIDIAS_TOKEN            opcional; sin el, la importacion de grupos se desactiva
-#   PHIDIAS_DEFAULT_PASSWORD opcional; contrasena inicial del alumnado importado
+#   ADMIN_EMAIL              cuenta de administracion del primer arranque
+#   ADMIN_PASSWORD           su contrasena (minimo 8 caracteres)
+#
+# Para poder cobrar:
+#   MP_PUBLIC_KEY            clave publica de Mercado Pago (viaja al navegador)
+#   MP_ACCESS_TOKEN          token de acceso; nunca sale del servidor
+#   MP_WEBHOOK_SECRET        firma de los avisos de pago
+#
+# Opcionales:
+#   APP_URL                  dominio publico; por defecto https://bookstudio.uk
+#   PHIDIAS_TOKEN            sin el, la importacion de grupos se desactiva
+#   PHIDIAS_DEFAULT_PASSWORD contrasena inicial del alumnado importado
 
 services:
   db:
@@ -47,6 +58,22 @@ services:
       # La aplicacion y la API comparten origen, asi que CORS solo hace falta
       # si alguna vez se sirve el frontend desde otro dominio.
       CORS_ORIGIN: ${CORS_ORIGIN:-https://bookstudio.uk}
+
+      APP_URL: ${APP_URL:-https://bookstudio.uk}
+
+      # Cobro. Sin MP_ACCESS_TOKEN la contratacion queda desactivada y /contratar
+      # avisa de que los pagos no estan disponibles.
+      # El token de acceso y el secreto del aviso NO salen nunca del servidor.
+      MP_PUBLIC_KEY: ${MP_PUBLIC_KEY:-}
+      MP_ACCESS_TOKEN: ${MP_ACCESS_TOKEN:-}
+      MP_WEBHOOK_SECRET: ${MP_WEBHOOK_SECRET:-}
+      MP_WEBHOOK_URL: ${MP_WEBHOOK_URL:-}
+
+      # Cuenta de administracion del primer arranque. Si la cuenta ya existe solo se
+      # comprueba que siga siendo admin: la contrasena no se reescribe nunca.
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      ADMIN_NAME: ${ADMIN_NAME:-}
 
       PHIDIAS_BASE_URL: ${PHIDIAS_BASE_URL:-https://ds-barranquilla.phidias.co/rest}
       PHIDIAS_TOKEN: ${PHIDIAS_TOKEN:-}

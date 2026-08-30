@@ -16,9 +16,11 @@ RUN npm ci
 FROM node:22-alpine AS build
 WORKDIR /app
 
-COPY --from=deps /app/node_modules ./node_modules
-COPY --from=deps /app/apps/api/node_modules ./apps/api/node_modules
-COPY --from=deps /app/apps/web/node_modules ./apps/web/node_modules
+# Se arrastra la etapa anterior entera en vez de node_modules uno a uno: npm eleva
+# casi todo a la raiz del monorepo y las carpetas de cada espacio de trabajo pueden
+# no llegar a existir, lo que rompia la construccion.
+COPY --from=deps /app ./
+# El codigo se superpone encima; .dockerignore deja fuera node_modules y dist.
 COPY . .
 
 # vue-tsc y tsc fallan el build si hay errores de tipos: eso es deliberado.
@@ -40,7 +42,8 @@ RUN npm ci --omit=dev && npm cache clean --force
 
 # La API compilada, el frontend compilado y las migraciones (que van en .sql).
 COPY --from=build /app/apps/api/dist ./apps/api/dist
-COPY --from=build /app/apps/api/src/db/migrations ./apps/api/src/db/migrations
+# migrate.js busca las migraciones junto a si mismo, dentro de dist.
+COPY --from=build /app/apps/api/src/db/migrations ./apps/api/dist/db/migrations
 COPY --from=build /app/apps/web/dist ./apps/web/dist
 COPY docker-entrypoint.sh ./
 
