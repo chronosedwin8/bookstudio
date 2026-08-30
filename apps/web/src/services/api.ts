@@ -1,7 +1,12 @@
 import { http } from './http';
 import type {
   AnswerResult,
+  BillingConfig,
   Book,
+  CheckoutResult,
+  Invoice,
+  Subscription,
+  TrialSession,
   ManagedUser,
   PhidiasImportResult,
   PhidiasSection,
@@ -47,6 +52,11 @@ export const authApi = {
   async me() {
     const { data } = await http.get<{ user: User }>('/auth/me');
     return data.user;
+  },
+  /** Acceso de prueba sin registro; el servidor crea una cuenta temporal. */
+  async startTrial() {
+    const { data } = await http.post<TrialSession>('/auth/trial');
+    return data;
   },
   async createStudent(payload: { fullName: string; libraryId: string }) {
     const { data } = await http.post<StudentCredential>('/auth/students', payload);
@@ -315,5 +325,51 @@ export const contactApi = {
     message: string;
   }) {
     await http.post('/contact', payload);
+  },
+};
+
+export const billingApi = {
+  async config() {
+    const { data } = await http.get<BillingConfig>('/billing/config');
+    return data;
+  },
+  async subscription() {
+    const { data } = await http.get<{ subscription: Subscription | null }>('/billing/subscription');
+    return data.subscription;
+  },
+  async invoices() {
+    const { data } = await http.get<{ invoices: Invoice[] }>('/billing/invoices');
+    return data.invoices;
+  },
+  /**
+   * El navegador envia el identificador del plan, nunca el importe: el precio lo
+   * decide el servidor a partir de su propio catalogo.
+   */
+  async checkout(payload: {
+    plan: string;
+    token?: string;
+    paymentMethodId: string;
+    installments: number;
+    payerEmail: string;
+    payerDocType?: string;
+    payerDocNumber?: string;
+    organization?: string;
+    autoRenew: boolean;
+  }) {
+    const { data } = await http.post<CheckoutResult>('/billing/checkout', payload, {
+      timeout: 60_000,
+    });
+    return data;
+  },
+  async setAutoRenew(autoRenew: boolean) {
+    const { data } = await http.put<{ subscription: Subscription; authorizationUrl?: string }>(
+      '/billing/auto-renew',
+      { autoRenew },
+    );
+    return data;
+  },
+  async allSubscriptions() {
+    const { data } = await http.get<{ subscriptions: Subscription[] }>('/billing/subscriptions');
+    return data.subscriptions;
   },
 };

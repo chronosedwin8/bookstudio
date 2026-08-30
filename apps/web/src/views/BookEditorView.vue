@@ -20,6 +20,7 @@ import StickerDialog from '@/components/media/StickerDialog.vue';
 import TemplateDialog from '@/components/media/TemplateDialog.vue';
 import { mediaApi } from '@/services/api';
 import { errorMessage } from '@/services/http';
+import { useAuthStore } from '@/stores/auth';
 import { useEditorStore } from '@/stores/editor';
 import { usePreferencesStore } from '@/stores/preferences';
 import type { CanvasElement, ChartType, ElementType, MediaResult, TransformMatrix } from '@/types/api';
@@ -32,6 +33,7 @@ import type { PageTemplate } from '@/utils/templates';
 
 const route = useRoute();
 const router = useRouter();
+const auth = useAuthStore();
 const editor = useEditorStore();
 const preferences = usePreferencesStore();
 
@@ -929,7 +931,11 @@ async function saveTitle(): Promise<void> {
               @click="editor.addPage()"
             >+</button>
 
-            <span v-if="editor.canEdit" class="ml-2 shrink-0 text-[11px] text-slate-400">
+            <span
+              v-if="auth.isTrial"
+              class="ml-2 shrink-0 rounded bg-amber-100 px-2 py-1 text-[11px] font-semibold text-amber-800"
+            >Prueba: hasta 2 paginas</span>
+            <span v-else-if="editor.canEdit" class="ml-2 shrink-0 text-[11px] text-slate-400">
               Arrastra las paginas para reordenarlas
             </span>
           </nav>

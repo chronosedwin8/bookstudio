@@ -5,6 +5,12 @@ const routes: RouteRecordRaw[] = [
   // La portada es publica: es la puerta comercial del producto.
   { path: '/', name: 'landing', component: () => import('@/views/LandingView.vue') },
   {
+    path: '/clientes/facturacion',
+    name: 'billing',
+    component: () => import('@/views/BillingView.vue'),
+    meta: { requiresAuth: true },
+  },
+  {
     path: '/clientes',
     name: 'customer-portal',
     component: () => import('@/views/CustomerPortalView.vue'),

@@ -48,9 +48,30 @@ export const useAuthStore = defineStore('auth', () => {
     setSession(await authApi.register(payload));
   }
 
+  /** Cuentas de prueba: sin registro y con cupos muy pequenos. */
+  const isTrial = computed(() => user.value?.email?.endsWith('@trial.local') === true);
+
+  async function startTrial(): Promise<void> {
+    const session = await authApi.startTrial();
+    setSession({ user: session.user, token: session.token });
+  }
+
   async function loginWithQr(qrToken: string): Promise<void> {
     setSession(await authApi.loginWithQr(qrToken));
   }
 
-  return { user, token, initialized, isAuthenticated, isTeacher, login, register, loginWithQr, logout, restore };
+  return {
+    user,
+    token,
+    initialized,
+    isAuthenticated,
+    isTeacher,
+    isTrial,
+    login,
+    register,
+    startTrial,
+    loginWithQr,
+    logout,
+    restore,
+  };
 });

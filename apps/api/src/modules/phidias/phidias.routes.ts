@@ -3,6 +3,8 @@ import { z } from 'zod';
 import { asyncHandler } from '../../lib/async-handler.js';
 import { requireAuth, requireRole } from '../../middleware/auth.js';
 import { validate } from '../../middleware/validate.js';
+import { isTrialUser } from '../auth/trial.service.js';
+import { HttpError } from '../../lib/http-error.js';
 import { clearCache, importSection, isPhidiasEnabled, listSections } from './phidias.service.js';
 
 const importSchema = z.object({
@@ -15,6 +17,20 @@ export const phidiasRouter = Router();
 
 // Solo docentes y administradores: expone datos personales del alumnado.
 phidiasRouter.use(requireAuth, requireRole('teacher', 'admin'));
+
+/**
+ * Las cuentas de prueba quedan fuera. Tienen rol de docente para poder usar el
+ * editor completo, pero aqui se listan nombres y correos de menores reales: no es
+ * algo a lo que deba llegar cualquiera que pulse "probar sin registro".
+ */
+phidiasRouter.use(
+  asyncHandler(async (req, _res, next) => {
+    if (await isTrialUser(req.auth!.userId)) {
+      throw HttpError.forbidden('Las cuentas de prueba no pueden consultar Phidias');
+    }
+    next();
+  }),
+);
 
 phidiasRouter.get(
   '/status',

@@ -9,6 +9,7 @@ import { pool } from './db/pool.js';
 import { asyncHandler } from './lib/async-handler.js';
 import { errorHandler, notFoundHandler } from './middleware/error-handler.js';
 import { authRouter } from './modules/auth/auth.routes.js';
+import { billingRouter } from './modules/billing/billing.routes.js';
 import { booksRouter } from './modules/books/books.routes.js';
 import { contactRouter } from './modules/contact/contact.routes.js';
 import { publicRouter } from './modules/books/public.routes.js';
@@ -80,6 +81,8 @@ export function createApp() {
   app.use('/api/phidias', phidiasRouter);
   // Formulario de la web comercial: enviar es publico, leer es de administracion.
   app.use('/api/contact', contactRouter);
+  // El webhook de Mercado Pago vive dentro y se salta requireAuth a proposito.
+  app.use('/api/billing', billingRouter);
 
   // --- Frontend compilado ---
   //

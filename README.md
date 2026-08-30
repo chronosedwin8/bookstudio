@@ -46,6 +46,47 @@ El volumen `storage` guarda las fotos, audios y vídeos subidos: **sin él se pi
 en cada redespliegue**. Las migraciones se aplican solas al arrancar y son
 idempotentes.
 
+## Facturación y licencias
+
+Pasarela **Mercado Pago** (Checkout API, cuenta MCO/Colombia). Página en
+`/clientes/facturacion`: licencia vigente con sus fechas, cupos, facturas y
+renovación automática anual.
+
+En el extracto de la tarjeta aparece **BookStudio** (`statement_descriptor`).
+
+### Reglas que sostienen la seguridad del cobro
+
+- **El precio lo decide el servidor.** El navegador solo envía el identificador del
+  plan ([`plans.ts`](apps/api/src/modules/billing/plans.ts)). Si mandara el importe,
+  cualquiera pagaría un peso por el plan grande editando la petición.
+- **La tarjeta no pasa por nuestros servidores.** El SDK de Mercado Pago la
+  convierte en un token de un solo uso; es ese token lo que viaja.
+- **El `ACCESS_TOKEN` no sale del backend.** Al navegador solo va la clave pública.
+  Hay una prueba automática que falla si el token se filtrara por `/billing/config`.
+- **El webhook no se cree a sí mismo.** El aviso solo dice *qué* pago mirar; el
+  estado se vuelve a pedir a Mercado Pago con nuestro token. La firma `x-signature`
+  es defensa adicional.
+- Cada cobro lleva `X-Idempotency-Key`: reintentar no cobra dos veces.
+
+Variables (en `apps/api/.env`, nunca en el repositorio):
+
+```
+MP_PUBLIC_KEY=      # pública por diseño
+MP_ACCESS_TOKEN=    # SECRETO: permite cobrar y devolver
+MP_WEBHOOK_SECRET=  # del panel de Mercado Pago, al dar de alta el webhook
+MP_WEBHOOK_URL=https://bookstudio.uk/api/billing/webhook
+```
+
+## Probar sin registro
+
+Botón **Probar sin registrarse** en la portada: crea una cuenta temporal sin pedir
+ningún dato, con **todas** las herramientas del editor y un límite de **1 libro y
+2 páginas**.
+
+Los cupos se comprueban en el servidor, no en la interfaz: la cuenta tiene rol de
+docente y podría llamar a la API directamente. Además queda **excluida de Phidias**
+—ahí hay nombres y correos de menores reales— y de la gestión de usuarios.
+
 ## Web comercial
 
 | Ruta | Qué es |
@@ -298,6 +339,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\smoke-plantillas-embeds.ps1
 powershell -ExecutionPolicy Bypass -File .\scripts\smoke-preguntas.ps1
 powershell -ExecutionPolicy Bypass -File .\scripts\smoke-etapa5.ps1
 powershell -ExecutionPolicy Bypass -File .\scripts\smoke-web-comercial.ps1
+powershell -ExecutionPolicy Bypass -File .\scripts\smoke-facturacion.ps1
 
 # Comprobacion del limitador de peticiones (sin servidor)
 npx tsx apps/api/src/lib/rate-limit.check.mts

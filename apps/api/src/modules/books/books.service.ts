@@ -2,6 +2,7 @@ import type { PoolClient } from 'pg';
 import { query, withTransaction } from '../../db/pool.js';
 import { HttpError } from '../../lib/http-error.js';
 import { getAccess } from '../libraries/libraries.service.js';
+import { TRIAL_LIMITS } from '../auth/trial.service.js';
 import {
   parseProperties,
   type CreateElementInput,
@@ -190,6 +191,48 @@ async function requireEdit(bookId: string, userId: string): Promise<BookContext>
   return context;
 }
 
+/**
+ * Cupos del modo de prueba.
+ *
+ * Se comprueban en el servidor, no en la interfaz: la cuenta de prueba tiene rol de
+ * docente y podria llamar a la API directamente. Una sola consulta resuelve si la
+ * cuenta es de prueba y cuanto lleva usado.
+ */
+async function assertTrialAllowsNewBook(userId: string): Promise<void> {
+  const { rows } = await query<{ is_trial: boolean; books: string }>(
+    `SELECT u.is_trial, (SELECT COUNT(*) FROM books b WHERE b.creator_id = u.id) AS books
+     FROM users u WHERE u.id = $1`,
+    [userId],
+  );
+
+  const row = rows[0];
+  if (!row?.is_trial) return;
+
+  if (Number(row.books) >= TRIAL_LIMITS.maxBooks) {
+    throw HttpError.forbidden(
+      `La prueba permite ${TRIAL_LIMITS.maxBooks} libro. Crea una cuenta para seguir.`,
+    );
+  }
+}
+
+/** Igual que la anterior, pero para el numero de paginas de un libro. */
+async function assertTrialAllowsNewPage(userId: string, bookId: string): Promise<void> {
+  const { rows } = await query<{ is_trial: boolean; pages: string }>(
+    `SELECT u.is_trial, (SELECT COUNT(*) FROM pages p WHERE p.book_id = $2) AS pages
+     FROM users u WHERE u.id = $1`,
+    [userId, bookId],
+  );
+
+  const row = rows[0];
+  if (!row?.is_trial) return;
+
+  if (Number(row.pages) >= TRIAL_LIMITS.maxPagesPerBook) {
+    throw HttpError.forbidden(
+      `La prueba permite ${TRIAL_LIMITS.maxPagesPerBook} paginas por libro. Crea una cuenta para seguir.`,
+    );
+  }
+}
+
 /** Comprueba cuota y permisos de la biblioteca antes de crear un libro de clase. */
 async function assertCanCreateInLibrary(libraryId: string, userId: string, isTemplate: boolean): Promise<void> {
   const access = await getAccess(libraryId, userId);
@@ -224,6 +267,8 @@ async function assertCanCreateInLibrary(libraryId: string, userId: string, isTem
  */
 export async function createBook(userId: string, role: string, input: CreateBookInput): Promise<Book> {
   const libraryId = input.libraryId ?? null;
+
+  await assertTrialAllowsNewBook(userId);
 
   if (libraryId) {
     await assertCanCreateInLibrary(libraryId, userId, input.isTemplate);
@@ -700,6 +745,7 @@ async function touchBook(client: PoolClient, bookId: string): Promise<void> {
 
 export async function addPage(bookId: string, userId: string, input: CreatePageInput): Promise<Page> {
   await requireEdit(bookId, userId);
+  await assertTrialAllowsNewPage(userId, bookId);
 
   return withTransaction(async (client) => {
     // Serializa inserciones concurrentes: FOR UPDATE no admite agregaciones, se bloquea el libro.
@@ -770,6 +816,7 @@ export async function addPage(bookId: string, userId: string, input: CreatePageI
 /** Copia una pagina con todos sus elementos justo detras de la original. */
 export async function duplicatePage(bookId: string, pageId: string, userId: string): Promise<Page> {
   await requireEdit(bookId, userId);
+  await assertTrialAllowsNewPage(userId, bookId);
 
   return withTransaction(async (client) => {
     // Se bloquea el libro para que dos duplicados a la vez no choquen al renumerar.

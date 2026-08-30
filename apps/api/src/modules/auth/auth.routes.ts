@@ -3,9 +3,29 @@ import { asyncHandler } from '../../lib/async-handler.js';
 import { requireAuth, requireRole } from '../../middleware/auth.js';
 import { validate } from '../../middleware/validate.js';
 import { createStudentSchema, loginSchema, qrLoginSchema, registerSchema } from './auth.schemas.js';
+import { createRateLimiter } from '../../lib/rate-limit.js';
+import { HttpError } from '../../lib/http-error.js';
+import { createTrialSession } from './trial.service.js';
 import * as service from './auth.service.js';
 
 export const authRouter = Router();
+
+/** Un puñado de cuentas de prueba por IP y hora: evita llenar la base de datos. */
+const trialLimiter = createRateLimiter(5, 60 * 60_000);
+
+/**
+ * Acceso de prueba sin registro. No pide ningun dato: crea una cuenta temporal con
+ * cupos muy pequenos (un libro, dos paginas).
+ */
+authRouter.post(
+  '/trial',
+  asyncHandler(async (req, res) => {
+    if (trialLimiter.hit(req.ip ?? 'desconocida')) {
+      throw new HttpError(429, 'Se han creado varias pruebas desde aqui. Intentalo mas tarde.', 'TOO_MANY_REQUESTS');
+    }
+    res.status(201).json(await createTrialSession());
+  }),
+);
 
 authRouter.post(
   '/register',

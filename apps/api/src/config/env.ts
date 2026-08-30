@@ -20,6 +20,15 @@ const envSchema = z.object({
   PHIDIAS_TOKEN: z.string().default(''),
   PHIDIAS_DEFAULT_PASSWORD: z.string().min(8).default('bookstudio123'),
 
+  // Mercado Pago. Sin ACCESS_TOKEN la facturacion queda desactivada.
+  // El token de acceso NO debe salir nunca del servidor; al navegador solo va
+  // MP_PUBLIC_KEY, que es publica por diseno.
+  MP_PUBLIC_KEY: z.string().default(''),
+  MP_ACCESS_TOKEN: z.string().default(''),
+  MP_WEBHOOK_SECRET: z.string().default(''),
+  MP_WEBHOOK_URL: z.string().default(''),
+  APP_URL: z.string().default('https://bookstudio.uk'),
+
   JWT_SECRET: z.string().min(24, 'JWT_SECRET debe tener al menos 24 caracteres'),
   JWT_EXPIRES_IN: z.string().default('12h'),
   JWT_QR_EXPIRES_IN: z.string().default('365d'),

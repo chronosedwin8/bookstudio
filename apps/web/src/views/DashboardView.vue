@@ -148,6 +148,23 @@ async function removeLibrary(id: string, name: string): Promise<void> {
 
 <template>
   <div class="mx-auto max-w-6xl px-4 py-8">
+    <!-- Modo de prueba: el limite se explica antes de que el usuario choque con el -->
+    <div
+      v-if="auth.isTrial"
+      class="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-300 bg-amber-50 p-4"
+    >
+      <div>
+        <p class="font-bold text-amber-900">Estas probando BookStudio</p>
+        <p class="text-sm text-amber-800">
+          Tienes todas las herramientas, con un limite de <strong>1 libro y 2 paginas</strong>.
+          Nada se pierde: crea una cuenta cuando quieras seguir.
+        </p>
+      </div>
+      <RouterLink :to="{ name: 'customer-portal' }" class="btn-primary shrink-0">
+        Ver planes
+      </RouterLink>
+    </div>
+
     <h1 class="text-2xl font-black text-slate-900">Hola, {{ auth.user?.fullName }}</h1>
     <p class="mt-1 text-sm text-slate-500">Tus libros personales y tus bibliotecas de clase</p>
 
@@ -175,7 +192,14 @@ async function removeLibrary(id: string, name: string): Promise<void> {
             <option value="portrait">Vertical 3:4</option>
             <option value="landscape">Apaisado 4:3</option>
           </select>
-          <button type="submit" class="btn-primary" :disabled="busy">Crear libro</button>
+          <button
+            type="submit"
+            class="btn-primary"
+            :disabled="busy || (auth.isTrial && personalBooks.length >= 1)"
+            :title="auth.isTrial && personalBooks.length >= 1
+              ? 'La prueba permite un libro'
+              : undefined"
+          >Crear libro</button>
         </form>
       </div>
 

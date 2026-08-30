@@ -1,10 +1,31 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { useSeo } from '@/composables/useSeo';
+import { useRouter } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
+import { errorMessage } from '@/services/http';
 import { FAQS, FEATURES, PLANS, SITE, STEPS, USE_CASES } from '@/utils/site';
 
 const auth = useAuthStore();
+const router = useRouter();
+
+// --- Prueba sin registro ---
+const startingTrial = ref(false);
+const trialError = ref<string | null>(null);
+
+/** Crea una cuenta temporal y entra directamente al editor. */
+async function startTrial(): Promise<void> {
+  startingTrial.value = true;
+  trialError.value = null;
+  try {
+    await auth.startTrial();
+    await router.push({ name: 'dashboard' });
+  } catch (err) {
+    trialError.value = errorMessage(err);
+  } finally {
+    startingTrial.value = false;
+  }
+}
 
 /** Solo una pregunta abierta a la vez; el indice -1 significa todas cerradas. */
 const openFaq = ref(-1);
@@ -111,14 +132,21 @@ const NAV = [
             </p>
 
             <div class="mt-7 flex flex-wrap gap-3">
-              <RouterLink :to="{ name: 'customer-portal' }" class="btn-primary px-6 py-3 text-base">
+              <button
+                type="button"
+                class="btn-primary px-6 py-3 text-base"
+                :disabled="startingTrial"
+                @click="startTrial"
+              >{{ startingTrial ? 'Preparando...' : 'Probar sin registrarse' }}</button>
+              <RouterLink :to="{ name: 'customer-portal' }" class="btn-secondary px-6 py-3 text-base">
                 Solicitar una demostracion
               </RouterLink>
-              <a href="#precios" class="btn-secondary px-6 py-3 text-base">Ver precios</a>
             </div>
 
+            <p v-if="trialError" class="mt-3 text-sm text-red-600">{{ trialError }}</p>
+
             <ul class="mt-6 flex flex-wrap gap-x-6 gap-y-2 text-sm text-slate-500">
-              <li>✓ Prueba con tus grupos reales</li>
+              <li>✓ Sin cuenta ni tarjeta: 1 libro de 2 paginas</li>
               <li>✓ Tus datos donde tu decidas</li>
               <li>✓ Exportacion a PDF y web</li>
             </ul>
@@ -321,12 +349,15 @@ const NAV = [
             antes de decidir nada.
           </p>
           <div class="mt-7 flex flex-wrap justify-center gap-3">
-            <RouterLink :to="{ name: 'customer-portal' }" class="rounded-lg bg-white px-6 py-3 font-bold text-brand-700 hover:bg-brand-50">
+            <button
+              type="button"
+              class="rounded-lg bg-white px-6 py-3 font-bold text-brand-700 hover:bg-brand-50 disabled:opacity-60"
+              :disabled="startingTrial"
+              @click="startTrial"
+            >Probarlo ahora mismo</button>
+            <RouterLink :to="{ name: 'customer-portal' }" class="rounded-lg border border-white/60 px-6 py-3 font-bold hover:bg-white/10">
               Solicitar una demostracion
             </RouterLink>
-            <a href="#precios" class="rounded-lg border border-white/60 px-6 py-3 font-bold hover:bg-white/10">
-              Ver precios
-            </a>
           </div>
         </div>
       </section>

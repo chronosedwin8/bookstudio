@@ -71,10 +71,15 @@ onMounted(async () => {
           <span class="grid h-8 w-8 place-items-center rounded-lg bg-brand-600 text-white">B</span>
           {{ SITE.name }}
         </RouterLink>
-        <RouterLink
-          :to="auth.isAuthenticated ? { name: 'dashboard' } : { name: 'login' }"
-          class="btn-secondary"
-        >{{ auth.isAuthenticated ? 'Mis libros' : 'Entrar' }}</RouterLink>
+        <div class="flex items-center gap-2">
+          <RouterLink v-if="auth.isAuthenticated" :to="{ name: 'billing' }" class="btn-secondary">
+            Mi licencia
+          </RouterLink>
+          <RouterLink
+            :to="auth.isAuthenticated ? { name: 'dashboard' } : { name: 'login' }"
+            class="btn-secondary"
+          >{{ auth.isAuthenticated ? 'Mis libros' : 'Entrar' }}</RouterLink>
+        </div>
       </div>
     </header>
 

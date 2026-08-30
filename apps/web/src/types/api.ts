@@ -305,6 +305,66 @@ export interface PhidiasImportResult {
   skipped: number;
 }
 
+export type PlanId = 'individual' | 'escuela' | 'institucional';
+
+export interface BillingPlan {
+  id: PlanId;
+  name: string;
+  amountCop: number;
+  monthlyCop: number | null;
+  summary: string;
+  maxTeachers: number | null;
+  maxStudents: number | null;
+}
+
+export interface BillingConfig {
+  enabled: boolean;
+  publicKey: string;
+  currency: string;
+  plans: BillingPlan[];
+}
+
+export interface Subscription {
+  id: string;
+  plan: PlanId;
+  planName: string;
+  status: 'pendiente' | 'activa' | 'vencida' | 'cancelada';
+  organization: string | null;
+  amountCop: number;
+  autoRenew: boolean;
+  maxTeachers: number | null;
+  maxStudents: number | null;
+  startsAt: string | null;
+  expiresAt: string | null;
+  daysLeft: number | null;
+  payerEmail: string | null;
+}
+
+export interface Invoice {
+  id: string;
+  invoiceNumber: number;
+  amountCop: number;
+  status: string;
+  statusDetail: string | null;
+  paymentMethod: string | null;
+  installments: number | null;
+  payerEmail: string | null;
+  paidAt: string | null;
+  createdAt: string;
+}
+
+export interface CheckoutResult {
+  subscription: Subscription;
+  payment: { status: string; statusDetail: string; invoiceNumber: number | null };
+  authorizationUrl?: string;
+}
+
+export interface TrialSession {
+  user: User;
+  token: string;
+  limits: { maxBooks: number; maxPagesPerBook: number };
+}
+
 export interface ShareState {
   visibility: ShareVisibility;
   token: string | null;
