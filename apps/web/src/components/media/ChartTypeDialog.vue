@@ -30,8 +30,8 @@ const SAMPLE = [
     <div class="card flex max-h-[85vh] w-full max-w-3xl flex-col overflow-hidden">
       <header class="flex items-center justify-between gap-3 border-b border-slate-200 px-5 py-3">
         <div>
-          <h2 class="font-bold text-slate-900">Graficas</h2>
-          <p class="text-xs text-slate-500">Los datos se escriben despues en el panel derecho.</p>
+          <h2 class="font-bold text-slate-900">Gráficas</h2>
+          <p class="text-xs text-slate-500">Los datos se escriben después en el panel derecho.</p>
         </div>
         <button type="button" class="btn-secondary" @click="emit('close')">Cerrar</button>
       </header>

@@ -50,7 +50,7 @@ onMounted(async () => {
         <div>
           <h1 class="font-black text-slate-800">{{ book.title }}</h1>
           <p class="text-xs text-slate-500">
-            {{ book.pages.length }} paginas · en el dialogo elige "Guardar como PDF"
+            {{ book.pages.length }} páginas · en el dialogo elige "Guardar como PDF"
           </p>
         </div>
         <button type="button" class="btn-primary" @click="print">Imprimir o guardar en PDF</button>

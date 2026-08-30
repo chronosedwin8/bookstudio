@@ -157,10 +157,10 @@ const placeholder = computed(
             </div>
 
             <p v-if="!filteredIcons.length" class="py-8 text-center text-sm text-slate-500">
-              Ningun icono coincide con "{{ search }}". Prueba en ingles.
+              Ningun icono coincide con "{{ search }}". Prueba en inglés.
             </p>
             <p v-else-if="filteredIcons.length === MAX_RESULTS" class="mt-4 text-center text-xs text-slate-400">
-              Mostrando los primeros {{ MAX_RESULTS }}. Afina la busqueda para ver mas.
+              Mostrando los primeros {{ MAX_RESULTS }}. Afina la busqueda para ver más.
             </p>
             <p class="mt-4 text-center text-[11px] text-slate-400">
               Iconos de Lucide, licencia ISC (open source).

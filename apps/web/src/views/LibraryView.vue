@@ -202,17 +202,17 @@ function formatDate(value: string | null): string {
         <div>
           <h1 class="text-2xl font-black text-slate-900">{{ library.name }}</h1>
           <p class="mt-1 text-sm text-slate-500">
-            Codigo:
+            Código:
             <span class="font-mono text-base font-bold tracking-widest text-brand-700">{{ library.codeInvite }}</span>
           </p>
 
-          <!-- Enlace de inscripcion: no todo el mundo puede escanear un QR -->
+          <!-- Enlace de inscripción: no todo el mundo puede escanear un QR -->
           <div class="mt-2 flex max-w-md items-center gap-2">
             <input
               :value="joinUrl"
               readonly
               class="input py-1 font-mono text-xs"
-              aria-label="Enlace de inscripcion"
+              aria-label="Enlace de inscripción"
               @focus="($event.target as HTMLInputElement).select()"
             />
             <button type="button" class="btn-secondary shrink-0 px-2 py-1 text-xs" @click="copyJoinUrl">
@@ -234,7 +234,7 @@ function formatDate(value: string | null): string {
             <input v-model.trim="studentName" type="text" required minlength="2" class="input" placeholder="Nombre y apellido" />
             <button type="submit" class="btn-primary shrink-0" :disabled="busy">Crear QR</button>
           </div>
-          <p class="mt-2 text-xs text-slate-500">Se genera un acceso sin correo ni contrasena.</p>
+          <p class="mt-2 text-xs text-slate-500">Se genera un acceso sin correo ni contraseña.</p>
 
           <button
             v-if="phidiasEnabled"
@@ -274,10 +274,10 @@ function formatDate(value: string | null): string {
       </section>
 
       <div v-if="credential" class="card mt-4 flex flex-wrap items-center gap-5 p-5">
-        <img :src="credential.qrDataUrl" :alt="`Codigo QR de ${credential.user.fullName}`" class="h-40 w-40 rounded-lg border border-slate-200" />
+        <img :src="credential.qrDataUrl" :alt="`Código QR de ${credential.user.fullName}`" class="h-40 w-40 rounded-lg border border-slate-200" />
         <div class="min-w-0 flex-1">
           <h3 class="font-bold text-slate-900">{{ credential.user.fullName }}</h3>
-          <p class="mt-1 text-sm text-slate-500">Imprime o muestra este QR para que el alumno inicie sesion.</p>
+          <p class="mt-1 text-sm text-slate-500">Imprime o muestra este QR para que el alumno inicie sesión.</p>
           <div class="mt-2 flex max-w-md items-center gap-2">
             <input
               :value="`${joinUrl.replace(/\/unirse\/.*$/, '')}/login/qr?t=${credential.qrToken}`"
@@ -302,8 +302,8 @@ function formatDate(value: string | null): string {
           <h2 class="font-bold text-slate-800">Libros</h2>
 
           <form class="flex flex-wrap items-end gap-2" @submit.prevent="createBook">
-            <input v-model.trim="newBookTitle" type="text" maxlength="255" class="input max-w-[14rem]" placeholder="Titulo del libro" />
-            <select v-model="newBookFormat" class="input max-w-[9rem]" aria-label="Formato de pagina">
+            <input v-model.trim="newBookTitle" type="text" maxlength="255" class="input max-w-[14rem]" placeholder="Título del libro" />
+            <select v-model="newBookFormat" class="input max-w-[9rem]" aria-label="Formato de página">
               <option value="square">Cuadrado 1:1</option>
               <option value="portrait">Vertical 3:4</option>
               <option value="landscape">Apaisado 4:3</option>
@@ -349,7 +349,7 @@ function formatDate(value: string | null): string {
                 </div>
                 <div class="rounded bg-slate-50 py-1.5">
                   <p class="text-base font-black text-slate-800">{{ entry.totalPages }}</p>
-                  <p class="text-[11px] text-slate-500">paginas</p>
+                  <p class="text-[11px] text-slate-500">páginas</p>
                 </div>
                 <div class="rounded bg-slate-50 py-1.5">
                   <p class="text-base font-black text-slate-800">{{ entry.publishedCount }}</p>
@@ -370,7 +370,7 @@ function formatDate(value: string | null): string {
 
           <div v-if="classView.totalPages > 1" class="mt-4 flex items-center justify-center gap-3">
             <button type="button" class="btn-secondary" :disabled="page <= 1" @click="page -= 1">Anterior</button>
-            <span class="text-sm text-slate-600">Pagina {{ classView.page }} de {{ classView.totalPages }}</span>
+            <span class="text-sm text-slate-600">Página {{ classView.page }} de {{ classView.totalPages }}</span>
             <button type="button" class="btn-secondary" :disabled="page >= classView.totalPages" @click="page += 1">Siguiente</button>
           </div>
         </template>

@@ -117,7 +117,7 @@ async function copy(): Promise<void> {
           </label>
         </div>
 
-        <!-- Edicion compartida: distinta de la visibilidad del enlace -->
+        <!-- Edición compartida: distinta de la visibilidad del enlace -->
         <label
           v-if="hasLibrary"
           class="flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition"
@@ -131,16 +131,16 @@ async function copy(): Promise<void> {
             @change="emit('collaborative', ($event.target as HTMLInputElement).checked)"
           />
           <span>
-            <span class="block text-sm font-semibold text-slate-800">Edicion compartida con la clase</span>
+            <span class="block text-sm font-semibold text-slate-800">Edición compartida con la clase</span>
             <span class="block text-xs text-slate-500">
-              Cualquier miembro de la biblioteca podra anadir contenido a este libro.
+              Cualquier miembro de la biblioteca podrá añadir contenido a este libro.
               Los cambios se ven al recargar; todavia no hay sincronizacion en vivo.
             </span>
           </span>
         </label>
 
         <p v-if="!hasLibrary" class="text-xs text-slate-400">
-          Este libro es personal, asi que no puede compartirse solo con una clase.
+          Este libro es personal, así que no puede compartirse solo con una clase.
         </p>
 
         <div v-if="visibility !== 'private' && shareUrl" class="space-y-2">
@@ -159,7 +159,7 @@ async function copy(): Promise<void> {
           </div>
 
           <p v-if="visibility === 'library'" class="text-xs text-slate-500">
-            Quien lo abra tendra que iniciar sesion y pertenecer a la biblioteca.
+            Quien lo abra tendrá que iniciar sesión y pertenecer a la biblioteca.
           </p>
 
           <button

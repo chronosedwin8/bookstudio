@@ -59,7 +59,7 @@ function preview(item: MediaResult, event: Event): void {
       <header class="flex items-center justify-between gap-3 border-b border-slate-200 px-5 py-3">
         <div>
           <h2 class="font-bold text-slate-900">Biblioteca de sonidos</h2>
-          <p class="text-xs text-slate-500">Efectos y musica con licencia abierta, desde Openverse.</p>
+          <p class="text-xs text-slate-500">Efectos y música con licencia abierta, desde Openverse.</p>
         </div>
         <button type="button" class="btn-secondary" @click="emit('close')">Cerrar</button>
       </header>
@@ -69,7 +69,7 @@ function preview(item: MediaResult, event: Event): void {
           v-model.trim="query"
           type="search"
           class="input"
-          placeholder="Busca en ingles: applause, rain, bell..."
+          placeholder="Busca en inglés: applause, rain, bell..."
           autofocus
         />
         <button type="submit" class="btn-primary shrink-0" :disabled="loading || query.trim().length < 2">
@@ -89,7 +89,7 @@ function preview(item: MediaResult, event: Event): void {
 
       <label class="flex items-center gap-2 border-b border-slate-100 px-5 py-2 text-sm text-slate-700">
         <input v-model="withAttribution" type="checkbox" class="h-4 w-4 rounded" />
-        Insertar la atribucion del autor
+        Insertar la atribución del autor
       </label>
 
       <div class="flex-1 overflow-y-auto px-5 py-3">
@@ -98,7 +98,7 @@ function preview(item: MediaResult, event: Event): void {
         <p v-if="loading" class="py-8 text-center text-sm text-slate-500">Buscando sonidos...</p>
 
         <p v-else-if="searched && !results.length" class="py-8 text-center text-sm text-slate-500">
-          Ningun sonido coincide con "{{ query }}". Prueba en ingles.
+          Ningun sonido coincide con "{{ query }}". Prueba en inglés.
         </p>
 
         <p v-else-if="!searched" class="py-8 text-center text-sm text-slate-400">
@@ -132,7 +132,7 @@ function preview(item: MediaResult, event: Event): void {
         </ul>
 
         <p class="mt-4 text-center text-[11px] text-slate-400">
-          Resultados de Openverse, filtrados a licencias Creative Commons y dominio publico.
+          Resultados de Openverse, filtrados a licencias Creative Commons y dominio público.
         </p>
       </div>
     </div>

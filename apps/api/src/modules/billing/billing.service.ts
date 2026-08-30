@@ -315,7 +315,7 @@ export async function signupAndCheckout(input: SignupCheckoutInput): Promise<Sig
 
   const existing = await query<{ id: string }>('SELECT id FROM users WHERE email = $1', [email]);
   if (existing.rowCount) {
-    throw HttpError.conflict('Ya existe una cuenta con ese correo. Inicia sesion y paga desde tu panel.');
+    throw HttpError.conflict('Ya existe una cuenta con ese correo. Inicia sesión y paga desde tu panel.');
   }
 
   const passwordHash = await bcrypt.hash(input.password, 12);
@@ -369,7 +369,7 @@ export async function setAutoRenew(
   );
 
   const row = rows[0];
-  if (!row) throw HttpError.notFound('No tienes una suscripcion vigente');
+  if (!row) throw HttpError.notFound('No tienes una suscripción vigente');
 
   let authorizationUrl: string | undefined;
 
@@ -448,7 +448,7 @@ export async function handlePaymentNotification(paymentId: string): Promise<void
 
     if (!ownerId) return;
 
-    // Renovacion: se prolonga la licencia un ano mas desde su vencimiento.
+    // Renovacion: se prolonga la licencia un año mas desde su vencimiento.
     const suscripcion = await client.query<{ id: string }>(
       `UPDATE subscriptions
        SET status = 'activa',

@@ -14,7 +14,7 @@ const listQuerySchema = z.object({
 
 const createSchema = z.object({
   email: z.string().email('Email invalido').max(255).toLowerCase().trim(),
-  password: z.string().min(8, 'La contrasena debe tener al menos 8 caracteres').max(128),
+  password: z.string().min(8, 'La contraseña debe tener al menos 8 caracteres').max(128),
   fullName: z.string().min(2).max(100).trim(),
   role: z.enum(['teacher', 'student', 'admin']).default('student'),
 });
@@ -28,7 +28,7 @@ const updateSchema = z
   .refine((v) => Object.values(v).some((x) => x !== undefined), 'No hay campos para actualizar');
 
 const passwordSchema = z.object({
-  password: z.string().min(8, 'La contrasena debe tener al menos 8 caracteres').max(128),
+  password: z.string().min(8, 'La contraseña debe tener al menos 8 caracteres').max(128),
 });
 
 const userIdSchema = z.object({ id: z.string().uuid() });

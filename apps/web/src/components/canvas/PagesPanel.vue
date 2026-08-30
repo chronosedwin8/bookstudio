@@ -38,12 +38,12 @@ const pageLabel = (index: number, page: Page) => (index === 0 ? 'Portada' : `Pag
     <div class="mx-auto max-w-6xl">
       <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 class="text-lg font-black text-white">Paginas del libro</h2>
-          <p class="text-xs text-slate-300">{{ pages.length }} paginas · pulsa una para abrirla</p>
+          <h2 class="text-lg font-black text-white">Páginas del libro</h2>
+          <p class="text-xs text-slate-300">{{ pages.length }} páginas · pulsa una para abrirla</p>
         </div>
         <div class="flex gap-2">
           <button v-if="editable" type="button" class="btn-primary" :disabled="busy" @click="emit('add')">
-            + Nueva pagina
+            + Nueva página
           </button>
           <button type="button" class="btn-secondary" @click="emit('close')">Cerrar</button>
         </div>
@@ -89,15 +89,15 @@ const pageLabel = (index: number, page: Page) => (index === 0 ? 'Portada' : `Pag
                 type="button"
                 class="grid h-6 w-6 place-items-center rounded text-slate-500 hover:bg-slate-100 disabled:opacity-30"
                 :disabled="index === pages.length - 1 || busy"
-                title="Mover despues"
-                aria-label="Mover despues"
+                title="Mover después"
+                aria-label="Mover después"
                 @click="move(index, 1)"
               >›</button>
               <button
                 type="button"
                 class="grid h-6 w-6 place-items-center rounded text-slate-500 hover:bg-slate-100 disabled:opacity-30"
                 :disabled="busy"
-                title="Duplicar pagina"
+                title="Duplicar página"
                 :aria-label="`Duplicar ${pageLabel(index, page)}`"
                 @click="emit('duplicate', page.id)"
               >⧉</button>
@@ -105,7 +105,7 @@ const pageLabel = (index: number, page: Page) => (index === 0 ? 'Portada' : `Pag
                 type="button"
                 class="grid h-6 w-6 place-items-center rounded text-red-500 hover:bg-red-50 disabled:opacity-30"
                 :disabled="pages.length <= 1 || busy"
-                title="Eliminar pagina"
+                title="Eliminar página"
                 :aria-label="`Eliminar ${pageLabel(index, page)}`"
                 @click="emit('remove', page.id)"
               >×</button>

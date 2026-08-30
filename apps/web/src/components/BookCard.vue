@@ -42,7 +42,7 @@ const coverWidth = useElementWidth(coverBox);
 
     <h3 class="truncate font-semibold text-slate-900" :title="book.title">{{ book.title }}</h3>
     <p class="mt-0.5 text-xs text-slate-500">
-      {{ book.pageCount ?? 0 }} paginas · {{ book.layoutFormat }}
+      {{ book.pageCount ?? 0 }} páginas · {{ book.layoutFormat }}
       <span v-if="book.isPublished" class="ml-1 rounded bg-emerald-100 px-1.5 py-0.5 text-emerald-700">Publicado</span>
     </p>
 

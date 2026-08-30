@@ -55,7 +55,7 @@ const THUMB_WIDTH = 230;
       <header class="flex items-center justify-between gap-3 border-b border-slate-200 px-5 py-3">
         <div>
           <h2 class="font-bold text-slate-900">Plantillas</h2>
-          <p class="text-xs text-slate-500">Se añaden como una pagina nueva despues de la actual.</p>
+          <p class="text-xs text-slate-500">Se añaden como una página nueva después de la actual.</p>
         </div>
         <button type="button" class="btn-secondary" @click="emit('close')">Cerrar</button>
       </header>

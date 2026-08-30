@@ -530,7 +530,7 @@ export async function setSharing(
   }
   // Un libro personal no tiene biblioteca con la que compartirlo.
   if (visibility === 'library' && !book.library_id) {
-    throw HttpError.badRequest('Un libro personal no pertenece a ninguna clase; compartelo en publico');
+    throw HttpError.badRequest('Un libro personal no pertenece a ninguna clase; compártelo en público');
   }
 
   const { rows } = await query<{ share_visibility: ShareVisibility; share_token: string | null }>(
@@ -586,7 +586,7 @@ export async function getSharedBook(token: string, userId?: string): Promise<Sha
   }
 
   if (row.share_visibility === 'library') {
-    if (!userId) throw HttpError.unauthorized('Inicia sesion para abrir este libro');
+    if (!userId) throw HttpError.unauthorized('Inicia sesión para abrir este libro');
     // getAccess lanza 403 si el usuario no pertenece a la biblioteca.
     if (row.library_id) await getAccess(row.library_id, userId);
     else if (row.creator_id !== userId) throw HttpError.forbidden('Este libro no es tuyo');
@@ -685,7 +685,7 @@ export async function setCollaborative(
   const { book, permissions } = await loadContext(bookId, userId);
 
   if (!permissions.isManager && book.creator_id !== userId) {
-    throw HttpError.forbidden('Solo el autor o un docente pueden cambiar la edicion compartida');
+    throw HttpError.forbidden('Solo el autor o un docente pueden cambiar la edición compartida');
   }
   if (collaborative && !book.library_id) {
     throw HttpError.badRequest('Un libro personal no tiene grupo con el que colaborar');
@@ -827,7 +827,7 @@ export async function duplicatePage(bookId: string, pageId: string, userId: stri
        FROM pages WHERE id = $1 AND book_id = $2`,
       [pageId, bookId],
     );
-    if (!source.rows[0]) throw HttpError.notFound('Pagina no encontrada');
+    if (!source.rows[0]) throw HttpError.notFound('Página no encontrada');
     const original = source.rows[0];
 
     // Hueco para la copia: se desplaza en negativo primero por el indice unico.
@@ -895,7 +895,7 @@ export async function updatePage(
      RETURNING id, book_id, page_number, background_color, background_pattern`,
     values,
   );
-  if (!rows[0]) throw HttpError.notFound('Pagina no encontrada');
+  if (!rows[0]) throw HttpError.notFound('Página no encontrada');
 
   return {
     id: rows[0].id,
@@ -914,14 +914,14 @@ export async function deletePage(bookId: string, pageId: string, userId: string)
       bookId,
     ]);
     if (Number(total.rows[0].count) <= 1) {
-      throw HttpError.badRequest('El libro debe conservar al menos una pagina');
+      throw HttpError.badRequest('El libro debe conservar al menos una página');
     }
 
     const deleted = await client.query<{ page_number: number }>(
       'DELETE FROM pages WHERE id = $1 AND book_id = $2 RETURNING page_number',
       [pageId, bookId],
     );
-    if (!deleted.rows[0]) throw HttpError.notFound('Pagina no encontrada');
+    if (!deleted.rows[0]) throw HttpError.notFound('Página no encontrada');
 
     await client.query('UPDATE pages SET page_number = page_number - 1 WHERE book_id = $1 AND page_number > $2', [
       bookId,
@@ -939,7 +939,7 @@ export async function reorderPages(bookId: string, userId: string, pageIds: stri
     const known = new Set(existing.rows.map((r) => r.id));
 
     if (pageIds.length !== known.size || pageIds.some((id) => !known.has(id))) {
-      throw HttpError.badRequest('La lista debe contener exactamente todas las paginas del libro');
+      throw HttpError.badRequest('La lista debe contener exactamente todas las páginas del libro');
     }
 
     await client.query('UPDATE pages SET page_number = -page_number WHERE book_id = $1', [bookId]);
@@ -956,7 +956,7 @@ export async function reorderPages(bookId: string, userId: string, pageIds: stri
 
 async function assertPageBelongs(client: PoolClient, bookId: string, pageId: string): Promise<void> {
   const { rowCount } = await client.query('SELECT 1 FROM pages WHERE id = $1 AND book_id = $2', [pageId, bookId]);
-  if (!rowCount) throw HttpError.notFound('Pagina no encontrada en este libro');
+  if (!rowCount) throw HttpError.notFound('Página no encontrada en este libro');
 }
 
 export async function createElement(
@@ -1104,7 +1104,7 @@ export async function reorderLayers(
     const known = new Set(existing.rows.map((r) => r.id));
 
     if (elementIds.length !== known.size || elementIds.some((id) => !known.has(id))) {
-      throw HttpError.badRequest('La lista debe contener exactamente todos los elementos de la pagina');
+      throw HttpError.badRequest('La lista debe contener exactamente todos los elementos de la página');
     }
 
     for (const [index, id] of elementIds.entries()) {

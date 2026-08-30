@@ -40,7 +40,7 @@ onMounted(async () => {
 <template>
   <div class="mx-auto grid max-w-md place-items-center px-4 py-16 text-center">
     <template v-if="error">
-      <h1 class="text-xl font-black text-slate-900">No se pudo completar la inscripcion</h1>
+      <h1 class="text-xl font-black text-slate-900">No se pudo completar la inscripción</h1>
       <p class="mt-1 font-mono text-sm tracking-widest text-slate-500">{{ code }}</p>
       <AlertMessage class="mt-4 w-full" :message="error" />
       <RouterLink :to="{ name: 'dashboard' }" class="btn-secondary mt-4">Ir a mis libros</RouterLink>

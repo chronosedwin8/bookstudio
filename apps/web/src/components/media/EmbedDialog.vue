@@ -70,7 +70,7 @@ function submit(): void {
         </div>
 
         <div>
-          <label class="label" for="embed-title">Titulo (para lectores de pantalla)</label>
+          <label class="label" for="embed-title">Título (para lectores de pantalla)</label>
           <input id="embed-title" v-model="title" type="text" maxlength="300" class="input" placeholder="Ej. Video sobre volcanes" />
         </div>
 

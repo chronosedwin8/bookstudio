@@ -41,13 +41,13 @@ onMounted(() => {
     <div class="card w-full max-w-md p-8">
       <div class="mb-6 text-center">
         <div class="mx-auto mb-3 grid h-14 w-14 place-items-center rounded-xl bg-amber-500 text-2xl">🔑</div>
-        <h1 class="text-2xl font-black text-slate-900">Entrar con codigo</h1>
-        <p class="mt-1 text-sm text-slate-600">Escanea el QR que te dio tu profe o pega el codigo aqui</p>
+        <h1 class="text-2xl font-black text-slate-900">Entrar con código</h1>
+        <p class="mt-1 text-sm text-slate-600">Escanea el QR que te dio tu profe o pega el código aquí</p>
       </div>
 
       <form class="space-y-4" @submit.prevent="submit(qrToken)">
         <div>
-          <label class="label" for="qr">Codigo del QR</label>
+          <label class="label" for="qr">Código del QR</label>
           <textarea id="qr" v-model.trim="qrToken" rows="4" required class="input font-mono text-xs" placeholder="eyJhbGciOi..." />
         </div>
 

@@ -59,7 +59,7 @@ export function isPlanId(value: unknown): value is PlanId {
   return typeof value === 'string' && value in PLANS;
 }
 
-/** Un ano natural desde la fecha dada; es el periodo de todos los planes. */
+/** Un año natural desde la fecha dada; es el periodo de todos los planes. */
 export function addOneYear(from: Date): Date {
   const to = new Date(from);
   to.setFullYear(to.getFullYear() + 1);

@@ -156,7 +156,7 @@ async function removeLibrary(id: string, name: string): Promise<void> {
       <div>
         <p class="font-bold text-amber-900">Estas probando BookStudio</p>
         <p class="text-sm text-amber-800">
-          Tienes todas las herramientas, con un limite de <strong>1 libro y 2 paginas</strong>.
+          Tienes todas las herramientas, con un limite de <strong>1 libro y 2 páginas</strong>.
           Nada se pierde: crea una cuenta cuando quieras seguir.
         </p>
       </div>
@@ -184,10 +184,10 @@ async function removeLibrary(id: string, name: string): Promise<void> {
             type="text"
             maxlength="255"
             class="input max-w-[14rem]"
-            placeholder="Titulo del libro"
-            aria-label="Titulo del libro personal"
+            placeholder="Título del libro"
+            aria-label="Título del libro personal"
           />
-          <select v-model="newBookFormat" class="input max-w-[9rem]" aria-label="Formato de pagina">
+          <select v-model="newBookFormat" class="input max-w-[9rem]" aria-label="Formato de página">
             <option value="square">Cuadrado 1:1</option>
             <option value="portrait">Vertical 3:4</option>
             <option value="landscape">Apaisado 4:3</option>
@@ -245,7 +245,7 @@ async function removeLibrary(id: string, name: string): Promise<void> {
       </form>
 
       <form class="card p-5" @submit.prevent="joinLibrary">
-        <h2 class="mb-3 font-bold text-slate-800">Unirse con codigo</h2>
+        <h2 class="mb-3 font-bold text-slate-800">Unirse con código</h2>
         <div class="flex gap-2">
           <input
             v-model.trim="joinCode"
@@ -304,14 +304,14 @@ async function removeLibrary(id: string, name: string): Promise<void> {
           {{ library.name }}
         </RouterLink>
 
-        <p class="mt-2 text-xs text-slate-500">Codigo de invitacion</p>
+        <p class="mt-2 text-xs text-slate-500">Código de invitacion</p>
         <p class="font-mono text-lg font-black tracking-widest text-brand-700">{{ library.codeInvite }}</p>
 
         <div class="mt-3 flex flex-wrap gap-1.5 text-xs">
           <span class="rounded bg-slate-100 px-2 py-0.5 text-slate-600">
             {{ booksByLibrary.get(library.id)?.length ?? 0 }} de {{ library.studentBookLimit }} libros
           </span>
-          <span v-if="library.studentEditable" class="rounded bg-emerald-100 px-2 py-0.5 text-emerald-700">Edicion alumnos</span>
+          <span v-if="library.studentEditable" class="rounded bg-emerald-100 px-2 py-0.5 text-emerald-700">Edición alumnos</span>
           <span v-if="library.studentPublishable" class="rounded bg-brand-100 px-2 py-0.5 text-brand-700">Publicable</span>
         </div>
 

@@ -37,7 +37,7 @@ export const textPropertiesSchema = z.object({
       'OpenDyslexic', 'Atkinson Hyperlegible',
     ])
     .default('Lato'),
-  fontSize: z.number().int().min(24, 'El tamano minimo accesible es 24px').max(200).default(24),
+  fontSize: z.number().int().min(24, 'El tamaño mínimo accesible es 24px').max(200).default(24),
   color: hexColor.default('#333333'),
   backgroundColor: z.union([hexColor, z.literal('transparent')]).default('transparent'),
   textAlign: z.enum(['left', 'center', 'right']).default('left'),
@@ -227,14 +227,14 @@ export const questionPropertiesSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['options'],
-        message: 'Una pregunta de respuesta unica necesita exactamente una opcion correcta',
+        message: 'Una pregunta de respuesta única necesita exactamente una opción correcta',
       });
     }
     if (value.kind === 'multiple' && correct < 1) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['options'],
-        message: 'Marca al menos una opcion correcta',
+        message: 'Marca al menos una opción correcta',
       });
     }
   });
@@ -254,7 +254,7 @@ export const chartPropertiesSchema = z.object({
         color: hexColor.optional(),
       }),
     )
-    .min(1, 'La grafica necesita al menos un dato')
+    .min(1, 'La gráfica necesita al menos un dato')
     .max(24),
   showValues: z.boolean().default(true),
   showLegend: z.boolean().default(true),

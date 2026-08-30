@@ -205,7 +205,7 @@ const textLines = computed(() => {
       v-else
       class="h-full w-full overflow-hidden whitespace-pre-wrap break-words p-2"
       :style="textStyle"
-    >{{ text.text || 'Escribe aqui...' }}</div>
+    >{{ text.text || 'Escribe aquí...' }}</div>
   </template>
 
   <!-- Dibujo vectorial -->
@@ -264,7 +264,7 @@ const textLines = computed(() => {
     :check="checkAnswer ? (answer) => checkAnswer!(element.id, answer) : undefined"
   />
 
-  <!-- Formula matematica -->
+  <!-- Formula matemática -->
   <MathRenderer
     v-else-if="element.type === 'math'"
     :latex="math.latex"
@@ -273,7 +273,7 @@ const textLines = computed(() => {
     :background-color="math.backgroundColor"
   />
 
-  <!-- Grafica estadistica -->
+  <!-- Gráfica estadistica -->
   <ChartRenderer
     v-else-if="element.type === 'chart'"
     :chart-type="chart.chartType"
@@ -294,7 +294,7 @@ const textLines = computed(() => {
     :preview="preview"
   />
 
-  <!-- Imagen con atribucion Creative Commons -->
+  <!-- Imagen con atribución Creative Commons -->
   <figure v-else-if="element.type === 'image'" class="relative h-full w-full">
     <img
       :src="media.fileUrl"

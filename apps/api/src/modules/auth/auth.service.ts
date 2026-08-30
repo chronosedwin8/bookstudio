@@ -69,7 +69,7 @@ export async function login(input: LoginInput): Promise<{ user: PublicUser; toke
   const valid = await bcrypt.compare(input.password, hash);
 
   if (!row || !row.password_hash || !valid) {
-    throw HttpError.unauthorized('Email o contrasena incorrectos');
+    throw HttpError.unauthorized('Email o contraseña incorrectos');
   }
   // Se comprueba despues de validar la clave: antes revelaria que la cuenta existe.
   if (row.is_active === false) {
@@ -135,7 +135,7 @@ export async function createStudentWithQr(
 export async function loginWithQr(token: string): Promise<{ user: PublicUser; token: string }> {
   const payload = verifyAccessToken(token);
   if (payload.kind !== 'qr' || payload.role !== 'student') {
-    throw HttpError.unauthorized('Este codigo QR no es una credencial de alumno valida');
+    throw HttpError.unauthorized('Este código QR no es una credencial de alumno válida');
   }
 
   const user = await getUserById(payload.sub);

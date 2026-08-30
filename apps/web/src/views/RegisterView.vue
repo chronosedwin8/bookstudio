@@ -41,13 +41,13 @@ async function onSubmit(): Promise<void> {
         </div>
 
         <div>
-          <label class="label" for="email">Correo electronico</label>
+          <label class="label" for="email">Correo electrónico</label>
           <input id="email" v-model.trim="email" type="email" required class="input" placeholder="profe@escuela.edu" />
         </div>
 
         <div>
-          <label class="label" for="password">Contrasena</label>
-          <input id="password" v-model="password" type="password" required minlength="8" autocomplete="new-password" class="input" placeholder="Minimo 8 caracteres" />
+          <label class="label" for="password">Contraseña</label>
+          <input id="password" v-model="password" type="password" required minlength="8" autocomplete="new-password" class="input" placeholder="Mínimo 8 caracteres" />
         </div>
 
         <AlertMessage :message="error" />

@@ -56,7 +56,7 @@ function parseValue(raw: string): number {
 <template>
   <div class="space-y-3">
     <div>
-      <label class="label">Tipo de grafica</label>
+      <label class="label">Tipo de gráfica</label>
       <div class="grid grid-cols-3 gap-1">
         <button
           v-for="type in TYPES"
@@ -76,7 +76,7 @@ function parseValue(raw: string): number {
     </div>
 
     <div>
-      <label class="label" for="chart-title">Titulo</label>
+      <label class="label" for="chart-title">Título</label>
       <input
         id="chart-title"
         type="text"

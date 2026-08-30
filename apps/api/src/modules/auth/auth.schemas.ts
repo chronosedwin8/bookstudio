@@ -2,14 +2,14 @@ import { z } from 'zod';
 
 export const registerSchema = z.object({
   email: z.string().email('Email invalido').max(255).toLowerCase().trim(),
-  password: z.string().min(8, 'La contrasena debe tener al menos 8 caracteres').max(128),
+  password: z.string().min(8, 'La contraseña debe tener al menos 8 caracteres').max(128),
   fullName: z.string().min(2).max(100).trim(),
   role: z.enum(['teacher', 'student', 'admin']).default('teacher'),
 });
 
 export const loginSchema = z.object({
   email: z.string().email('Email invalido').toLowerCase().trim(),
-  password: z.string().min(1, 'La contrasena es obligatoria'),
+  password: z.string().min(1, 'La contraseña es obligatoria'),
 });
 
 export const qrLoginSchema = z.object({

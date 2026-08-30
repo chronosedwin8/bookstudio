@@ -127,10 +127,10 @@ const SOFT_BACKGROUNDS = ['transparent', '#F7F4EC', '#EDF2F0', '#FBF3E4', '#EFEA
         </div>
 
         <div>
-          <label class="label" :for="`font-${element.id}`">Tipografia</label>
+          <label class="label" :for="`font-${element.id}`">Tipografía</label>
           <select :id="`font-${element.id}`" class="input" :value="text.fontFamily" @change="patchProperty('fontFamily', ($event.target as HTMLSelectElement).value)">
             <optgroup v-for="group in FONT_GROUPS" :key="group.label" :label="group.label">
-              <!-- Cada opcion se muestra con su propia tipografia para elegir de un vistazo. -->
+              <!-- Cada opción se muestra con su propia tipografía para elegir de un vistazo. -->
               <option
                 v-for="font in group.fonts"
                 :key="font"
@@ -173,7 +173,7 @@ const SOFT_BACKGROUNDS = ['transparent', '#F7F4EC', '#EDF2F0', '#FBF3E4', '#EFEA
         </div>
 
         <div>
-          <label class="label" :for="`size-${element.id}`">Tamano · {{ text.fontSize }}px</label>
+          <label class="label" :for="`size-${element.id}`">Tamaño · {{ text.fontSize }}px</label>
           <input
             :id="`size-${element.id}`"
             type="range" min="24" max="120" step="2"
@@ -181,7 +181,7 @@ const SOFT_BACKGROUNDS = ['transparent', '#F7F4EC', '#EDF2F0', '#FBF3E4', '#EFEA
             :value="text.fontSize"
             @change="patchProperty('fontSize', Number(($event.target as HTMLInputElement).value))"
           />
-          <p class="mt-0.5 text-[11px] text-slate-400">Minimo accesible: 24px</p>
+          <p class="mt-0.5 text-[11px] text-slate-400">Mínimo accesible: 24px</p>
         </div>
 
         <div class="grid grid-cols-2 gap-2">
@@ -253,7 +253,7 @@ const SOFT_BACKGROUNDS = ['transparent', '#F7F4EC', '#EDF2F0', '#FBF3E4', '#EFEA
         <QuestionInspector :question="question" @patch="emit('patch', { properties: $event })" />
       </section>
 
-      <!-- Formula matematica -->
+      <!-- Formula matemática -->
       <section v-if="element.type === 'math'">
         <label class="label" :for="`latex-${element.id}`">Formula (LaTeX)</label>
         <textarea
@@ -283,9 +283,9 @@ const SOFT_BACKGROUNDS = ['transparent', '#F7F4EC', '#EDF2F0', '#FBF3E4', '#EFEA
         </label>
       </section>
 
-      <!-- Grafica -->
+      <!-- Gráfica -->
       <section v-if="element.type === 'chart' && chart">
-        <h3 class="label">Grafica</h3>
+        <h3 class="label">Gráfica</h3>
         <ChartInspector :chart="chart" @patch="emit('patch', { properties: $event })" />
       </section>
 
@@ -303,7 +303,7 @@ const SOFT_BACKGROUNDS = ['transparent', '#F7F4EC', '#EDF2F0', '#FBF3E4', '#EFEA
         <p class="mt-1 text-[11px] leading-tight text-slate-400">
           {{ linkUrl
             ? 'Se abrira en una pestana nueva al pulsarlo en el modo lectura.'
-            : 'Pega una direccion para convertir este elemento en un enlace.' }}
+            : 'Pega una dirección para convertir este elemento en un enlace.' }}
         </p>
       </section>
 

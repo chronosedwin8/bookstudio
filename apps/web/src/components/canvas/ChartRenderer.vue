@@ -150,7 +150,7 @@ const formatValue = (value: number) => (Number.isInteger(value) ? String(value) 
 <template>
   <div class="chart-box h-full w-full overflow-hidden rounded-lg bg-white p-1 ring-1 ring-slate-200">
     <svg :viewBox="`0 0 ${W} ${H}`" class="h-full w-full" preserveAspectRatio="xMidYMid meet" role="img">
-      <title>{{ title || 'Grafica' }}</title>
+      <title>{{ title || 'Gráfica' }}</title>
 
       <text v-if="title" :x="W / 2" y="18" text-anchor="middle" class="chart-title" :fill="accentColor">
         {{ title }}
@@ -186,7 +186,7 @@ const formatValue = (value: number) => (Number.isInteger(value) ? String(value) 
         </g>
       </template>
 
-      <!-- Linea y area -->
+      <!-- Línea y área -->
       <template v-if="isLinear">
         <path v-if="chartType === 'area'" :d="areaPath" :fill="accentColor" fill-opacity="0.18" />
         <path :d="linePath" fill="none" :stroke="accentColor" stroke-width="2.5" stroke-linejoin="round" />

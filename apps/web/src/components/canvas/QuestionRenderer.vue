@@ -124,8 +124,8 @@ function optionState(id: string): 'correct' | 'wrong' | 'idle' {
 <template>
   <!--
     question-box declara un contexto de consulta y todo el interior se mide en
-    cqmin: asi el bloque se lee igual de bien ocupando media pagina que la pagina
-    entera. Con tamanos fijos en px se veia diminuto dentro del lienzo de 1000px.
+    cqmin: así el bloque se lee igual de bien ocupando media página que la página
+    entera. Con tamaños fijos en px se veia diminuto dentro del lienzo de 1000px.
   -->
   <div
     class="question-box relative flex h-full w-full flex-col overflow-hidden border-2 bg-white"

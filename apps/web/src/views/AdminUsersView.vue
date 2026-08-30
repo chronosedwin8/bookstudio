@@ -175,8 +175,8 @@ onMounted(async () => {
   <div class="mx-auto max-w-6xl px-4 py-8">
     <RouterLink :to="{ name: 'dashboard' }" class="text-sm text-brand-600 hover:underline">&larr; Mis libros</RouterLink>
 
-    <h1 class="mt-3 text-2xl font-black text-slate-900">Gestion de usuarios</h1>
-    <p class="mt-1 text-sm text-slate-500">Cuentas, roles y contrasenas de todo el centro.</p>
+    <h1 class="mt-3 text-2xl font-black text-slate-900">Gestión de usuarios</h1>
+    <p class="mt-1 text-sm text-slate-500">Cuentas, roles y contraseñas de todo el centro.</p>
 
     <div class="mt-4 space-y-2">
       <AlertMessage :message="error" />
@@ -215,21 +215,21 @@ onMounted(async () => {
         </select>
       </div>
       <div class="lg:col-span-2">
-        <label class="label" for="new-password">Contrasena inicial</label>
-        <input id="new-password" v-model="form.password" type="text" required minlength="8" class="input" placeholder="minimo 8 caracteres" />
+        <label class="label" for="new-password">Contraseña inicial</label>
+        <input id="new-password" v-model="form.password" type="text" required minlength="8" class="input" placeholder="mínimo 8 caracteres" />
       </div>
       <div class="flex items-end lg:col-span-3">
         <button type="submit" class="btn-primary" :disabled="busy">Crear cuenta</button>
       </div>
     </form>
 
-    <!-- Importacion desde Phidias -->
+    <!-- Importación desde Phidias -->
     <section v-if="phidiasEnabled" class="card mt-6 p-5">
       <div class="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 class="font-bold text-slate-800">Importar grupos desde Phidias</h2>
           <p class="text-xs text-slate-500">
-            Crea la biblioteca de la seccion y da de alta a sus alumnos con su correo institucional.
+            Crea la biblioteca de la sección y da de alta a sus alumnos con su correo institucional.
           </p>
         </div>
         <button type="button" class="btn-secondary" :disabled="loadingSections" @click="loadSections">
@@ -271,7 +271,7 @@ onMounted(async () => {
         </ul>
 
         <p v-if="!filteredSections.length" class="mt-3 text-sm text-slate-500">
-          Ninguna seccion coincide con "{{ sectionSearch }}".
+          Ninguna sección coincide con "{{ sectionSearch }}".
         </p>
       </template>
     </section>
@@ -332,7 +332,7 @@ onMounted(async () => {
               <td class="px-3 py-2">
                 <div class="flex flex-wrap gap-1">
                   <button type="button" class="btn-secondary px-2 py-1 text-xs" @click="resetPassword(user)">
-                    Contrasena
+                    Contraseña
                   </button>
                   <button
                     type="button"
@@ -354,7 +354,7 @@ onMounted(async () => {
 
       <div v-if="totalPages > 1" class="mt-4 flex items-center justify-center gap-3">
         <button type="button" class="btn-secondary" :disabled="page <= 1" @click="page -= 1">Anterior</button>
-        <span class="text-sm text-slate-600">Pagina {{ page }} de {{ totalPages }}</span>
+        <span class="text-sm text-slate-600">Página {{ page }} de {{ totalPages }}</span>
         <button type="button" class="btn-secondary" :disabled="page >= totalPages" @click="page += 1">Siguiente</button>
       </div>
     </section>

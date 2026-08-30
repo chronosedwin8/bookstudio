@@ -226,7 +226,7 @@ function onWheel(event: WheelEvent): void {
           :style="pageStyle"
           @pointerdown.self="onBackgroundPointerDown"
         >
-          <!-- Papel cebolla: guia semitransparente de la pagina anterior. -->
+          <!-- Papel cebolla: guia semitransparente de la página anterior. -->
           <div v-if="onionElements?.length" class="pointer-events-none absolute inset-0 opacity-25 grayscale">
             <div
               v-for="element in onionElements"
@@ -263,7 +263,7 @@ function onWheel(event: WheelEvent): void {
             @select-only="emit('selectOnly', $event)"
           />
 
-          <!-- Rectangulo de seleccion -->
+          <!-- Rectangulo de selección -->
           <div
             v-if="marquee"
             class="pointer-events-none absolute border-2 border-dashed border-brand-500 bg-brand-500/10"
@@ -283,7 +283,7 @@ function onWheel(event: WheelEvent): void {
             v-if="!elements.length"
             class="pointer-events-none absolute inset-0 grid place-items-center text-2xl text-slate-300"
           >
-            Pagina vacia
+            Página vacia
           </p>
         </div>
       </div>

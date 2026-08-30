@@ -83,8 +83,8 @@ onMounted(load);
           <h2 class="font-bold text-slate-900">Traer alumnos desde Phidias</h2>
           <p class="truncate text-xs text-slate-500">
             {{ libraryName
-              ? `Se anadiran a "${libraryName}"`
-              : 'Se creara una clase nueva con los alumnos de la seccion' }}
+              ? `Se añadirán a "${libraryName}"`
+              : 'Se creará una clase nueva con los alumnos de la sección' }}
           </p>
         </div>
         <button type="button" class="btn-secondary" @click="emit('close')">Cerrar</button>
@@ -105,8 +105,8 @@ onMounted(load);
             <span v-if="done.skipped">{{ done.skipped }} sin correo institucional se omitieron.</span>
           </p>
           <p class="mt-1 text-xs text-emerald-700">
-            Codigo de la clase: <strong class="font-mono tracking-widest">{{ done.codeInvite }}</strong>.
-            Entran con su correo y la contrasena inicial que fijaste en el servidor.
+            Código de la clase: <strong class="font-mono tracking-widest">{{ done.codeInvite }}</strong>.
+            Entran con su correo y la contraseña inicial que fijaste en el servidor.
           </p>
         </div>
 
@@ -144,7 +144,7 @@ onMounted(load);
           </section>
 
           <p v-if="!grouped.length" class="py-8 text-center text-sm text-slate-500">
-            Ninguna seccion coincide con "{{ search }}".
+            Ninguna sección coincide con "{{ search }}".
           </p>
         </template>
       </div>

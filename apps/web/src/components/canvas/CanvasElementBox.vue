@@ -258,7 +258,7 @@ function onRotateStart(event: PointerEvent): void {
       title="Elemento bloqueado"
     >🔒</span>
 
-    <!-- El enlace no es pulsable mientras se edita; aqui solo se avisa de que existe. -->
+    <!-- El enlace no es pulsable mientras se edita; aquí solo se avisa de que existe. -->
     <span
       v-if="element.properties.linkUrl"
       class="absolute -right-1.5 -top-1.5 grid h-5 w-5 place-items-center rounded-full bg-brand-600 text-[10px] text-white shadow"

@@ -53,7 +53,7 @@ async function runSearch(): Promise<void> {
             {{ onlyAnimated ? 'Buscar imagenes animadas' : 'Buscar imagenes libres' }}
           </h2>
           <p class="text-xs text-slate-500">
-            Openverse · solo licencias Creative Commons y dominio publico
+            Openverse · solo licencias Creative Commons y dominio público
           </p>
         </div>
         <button type="button" class="btn-secondary" @click="emit('close')">Cerrar</button>
@@ -74,7 +74,7 @@ async function runSearch(): Promise<void> {
       <div class="flex flex-wrap gap-x-5 gap-y-1 border-b border-slate-100 px-5 py-2 text-sm text-slate-700">
         <label class="flex items-center gap-2">
           <input v-model="withAttribution" type="checkbox" class="h-4 w-4 rounded" />
-          Insertar la atribucion del autor
+          Insertar la atribución del autor
         </label>
 
         <label class="flex items-center gap-2">

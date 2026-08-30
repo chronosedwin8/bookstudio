@@ -171,7 +171,7 @@ const ACCENTS = ['#7C3AED', '#0EA5E9', '#16A34A', '#EA580C', '#DB2777', '#334155
       <ul class="space-y-2">
         <li v-for="(option, index) in options" :key="option.id" class="rounded-lg border border-slate-200 p-2">
           <div class="flex items-start gap-2">
-            <!-- En las de ordenar no hay opcion correcta: lo es la posicion -->
+            <!-- En las de ordenar no hay opción correcta: lo es la posición -->
             <input
               v-if="question.kind !== 'order'"
               type="checkbox"
@@ -225,7 +225,7 @@ const ACCENTS = ['#7C3AED', '#0EA5E9', '#16A34A', '#EA580C', '#DB2777', '#334155
                 type="button"
                 class="px-1 text-xs text-red-500 hover:text-red-700 disabled:opacity-30"
                 :disabled="options.length <= 2"
-                aria-label="Eliminar opcion"
+                aria-label="Eliminar opción"
                 @click="removeOption(index)"
               >×</button>
             </span>

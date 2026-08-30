@@ -10,7 +10,8 @@
     "start": "node dist/server.js",
     "migrate": "tsx src/db/migrate.ts",
     "seed": "tsx src/db/seed.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:unit": "tsx src/lib/rate-limit.check.mts && tsx src/config/csp.check.mts"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

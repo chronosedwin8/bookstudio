@@ -26,7 +26,7 @@ const checkoutSchema = z.object({
 /** Alta y pago en un solo paso: el visitante no tiene cuenta todavia. */
 const signupCheckoutSchema = checkoutSchema.extend({
   fullName: z.string().min(2, 'Escribe tu nombre').max(100).trim(),
-  password: z.string().min(8, 'La contrasena debe tener al menos 8 caracteres').max(128),
+  password: z.string().min(8, 'La contraseña debe tener al menos 8 caracteres').max(128),
 });
 
 const autoRenewSchema = z.object({ autoRenew: z.boolean() });
@@ -75,7 +75,7 @@ billingRouter.post(
       dataId,
     );
     if (env.MP_WEBHOOK_SECRET && !firmaValida) {
-      throw HttpError.unauthorized('Firma de la notificacion no valida');
+      throw HttpError.unauthorized('Firma de la notificación no válida');
     }
 
     if (tipo === 'payment' && dataId) {

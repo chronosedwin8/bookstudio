@@ -52,7 +52,7 @@ const emit = defineEmits<{
 
         <p class="mt-4 text-center text-[11px] leading-tight text-slate-400">
           La respuesta correcta se comprueba en el servidor: al alumno le llegan las opciones
-          sin marcar, asi que no puede verla inspeccionando la pagina.
+          sin marcar, así que no puede verla inspeccionando la página.
         </p>
       </div>
     </div>

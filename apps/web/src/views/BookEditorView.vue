@@ -602,7 +602,7 @@ async function saveTitle(): Promise<void> {
           Plantillas
         </button>
 
-        <button type="button" class="btn-secondary" @click="showPages = true">Paginas</button>
+        <button type="button" class="btn-secondary" @click="showPages = true">Páginas</button>
 
         <button
           v-if="editor.canEdit"
@@ -614,7 +614,7 @@ async function saveTitle(): Promise<void> {
           <span
             v-if="editor.book.shareVisibility && editor.book.shareVisibility !== 'private'"
             class="rounded bg-emerald-100 px-1.5 text-[10px] font-bold text-emerald-700"
-          >{{ editor.book.shareVisibility === 'public' ? 'publico' : 'clase' }}</span>
+          >{{ editor.book.shareVisibility === 'public' ? 'público' : 'clase' }}</span>
         </button>
 
         <RouterLink :to="{ name: 'book-reader', params: { id: editor.book.id } }" class="btn-secondary">
@@ -632,7 +632,7 @@ async function saveTitle(): Promise<void> {
               class="block w-full px-3 py-2 text-left text-sm hover:bg-slate-50"
               @click="exportHtml"
             >
-              Pagina web (.html)
+              Página web (.html)
               <span class="block text-xs text-slate-500">Un solo archivo, se abre sin BookStudio</span>
             </button>
             <button
@@ -688,7 +688,7 @@ async function saveTitle(): Promise<void> {
               ❓ Pregunta
             </button>
             <button type="button" class="btn-secondary w-full justify-start" @click="dialog = 'chart'">
-              📊 Grafica
+              📊 Gráfica
             </button>
             <button type="button" class="btn-secondary w-full justify-start" @click="addMathElement">
               ∑ Formula
@@ -747,7 +747,7 @@ async function saveTitle(): Promise<void> {
               </button>
             </div>
             <button type="button" class="btn-secondary mt-1.5 w-full justify-start" @click="openStickers('shapes')">
-              ⬡ Mas formas
+              ⬡ Más formas
             </button>
             <button type="button" class="btn-secondary w-full justify-start" @click="openStickers('icons')">
               ✦ Iconos
@@ -794,7 +794,7 @@ async function saveTitle(): Promise<void> {
           </section>
 
           <section>
-            <h3 class="label">Fondo de pagina</h3>
+            <h3 class="label">Fondo de página</h3>
             <div class="flex flex-wrap gap-1.5">
               <button
                 v-for="color in PAGE_COLORS"
@@ -882,7 +882,7 @@ async function saveTitle(): Promise<void> {
             />
           </div>
 
-          <!-- Navegacion de paginas: miniatura real y reordenacion arrastrando -->
+          <!-- Navegacion de páginas: miniatura real y reordenacion arrastrando -->
           <nav
             class="flex items-center gap-2 overflow-x-auto border-t border-slate-300 bg-white px-3 py-2"
             @dragover.prevent
@@ -899,7 +899,7 @@ async function saveTitle(): Promise<void> {
                 dragIndex === index && 'opacity-40',
                 editor.canEdit && 'cursor-grab active:cursor-grabbing',
               ]"
-              :title="index === 0 ? 'Portada' : `Pagina ${page.pageNumber}`"
+              :title="index === 0 ? 'Portada' : `Página ${page.pageNumber}`"
               :draggable="editor.canEdit"
               @click="editor.goToPage(index)"
               @dragstart="onPageDragStart(index, $event)"
@@ -926,17 +926,17 @@ async function saveTitle(): Promise<void> {
               v-if="editor.canEdit"
               type="button"
               class="grid h-11 w-11 shrink-0 place-items-center rounded border-2 border-dashed border-slate-300 text-xl text-slate-400 hover:border-brand-500 hover:text-brand-600"
-              title="Nueva pagina"
-              aria-label="Nueva pagina"
+              title="Nueva página"
+              aria-label="Nueva página"
               @click="editor.addPage()"
             >+</button>
 
             <span
               v-if="auth.isTrial"
               class="ml-2 shrink-0 rounded bg-amber-100 px-2 py-1 text-[11px] font-semibold text-amber-800"
-            >Prueba: hasta 2 paginas</span>
+            >Prueba: hasta 2 páginas</span>
             <span v-else-if="editor.canEdit" class="ml-2 shrink-0 text-[11px] text-slate-400">
-              Arrastra las paginas para reordenarlas
+              Arrastra las páginas para reordenarlas
             </span>
           </nav>
         </div>

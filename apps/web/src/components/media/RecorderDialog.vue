@@ -202,7 +202,7 @@ const formatTime = (seconds: number) =>
 
           <template v-else>
             <button type="button" class="btn-secondary" @click="reset">Repetir</button>
-            <button type="button" class="btn-primary" @click="save">Insertar en la pagina</button>
+            <button type="button" class="btn-primary" @click="save">Insertar en la página</button>
           </template>
         </div>
       </div>

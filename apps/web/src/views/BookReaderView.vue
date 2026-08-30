@@ -154,7 +154,7 @@ onBeforeUnmount(() => {
       <RouterLink
         :to="auth.isAuthenticated ? { name: 'dashboard' } : { name: 'login' }"
         class="btn-secondary mt-4 inline-flex"
-      >{{ auth.isAuthenticated ? 'Volver' : 'Iniciar sesion' }}</RouterLink>
+      >{{ auth.isAuthenticated ? 'Volver' : 'Iniciar sesión' }}</RouterLink>
     </div>
 
     <template v-else-if="book">
@@ -178,7 +178,7 @@ onBeforeUnmount(() => {
             type="button"
             class="rounded px-2 py-1 text-sm text-slate-300 hover:bg-slate-700 hover:text-white"
             @click="showPages = !showPages"
-          >Paginas</button>
+          >Páginas</button>
           <button
             type="button"
             class="rounded px-2 py-1 text-sm text-slate-300 hover:bg-slate-700 hover:text-white"
@@ -198,19 +198,19 @@ onBeforeUnmount(() => {
         </div>
       </header>
 
-      <!-- Escenario: la pagina ocupa todo el hueco disponible -->
+      <!-- Escenario: la página ocupa todo el hueco disponible -->
       <!--
         Sin items-center (es decir, con el stretch por defecto) el escenario ocupa
         todo el alto de la fila. Con items-center su altura la marcaba su propio
         contenido, que se calcula a partir de esa altura: el bucle hacia crecer la
-        pagina sin limite hasta desbordar la ventana.
+        página sin limite hasta desbordar la ventana.
       -->
       <div class="relative flex min-h-0 flex-1 gap-2 px-2">
         <button
           type="button"
           class="z-10 grid h-16 w-12 shrink-0 self-center place-items-center rounded-lg text-3xl text-white/70 transition hover:bg-white/10 hover:text-white disabled:opacity-20 disabled:hover:bg-transparent"
           :disabled="isFirst"
-          aria-label="Pagina anterior"
+          aria-label="Página anterior"
           @click="turn(-1)"
         >‹</button>
 
@@ -238,21 +238,21 @@ onBeforeUnmount(() => {
           type="button"
           class="z-10 grid h-16 w-12 shrink-0 self-center place-items-center rounded-lg text-3xl text-white/70 transition hover:bg-white/10 hover:text-white disabled:opacity-20 disabled:hover:bg-transparent"
           :disabled="isLast"
-          aria-label="Pagina siguiente"
+          aria-label="Página siguiente"
           @click="turn(1)"
         >›</button>
       </div>
 
       <footer class="shrink-0 bg-slate-800 px-4 py-2 text-center text-sm text-slate-300">
         <span class="tabular-nums">
-          {{ index === 0 ? 'Portada' : `Pagina ${currentPage?.pageNumber}` }} de {{ pages.length }}
+          {{ index === 0 ? 'Portada' : `Página ${currentPage?.pageNumber}` }} de {{ pages.length }}
         </span>
         <span class="ml-3 hidden text-xs text-slate-500 sm:inline">
-          Usa las flechas del teclado para pasar de pagina
+          Usa las flechas del teclado para pasar de página
         </span>
       </footer>
 
-      <!-- Rejilla de paginas -->
+      <!-- Rejilla de páginas -->
       <div
         v-if="showPages"
         class="absolute inset-0 z-20 overflow-y-auto bg-slate-900/95 p-6"
@@ -260,7 +260,7 @@ onBeforeUnmount(() => {
       >
         <div class="mx-auto max-w-6xl">
           <div class="mb-4 flex items-center justify-between">
-            <h2 class="font-bold text-white">Paginas de "{{ book.title }}"</h2>
+            <h2 class="font-bold text-white">Páginas de "{{ book.title }}"</h2>
             <button type="button" class="btn-secondary" @click="showPages = false">Cerrar</button>
           </div>
 

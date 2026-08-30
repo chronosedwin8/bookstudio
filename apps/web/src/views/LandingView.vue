@@ -129,7 +129,7 @@ const NAV = [
               <span class="text-brand-600">crea, escucha y comparte</span>
             </h1>
             <p class="mt-4 max-w-xl text-lg text-slate-600">
-              Un lienzo libre donde caben texto, voz, video, mapas, graficas y preguntas que se
+              Un lienzo libre donde caben texto, voz, video, mapas, gráficas y preguntas que se
               corrigen solas. Sin instalar nada: se abre en el navegador y se empieza a trabajar.
             </p>
 
@@ -148,13 +148,13 @@ const NAV = [
             <p v-if="trialError" class="mt-3 text-sm text-red-600">{{ trialError }}</p>
 
             <ul class="mt-6 flex flex-wrap gap-x-6 gap-y-2 text-sm text-slate-500">
-              <li>✓ Sin cuenta ni tarjeta: 1 libro de 2 paginas</li>
+              <li>✓ Sin cuenta ni tarjeta: 1 libro de 2 páginas</li>
               <li>✓ Tus datos donde tu decidas</li>
-              <li>✓ Exportacion a PDF y web</li>
+              <li>✓ Exportación a PDF y web</li>
             </ul>
           </div>
 
-          <!-- Ilustracion: una pagina de ejemplo, dibujada con CSS -->
+          <!-- Ilustración: una página de ejemplo, dibujada con CSS -->
           <div class="relative mx-auto w-full max-w-md" aria-hidden="true">
             <div class="rotate-2 rounded-2xl border border-slate-200 bg-white p-4 shadow-2xl">
               <div class="mb-3 h-3 w-24 rounded bg-brand-200"></div>
@@ -184,7 +184,7 @@ const NAV = [
       <!-- Funciones -->
       <section id="funciones" class="mx-auto max-w-6xl px-4 py-16">
         <div class="mx-auto max-w-2xl text-center">
-          <h2 class="text-3xl font-black text-slate-900">Todo lo que cabe en una pagina</h2>
+          <h2 class="text-3xl font-black text-slate-900">Todo lo que cabe en una página</h2>
           <p class="mt-3 text-slate-600">
             No es un procesador de textos con adornos: es un lienzo donde cada elemento se coloca
             donde tiene sentido.
@@ -232,7 +232,7 @@ const NAV = [
       <section id="como" class="mx-auto max-w-6xl px-4 py-16">
         <div class="mx-auto max-w-2xl text-center">
           <h2 class="text-3xl font-black text-slate-900">Cuatro pasos y ya hay libro</h2>
-          <p class="mt-3 text-slate-600">Sin cursillo previo. La primera sesion de clase ya produce algo.</p>
+          <p class="mt-3 text-slate-600">Sin cursillo previo. La primera sesión de clase ya produce algo.</p>
         </div>
 
         <ol class="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
@@ -250,7 +250,7 @@ const NAV = [
       <section id="precios" class="bg-slate-900 py-16 text-white">
         <div class="mx-auto max-w-6xl px-4">
           <div class="mx-auto max-w-2xl text-center">
-            <h2 class="text-3xl font-black">Precios sin letra pequena</h2>
+            <h2 class="text-3xl font-black">Precios sin letra pequeña</h2>
             <p class="mt-3 text-slate-300">
               Tres planes, pago anual y factura a nombre de tu centro o empresa.
             </p>
@@ -268,7 +268,7 @@ const NAV = [
               <p
                 v-if="plan.highlight"
                 class="mb-3 inline-block rounded-full bg-brand-600 px-3 py-0.5 text-xs font-bold text-white"
-              >El mas elegido</p>
+              >El más elegido</p>
 
               <h3 class="text-lg font-black" :class="plan.highlight ? 'text-slate-900' : 'text-white'">
                 {{ plan.name }}
@@ -308,7 +308,7 @@ const NAV = [
           </div>
 
           <p class="mx-auto mt-8 max-w-2xl text-center text-xs text-slate-400">
-            Importes en pesos colombianos, sin IVA. Los centros publicos y las entidades sin animo de
+            Importes en pesos colombianos, sin IVA. Los centros públicos y las entidades sin animo de
             lucro tienen condiciones especiales: escribenos y lo vemos.
           </p>
         </div>

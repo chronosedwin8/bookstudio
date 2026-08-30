@@ -63,7 +63,7 @@ let cache: { at: number; data: PhidiasLevel[] } | null = null;
 /** Descarga (y cachea) el consolidado de matriculas. */
 async function fetchConsolidate(): Promise<PhidiasLevel[]> {
   if (!isPhidiasEnabled()) {
-    throw HttpError.badRequest('La integracion con Phidias no esta configurada en el servidor');
+    throw HttpError.badRequest('La integración con Phidias no está configurada en el servidor');
   }
   if (cache && Date.now() - cache.at < CACHE_TTL_MS) return cache.data;
 
@@ -148,7 +148,7 @@ async function findSection(sectionId: number): Promise<{ section: PhidiasSection
       }
     }
   }
-  throw HttpError.notFound('Esa seccion no existe en Phidias');
+  throw HttpError.notFound('Esa sección no existe en Phidias');
 }
 
 export interface ImportResult {

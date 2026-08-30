@@ -41,12 +41,12 @@ async function onSubmit(): Promise<void> {
 
       <form class="space-y-4" @submit.prevent="onSubmit">
         <div>
-          <label class="label" for="email">Correo electronico</label>
+          <label class="label" for="email">Correo electrónico</label>
           <input id="email" v-model.trim="email" type="email" required autocomplete="email" class="input" placeholder="profe@escuela.edu" />
         </div>
 
         <div>
-          <label class="label" for="password">Contrasena</label>
+          <label class="label" for="password">Contraseña</label>
           <input id="password" v-model="password" type="password" required autocomplete="current-password" class="input" placeholder="********" />
         </div>
 
@@ -61,7 +61,7 @@ async function onSubmit(): Promise<void> {
         <p class="text-slate-600">
           Eres alumno?
           <RouterLink :to="{ name: 'login-qr' }" class="font-semibold text-brand-600 hover:underline">
-            Entra con tu codigo QR
+            Entra con tu código QR
           </RouterLink>
         </p>
         <p class="text-slate-600">

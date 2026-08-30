@@ -108,7 +108,7 @@ onMounted(async () => {
     </header>
 
     <main class="mx-auto max-w-5xl px-4 py-10">
-      <h1 class="text-3xl font-black text-slate-900">Facturacion y licencia</h1>
+      <h1 class="text-3xl font-black text-slate-900">Facturación y licencia</h1>
 
       <div class="mt-4 space-y-2">
         <AlertMessage :message="error" />
@@ -119,7 +119,7 @@ onMounted(async () => {
 
       <template v-else>
         <p v-if="config && !config.enabled" class="card mt-6 p-6 text-sm text-amber-700">
-          Los pagos no estan configurados en este servidor. Escribenos y lo resolvemos.
+          Los pagos no están configurados en este servidor. Escribenos y lo resolvemos.
         </p>
 
         <!-- Licencia vigente -->
@@ -163,11 +163,11 @@ onMounted(async () => {
           </dl>
 
           <p v-if="porVencer" class="mt-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-800">
-            Tu licencia vence en {{ subscription.daysLeft }} dias.
-            {{ subscription.autoRenew ? 'Se renovara sola.' : 'Activa la renovacion o vuelve a contratarla.' }}
+            Tu licencia vence en {{ subscription.daysLeft }} días.
+            {{ subscription.autoRenew ? 'Se renovará sola.' : 'Activa la renovación o vuelve a contratarla.' }}
           </p>
 
-          <!-- Renovacion automatica -->
+          <!-- Renovación automática -->
           <label class="mt-5 flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 p-3">
             <input
               type="checkbox"
@@ -177,9 +177,9 @@ onMounted(async () => {
               @change="toggleAutoRenew(($event.target as HTMLInputElement).checked)"
             />
             <span>
-              <span class="block text-sm font-semibold text-slate-800">Renovar automaticamente cada ano</span>
+              <span class="block text-sm font-semibold text-slate-800">Renovar automáticamente cada año</span>
               <span class="block text-xs text-slate-500">
-                Se cobrara {{ cop.format(subscription.amountCop) }} al vencimiento. Puedes desactivarlo
+                Se cobrará {{ cop.format(subscription.amountCop) }} al vencimiento. Puedes desactivarlo
                 cuando quieras; la licencia sigue vigente hasta la fecha ya pagada.
               </span>
             </span>
@@ -195,7 +195,7 @@ onMounted(async () => {
             {{ subscription ? 'Renovar o cambiar de plan' : 'Contratar un plan' }}
           </h2>
           <p class="mt-1 text-sm text-slate-600">
-            El pago se hace en la pagina de contratacion, con tarjeta y en un solo paso.
+            El pago se hace en la página de contratación, con tarjeta y en un solo paso.
           </p>
           <RouterLink :to="{ name: 'checkout' }" class="btn-primary mt-4 inline-flex">
             {{ subscription ? 'Renovar ahora' : 'Ver planes y contratar' }}

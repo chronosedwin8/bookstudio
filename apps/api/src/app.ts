@@ -4,6 +4,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import helmet from 'helmet';
 import morgan from 'morgan';
+import { CSP_DIRECTIVES } from './config/csp.js';
 import { env, isProduction } from './config/env.js';
 import { pool } from './db/pool.js';
 import { asyncHandler } from './lib/async-handler.js';
@@ -43,7 +44,17 @@ export function createApp() {
 
   app.disable('x-powered-by');
   // crossOriginResourcePolicy relajado para que el frontend en otro puerto cargue /storage.
-  app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
+  app.use(
+    helmet({
+      crossOriginResourcePolicy: { policy: 'cross-origin' },
+      // La politica por defecto de helmet es default-src 'self', que en produccion
+      // (donde este mismo servidor sirve la web) bloquearia el SDK de Mercado Pago y
+      // dejaria el formulario de pago cargando para siempre. En desarrollo la web la
+      // sirve Vite, asi que la cabecera no llegaria a aplicarse: se desactiva para no
+      // romper las pruebas por HTTP en la red local.
+      contentSecurityPolicy: isProduction ? { directives: CSP_DIRECTIVES } : false,
+    }),
+  );
   app.use(cors({ origin: corsOrigin, credentials: true }));
   app.use(express.json({ limit: '90mb' }));
   app.use(morgan(isProduction ? 'combined' : 'dev'));
