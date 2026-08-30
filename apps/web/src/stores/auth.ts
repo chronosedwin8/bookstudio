@@ -63,6 +63,8 @@ export const useAuthStore = defineStore('auth', () => {
   return {
     user,
     token,
+    /** La usa la contratacion: el alta y el cobro devuelven la sesion ya hecha. */
+    applySession: setSession,
     initialized,
     isAuthenticated,
     isTeacher,

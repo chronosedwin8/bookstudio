@@ -5,6 +5,7 @@ import type {
   Book,
   CheckoutResult,
   Invoice,
+  SignupCheckoutResult,
   Subscription,
   TrialSession,
   ManagedUser,
@@ -314,19 +315,6 @@ export const phidiasApi = {
   },
 };
 
-export const contactApi = {
-  /** Envio publico: quien pide una demo todavia no tiene cuenta. */
-  async send(payload: {
-    name: string;
-    email: string;
-    organization?: string;
-    plan?: string;
-    people?: number;
-    message: string;
-  }) {
-    await http.post('/contact', payload);
-  },
-};
 
 export const billingApi = {
   async config() {
@@ -345,6 +333,25 @@ export const billingApi = {
    * El navegador envia el identificador del plan, nunca el importe: el precio lo
    * decide el servidor a partir de su propio catalogo.
    */
+  /** Alta y pago a la vez, para quien todavia no tiene cuenta. */
+  async signupCheckout(payload: {
+    fullName: string;
+    password: string;
+    plan: string;
+    token?: string;
+    paymentMethodId: string;
+    installments: number;
+    payerEmail: string;
+    payerDocType?: string;
+    payerDocNumber?: string;
+    organization?: string;
+    autoRenew: boolean;
+  }) {
+    const { data } = await http.post<SignupCheckoutResult>('/billing/signup-checkout', payload, {
+      timeout: 60_000,
+    });
+    return data;
+  },
   async checkout(payload: {
     plan: string;
     token?: string;

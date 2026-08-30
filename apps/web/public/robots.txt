@@ -1,7 +1,7 @@
 # BookStudio
 User-agent: *
 Allow: /$
-Allow: /clientes
+Allow: /contratar
 Allow: /login
 Allow: /register
 
@@ -12,6 +12,7 @@ Disallow: /books/
 Disallow: /leer/
 Disallow: /unirse/
 Disallow: /admin/
+Disallow: /clientes
 Disallow: /api/
 
 Sitemap: https://bookstudio.uk/sitemap.xml

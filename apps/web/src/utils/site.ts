@@ -97,10 +97,10 @@ export const FEATURES: Feature[] = [
   },
   {
     icon: '🔒',
-    title: 'Tus datos donde tu decidas',
+    title: 'Datos tratados con cuidado',
     description:
-      'Puede funcionar en la red local del centro, incluso sin internet. Sin seguimiento ' +
-      'publicitario ni cesion de datos a terceros.',
+      'Sin seguimiento publicitario ni cesion de datos a terceros. Los videos de YouTube se ' +
+      'sirven por el dominio sin cookies y solo se cargan si alguien los pulsa.',
   },
 ];
 
@@ -169,7 +169,7 @@ export const PLANS: Plan[] = [
       'Formacion inicial para el profesorado',
       'Soporte por correo en 48 horas',
     ],
-    cta: 'Pedir presupuesto',
+    cta: 'Contratar',
     highlight: true,
     note: 'Pago anual. Si superas los cupos, pasas al plan institucional.',
   },
@@ -183,22 +183,21 @@ export const PLANS: Plan[] = [
       'Usuarios ilimitados',
       'Dominio e imagen propios',
       'Integracion con vuestro directorio de usuarios',
-      'Instalacion en vuestros servidores si la necesitais',
       'Acuerdo de nivel de servicio y soporte prioritario',
       'Formacion y acompanamiento continuo',
     ],
-    cta: 'Hablemos',
-    note: 'Pago anual. Desarrollos especificos bajo acuerdo.',
+    cta: 'Contratar',
+    note: 'Pago anual.',
   },
 ];
 
 export const FAQS: Faq[] = [
   {
-    question: 'Como se factura?',
+    question: 'Como se contrata y como se factura?',
     answer:
-      'Todos los planes se pagan de forma anual. El plan Individual se anuncia por mes para que ' +
-      'sea facil de comparar, pero se cobra el ano completo. Emitimos factura a nombre del centro ' +
-      'o de la empresa.',
+      'Se paga con tarjeta en la propia web y la cuenta se crea en el mismo paso: al terminar ya ' +
+      'estas dentro del editor. Todos los planes son anuales; el Individual se anuncia por mes ' +
+      'solo para comparar, pero se cobra el ano completo. En el extracto aparece como BookStudio.',
   },
   {
     question: 'Que pasa si mi colegio supera los cupos del plan Escuela?',
@@ -208,24 +207,23 @@ export const FAQS: Faq[] = [
       'cobros sorpresa a mitad de ano.',
   },
   {
-    question: 'Puedo probarlo antes de contratar?',
+    question: 'Puedo probarlo antes de pagar?',
     answer:
-      'Si. Pide una demostracion desde el portal de clientes y montamos un entorno de prueba con ' +
-      'tus grupos reales, para que el profesorado lo use con contenido propio antes de decidir.',
+      'Si, y sin dar ningun dato. Pulsa "Probar sin registrarse" y entras al editor completo al ' +
+      'instante, con un limite de un libro y dos paginas. Si te convence, contratas en dos minutos.',
   },
   {
-    question: 'Funciona sin internet?',
+    question: 'Que necesito para empezar?',
     answer:
-      'Instalado en la red del centro, si. El editor, las tipografias, los iconos, las plantillas ' +
-      'y las graficas viven en el propio servidor. Solo necesitan conexion la busqueda de imagenes ' +
-      'y sonidos, los mapas y el contenido incrustado de terceros.',
+      'Un navegador y una conexion a internet. No hay que instalar nada ni pedirle nada al area de ' +
+      'sistemas del centro: se paga, se crea la cuenta en el mismo paso y ya se puede trabajar.',
   },
   {
     question: 'Donde se guardan los datos del alumnado?',
     answer:
-      'En el servidor que acordemos: el nuestro o el vuestro. No hay seguimiento publicitario ni ' +
-      'cesion de datos a terceros. Los videos de YouTube se sirven por el dominio sin cookies y ' +
-      'solo se cargan si alguien los pulsa.',
+      'En nuestros servidores, cifrados en transito y con copia de seguridad diaria. No hay ' +
+      'seguimiento publicitario ni cesion de datos a terceros. Los videos de YouTube se sirven por ' +
+      'el dominio sin cookies y solo se cargan si alguien los pulsa.',
   },
   {
     question: 'Que necesita el alumnado para entrar?',

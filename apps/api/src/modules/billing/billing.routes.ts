@@ -23,6 +23,12 @@ const checkoutSchema = z.object({
   autoRenew: z.boolean().default(false),
 });
 
+/** Alta y pago en un solo paso: el visitante no tiene cuenta todavia. */
+const signupCheckoutSchema = checkoutSchema.extend({
+  fullName: z.string().min(2, 'Escribe tu nombre').max(100).trim(),
+  password: z.string().min(8, 'La contrasena debe tener al menos 8 caracteres').max(128),
+});
+
 const autoRenewSchema = z.object({ autoRenew: z.boolean() });
 
 /**
@@ -77,6 +83,21 @@ billingRouter.post(
     }
 
     res.status(200).json({ received: true });
+  }),
+);
+
+/**
+ * Contratacion sin cuenta previa: crea el usuario y cobra en la misma operacion.
+ * Va antes de requireAuth porque quien entra aqui todavia no se ha registrado.
+ */
+billingRouter.post(
+  '/signup-checkout',
+  validate(signupCheckoutSchema),
+  asyncHandler(async (req, res) => {
+    if (checkoutLimiter.hit(req.ip ?? 'desconocida')) {
+      throw new HttpError(429, 'Demasiados intentos de pago. Espera unos minutos.', 'TOO_MANY_REQUESTS');
+    }
+    res.status(201).json(await service.signupAndCheckout(req.body));
   }),
 );
 

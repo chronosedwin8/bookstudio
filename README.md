@@ -22,7 +22,11 @@ npm run dev:web      # http://localhost:5173
 
 La configuración del backend vive en `apps/api/.env` (ver `.env.example`).
 
-## Despliegue en producción (Coolify)
+## Despliegue de la plataforma (Coolify)
+
+> Esto es para operar el servicio en `bookstudio.uk`, no una opción para clientes:
+> BookStudio se ofrece únicamente como servicio alojado.
+
 
 Un solo contenedor: la API compilada sirve también el frontend, así que no hace falta
 proxy delante ni un segundo servicio web.
@@ -45,6 +49,22 @@ definir **en Coolify, nunca en el repositorio**:
 El volumen `storage` guarda las fotos, audios y vídeos subidos: **sin él se pierden
 en cada redespliegue**. Las migraciones se aplican solas al arrancar y son
 idempotentes.
+
+## Cómo se contrata
+
+Venta directa, sin presupuestos ni demos intermediadas:
+
+1. **Probar sin registrarse** — botón de la portada. Editor completo al instante,
+   sin pedir dato alguno. Límite de 1 libro y 2 páginas.
+2. **Contratar** en `/contratar` — se elige plan, se crean las credenciales y se paga
+   en la misma pantalla.
+3. Al aprobarse el cobro, `POST /billing/signup-checkout` devuelve la sesión ya
+   hecha: **la persona entra directo al editor**, sin volver a identificarse.
+
+El orden importa: la cuenta se crea antes de cobrar (hace falta su id para el pago),
+y **si la tarjeta se rechaza la cuenta se borra**, de modo que el correo queda libre
+para reintentar y no se acumulan cuentas huérfanas. Si el pago queda en trámite
+(PSE, Efecty) la cuenta se conserva y el webhook la activa al confirmarse.
 
 ## Facturación y licencias
 
@@ -77,11 +97,7 @@ MP_WEBHOOK_SECRET=  # del panel de Mercado Pago, al dar de alta el webhook
 MP_WEBHOOK_URL=https://bookstudio.uk/api/billing/webhook
 ```
 
-## Probar sin registro
-
-Botón **Probar sin registrarse** en la portada: crea una cuenta temporal sin pedir
-ningún dato, con **todas** las herramientas del editor y un límite de **1 libro y
-2 páginas**.
+### Prueba sin registro
 
 Los cupos se comprueban en el servidor, no en la interfaz: la cuenta tiene rol de
 docente y podría llamar a la API directamente. Además queda **excluida de Phidias**
@@ -124,7 +140,9 @@ Las solicitudes del formulario se guardan en `contact_requests` y las lee un adm
 `GET /api/contact`. El envío es público, con un tope de 20 por IP y hora — generoso a
 propósito, porque en un colegio todo el personal sale por la misma IP pública.
 
-## Uso en la red local
+## Pruebas en la red local (desarrollo)
+
+> Herramienta de desarrollo, no una modalidad de despliegue para clientes.
 
 Para probar desde tablets, móviles u otros equipos de la misma red:
 

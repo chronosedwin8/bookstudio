@@ -1,5 +1,7 @@
+import bcrypt from 'bcryptjs';
 import { query, withTransaction } from '../../db/pool.js';
 import { HttpError } from '../../lib/http-error.js';
+import { signAccessToken } from '../../lib/tokens.js';
 import * as mp from './mercadopago.service.js';
 import { addOneYear, PLANS, type PlanId } from './plans.js';
 
@@ -280,6 +282,77 @@ export async function checkout(
       invoiceNumber,
     },
     authorizationUrl,
+  };
+}
+
+export interface SignupCheckoutInput extends CheckoutInput {
+  fullName: string;
+  password: string;
+}
+
+export interface SignupCheckoutResult extends CheckoutResult {
+  user: { id: string; email: string; fullName: string; role: 'teacher' };
+  /** Sesion lista: quien paga entra a la aplicacion sin volver a identificarse. */
+  sessionToken: string;
+}
+
+/** Estados en los que la cuenta se conserva aunque el cobro no este confirmado. */
+const KEEP_ACCOUNT = new Set(['approved', 'authorized', 'in_process', 'pending']);
+
+/**
+ * Alta y cobro en una sola operacion.
+ *
+ * El orden importa: primero se crea la cuenta (necesitamos su id para el pago), se
+ * cobra, y si la tarjeta se rechaza se borra la cuenta recien creada. Asi el correo
+ * queda libre para reintentar y no se acumulan cuentas huerfanas. Si el pago queda
+ * en tramite (PSE, Efecty) la cuenta se conserva y el webhook la activa despues.
+ */
+export async function signupAndCheckout(input: SignupCheckoutInput): Promise<SignupCheckoutResult> {
+  const plan = PLANS[input.plan];
+  if (!plan) throw HttpError.badRequest('Plan desconocido');
+
+  const email = input.payerEmail.trim().toLowerCase();
+
+  const existing = await query<{ id: string }>('SELECT id FROM users WHERE email = $1', [email]);
+  if (existing.rowCount) {
+    throw HttpError.conflict('Ya existe una cuenta con ese correo. Inicia sesion y paga desde tu panel.');
+  }
+
+  const passwordHash = await bcrypt.hash(input.password, 12);
+
+  const { rows } = await query<{ id: string; email: string; full_name: string }>(
+    `INSERT INTO users (email, password_hash, full_name, role)
+     VALUES ($1, $2, $3, 'teacher')
+     RETURNING id, email, full_name`,
+    [email, passwordHash, input.fullName.trim()],
+  );
+  const user = rows[0];
+
+  let result: CheckoutResult;
+  try {
+    result = await checkout(user.id, email, { ...input, payerEmail: email });
+  } catch (error) {
+    // El cobro fallo: se retira la cuenta para que pueda reintentar con el mismo correo.
+    await query('DELETE FROM users WHERE id = $1', [user.id]);
+    throw error;
+  }
+
+  if (!KEEP_ACCOUNT.has(result.payment.status)) {
+    await query('DELETE FROM users WHERE id = $1', [user.id]);
+    throw HttpError.badRequest(
+      `El pago fue rechazado (${result.payment.statusDetail}). No se creo la cuenta; puedes intentarlo de nuevo.`,
+    );
+  }
+
+  await query(
+    'INSERT INTO student_portfolios (student_id, name) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+    [user.id, `Portafolio de ${user.full_name}`],
+  );
+
+  return {
+    ...result,
+    user: { id: user.id, email: user.email, fullName: user.full_name, role: 'teacher' },
+    sessionToken: signAccessToken({ sub: user.id, role: 'teacher', kind: 'session' }),
   };
 }
 

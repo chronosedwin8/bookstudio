@@ -359,6 +359,11 @@ export interface CheckoutResult {
   authorizationUrl?: string;
 }
 
+export interface SignupCheckoutResult extends CheckoutResult {
+  user: { id: string; email: string; fullName: string; role: UserRole };
+  sessionToken: string;
+}
+
 export interface TrialSession {
   user: User;
   token: string;

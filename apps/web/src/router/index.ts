@@ -11,10 +11,13 @@ const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: true },
   },
   {
-    path: '/clientes',
-    name: 'customer-portal',
-    component: () => import('@/views/CustomerPortalView.vue'),
+    // Contratacion directa: plan, cuenta y pago en la misma pantalla.
+    path: '/contratar',
+    name: 'checkout',
+    component: () => import('@/views/CheckoutView.vue'),
   },
+  // El area de cliente es la facturacion; ya no hay portal de presupuestos.
+  { path: '/clientes', redirect: { name: 'billing' } },
   { path: '/login', name: 'login', component: () => import('@/views/LoginView.vue'), meta: { guestOnly: true } },
   {
     path: '/register',

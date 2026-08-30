@@ -98,9 +98,11 @@ const NAV = [
         </nav>
 
         <div class="flex items-center gap-2">
-          <RouterLink :to="{ name: 'customer-portal' }" class="hidden text-sm text-slate-600 hover:text-brand-700 sm:block">
-            Portal de clientes
-          </RouterLink>
+          <RouterLink
+            v-if="auth.isAuthenticated"
+            :to="{ name: 'billing' }"
+            class="hidden text-sm text-slate-600 hover:text-brand-700 sm:block"
+          >Mi licencia</RouterLink>
           <RouterLink
             v-if="auth.isAuthenticated"
             :to="{ name: 'dashboard' }"
@@ -108,7 +110,7 @@ const NAV = [
           >Ir a mis libros</RouterLink>
           <template v-else>
             <RouterLink :to="{ name: 'login' }" class="btn-secondary">Entrar</RouterLink>
-            <RouterLink :to="{ name: 'customer-portal' }" class="btn-primary">Solicitar demo</RouterLink>
+            <RouterLink :to="{ name: 'checkout' }" class="btn-primary">Contratar</RouterLink>
           </template>
         </div>
       </div>
@@ -120,7 +122,7 @@ const NAV = [
         <div class="mx-auto grid max-w-6xl items-center gap-10 px-4 py-16 lg:grid-cols-2 lg:py-24">
           <div>
             <p class="mb-3 inline-block rounded-full bg-brand-100 px-3 py-1 text-xs font-bold text-brand-700">
-              Para colegios y equipos profesionales · Tambien en tu propio servidor
+              Para colegios y equipos profesionales · Se usa desde el navegador
             </p>
             <h1 class="text-4xl font-black leading-tight text-slate-900 sm:text-5xl">
               Libros interactivos que el alumnado
@@ -128,7 +130,7 @@ const NAV = [
             </h1>
             <p class="mt-4 max-w-xl text-lg text-slate-600">
               Un lienzo libre donde caben texto, voz, video, mapas, graficas y preguntas que se
-              corrigen solas. Sin instalar nada: funciona en el navegador, tambien en la red del centro.
+              corrigen solas. Sin instalar nada: se abre en el navegador y se empieza a trabajar.
             </p>
 
             <div class="mt-7 flex flex-wrap gap-3">
@@ -138,8 +140,8 @@ const NAV = [
                 :disabled="startingTrial"
                 @click="startTrial"
               >{{ startingTrial ? 'Preparando...' : 'Probar sin registrarse' }}</button>
-              <RouterLink :to="{ name: 'customer-portal' }" class="btn-secondary px-6 py-3 text-base">
-                Solicitar una demostracion
+              <RouterLink :to="{ name: 'checkout' }" class="btn-secondary px-6 py-3 text-base">
+                Ver planes y contratar
               </RouterLink>
             </div>
 
@@ -296,7 +298,7 @@ const NAV = [
               </p>
 
               <RouterLink
-                :to="{ name: 'customer-portal' }"
+                :to="{ name: 'checkout', query: { plan: plan.id } }"
                 class="mt-6 block w-full rounded-lg px-4 py-2.5 text-center text-sm font-bold transition"
                 :class="plan.highlight
                   ? 'bg-brand-600 text-white hover:bg-brand-700'
@@ -343,10 +345,10 @@ const NAV = [
       <!-- Llamada final -->
       <section class="bg-brand-600 py-16 text-center text-white">
         <div class="mx-auto max-w-2xl px-4">
-          <h2 class="text-3xl font-black">Veamoslo con tus propios grupos</h2>
+          <h2 class="text-3xl font-black">Empieza esta misma tarde</h2>
           <p class="mt-3 text-brand-100">
-            Te montamos un entorno de prueba con tus cursos reales para que el profesorado lo use
-            antes de decidir nada.
+            Pruebalo sin dar ningun dato, y cuando te convenza contrata en dos minutos: pagas, se
+            crea tu cuenta y entras directo al editor.
           </p>
           <div class="mt-7 flex flex-wrap justify-center gap-3">
             <button
@@ -355,8 +357,8 @@ const NAV = [
               :disabled="startingTrial"
               @click="startTrial"
             >Probarlo ahora mismo</button>
-            <RouterLink :to="{ name: 'customer-portal' }" class="rounded-lg border border-white/60 px-6 py-3 font-bold hover:bg-white/10">
-              Solicitar una demostracion
+            <RouterLink :to="{ name: 'checkout' }" class="rounded-lg border border-white/60 px-6 py-3 font-bold hover:bg-white/10">
+              Contratar ahora
             </RouterLink>
           </div>
         </div>
@@ -385,7 +387,8 @@ const NAV = [
           <ul class="mt-2 space-y-1 text-sm text-slate-600">
             <li><RouterLink :to="{ name: 'login' }" class="hover:text-brand-700">Entrar a la plataforma</RouterLink></li>
             <li><RouterLink :to="{ name: 'login-qr' }" class="hover:text-brand-700">Acceso del alumnado con QR</RouterLink></li>
-            <li><RouterLink :to="{ name: 'customer-portal' }" class="hover:text-brand-700">Portal de clientes</RouterLink></li>
+            <li><RouterLink :to="{ name: 'checkout' }" class="hover:text-brand-700">Contratar</RouterLink></li>
+            <li><RouterLink :to="{ name: 'billing' }" class="hover:text-brand-700">Mi licencia y facturas</RouterLink></li>
           </ul>
         </nav>
       </div>

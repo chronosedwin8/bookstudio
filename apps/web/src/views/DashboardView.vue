@@ -160,7 +160,7 @@ async function removeLibrary(id: string, name: string): Promise<void> {
           Nada se pierde: crea una cuenta cuando quieras seguir.
         </p>
       </div>
-      <RouterLink :to="{ name: 'customer-portal' }" class="btn-primary shrink-0">
+      <RouterLink :to="{ name: 'checkout' }" class="btn-primary shrink-0">
         Ver planes
       </RouterLink>
     </div>

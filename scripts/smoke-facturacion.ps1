@@ -184,6 +184,59 @@ Test-Step 'El importe no se puede imponer desde el navegador' {
     }
 }
 
+# --- Alta y pago en un solo paso ---
+Write-Host "`n-- Contratacion directa --" -ForegroundColor Cyan
+
+Test-Step 'El alta con pago no exige sesion previa' {
+    # Sin token de tarjeta el cobro no prospera, pero la ruta debe ser publica:
+    # un 401 significaria que exige cuenta, que es justo lo que se quiere evitar.
+    try {
+        Invoke-RestMethod -Method POST -Uri "$base/billing/signup-checkout" -ContentType 'application/json' `
+            -Body (@{ fullName = 'Nueva Persona'; password = 'Secreto12345'; plan = 'individual'
+                      paymentMethodId = 'visa'; installments = 1
+                      payerEmail = "alta.$suffix@test.local"; autoRenew = $false } | ConvertTo-Json -Compress) | Out-Null
+        throw 'No deberia prosperar sin tarjeta'
+    } catch {
+        $code = $_.Exception.Response.StatusCode.value__
+        if ($code -eq 401) { throw 'La ruta exige sesion y deberia ser publica' }
+        if ($code -ne 400 -and $code -ne 502) { throw "Codigo inesperado: $code" }
+    }
+}
+
+Test-Step 'Un cobro fallido no deja la cuenta a medias' {
+    # Tras el intento anterior, ese correo debe seguir libre para reintentar.
+    $r = Invoke-Api POST '/auth/register' @{
+        email = "alta.$suffix@test.local"; password = 'Secreto12345'
+        fullName = 'Nueva Persona'; role = 'teacher'
+    }
+    if (-not $r.token) { throw 'El correo quedo ocupado por una cuenta huerfana' }
+}
+
+Test-Step 'Un correo ya registrado se rechaza -> 409' {
+    Assert-Status {
+        Invoke-RestMethod -Method POST -Uri "$base/billing/signup-checkout" -ContentType 'application/json' `
+            -Body (@{ fullName = 'Otra Vez'; password = 'Secreto12345'; plan = 'individual'
+                      paymentMethodId = 'visa'; installments = 1
+                      payerEmail = "alta.$suffix@test.local"; autoRenew = $false } | ConvertTo-Json -Compress)
+    } 409
+}
+
+Test-Step 'Una contrasena corta se rechaza -> 400' {
+    Assert-Status {
+        Invoke-RestMethod -Method POST -Uri "$base/billing/signup-checkout" -ContentType 'application/json' `
+            -Body (@{ fullName = 'Corta'; password = '123'; plan = 'individual'
+                      paymentMethodId = 'visa'; installments = 1
+                      payerEmail = "corta.$suffix@test.local"; autoRenew = $false } | ConvertTo-Json -Compress)
+    } 400
+}
+
+Test-Step 'Ya no existe el circuito de presupuestos -> 404' {
+    Assert-Status {
+        Invoke-RestMethod -Method POST -Uri "$base/contact" -ContentType 'application/json' `
+            -Body (@{ name = 'Alguien'; email = 'a@b.co'; message = 'Quiero un presupuesto por favor' } | ConvertTo-Json -Compress)
+    } 404
+}
+
 # --- Webhook ---
 Test-Step 'El webhook ignora los avisos que no son de pagos' {
     $r = Invoke-RestMethod -Method POST -Uri "$base/billing/webhook" -ContentType 'application/json' `

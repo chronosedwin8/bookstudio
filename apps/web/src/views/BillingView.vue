@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
+import { useRoute } from 'vue-router';
 import AlertMessage from '@/components/AlertMessage.vue';
 import { useSeo } from '@/composables/useSeo';
 import { billingApi } from '@/services/api';
 import { errorMessage } from '@/services/http';
-import { useAuthStore } from '@/stores/auth';
 import { SITE } from '@/utils/site';
-import type { BillingConfig, BillingPlan, Invoice, Subscription } from '@/types/api';
+import type { BillingConfig, Invoice, Subscription } from '@/types/api';
 
 /**
  * Facturacion y licencia.
@@ -15,13 +15,13 @@ import type { BillingConfig, BillingPlan, Invoice, Subscription } from '@/types/
  * Mercado Pago los convierte en un token de un solo uso dentro de un iframe suyo, y
  * es ese token lo que viaja. Tampoco se envia el importe: lo decide el servidor.
  */
-const auth = useAuthStore();
-
 useSeo({
   title: `Facturacion · ${SITE.name}`,
   description: 'Consulta tu licencia, sus fechas y tus facturas, y gestiona la renovacion automatica.',
   path: '/clientes/facturacion',
 });
+
+const route = useRoute();
 
 const config = ref<BillingConfig | null>(null);
 const subscription = ref<Subscription | null>(null);
@@ -86,117 +86,13 @@ async function toggleAutoRenew(value: boolean): Promise<void> {
   }
 }
 
-// --- Contratacion ---
-const chosenPlan = ref<BillingPlan | null>(null);
-const paying = ref(false);
-const form = ref({
-  organization: '',
-  payerEmail: '',
-  docType: 'CC',
-  docNumber: '',
-  installments: 1,
-  autoRenew: true,
+onMounted(async () => {
+  await load();
+  // Se llega aqui recien contratado desde /contratar.
+  if (route.query.bienvenida === '1' && subscription.value?.status === 'activa') {
+    notice.value = 'Bienvenido. Tu licencia esta activa y tu cuenta lista para usarse.';
+  }
 });
-
-/** Instancia del SDK de Mercado Pago; se carga solo al abrir el formulario. */
-let mercadoPago: unknown = null;
-const brickReady = ref(false);
-
-function loadSdk(): Promise<void> {
-  if (window.MercadoPago) return Promise.resolve();
-  return new Promise((resolve, reject) => {
-    const script = document.createElement('script');
-    script.src = 'https://sdk.mercadopago.com/js/v2';
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error('No se pudo cargar Mercado Pago'));
-    document.head.appendChild(script);
-  });
-}
-
-async function choosePlan(plan: BillingPlan): Promise<void> {
-  chosenPlan.value = plan;
-  error.value = null;
-  form.value.payerEmail = auth.user?.email ?? '';
-  brickReady.value = false;
-
-  try {
-    await loadSdk();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    mercadoPago = new (window as any).MercadoPago(config.value!.publicKey, { locale: 'es-CO' });
-    await mountBrick(plan);
-  } catch (err) {
-    error.value = errorMessage(err);
-  }
-}
-
-/**
- * Monta el formulario de tarjeta de Mercado Pago. Al enviarlo devuelve un token y
- * es lo unico que sale de aqui hacia nuestro servidor.
- */
-async function mountBrick(plan: BillingPlan): Promise<void> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const bricks = (mercadoPago as any).bricks();
-  const container = document.getElementById('mp-card-brick');
-  if (container) container.innerHTML = '';
-
-  await bricks.create('cardPayment', 'mp-card-brick', {
-    initialization: {
-      amount: plan.amountCop,
-      payer: { email: form.value.payerEmail || undefined },
-    },
-    customization: {
-      visual: { style: { theme: 'default' } },
-      paymentMethods: { maxInstallments: 12 },
-    },
-    callbacks: {
-      onReady: () => (brickReady.value = true),
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      onSubmit: async (data: any) => {
-        await pay(plan, data);
-      },
-      onError: (brickError: { message?: string }) => {
-        error.value = brickError?.message ?? 'No se pudo procesar el formulario de pago.';
-      },
-    },
-  });
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function pay(plan: BillingPlan, data: any): Promise<void> {
-  paying.value = true;
-  error.value = null;
-  notice.value = null;
-  try {
-    const result = await billingApi.checkout({
-      plan: plan.id,
-      token: data.token,
-      paymentMethodId: data.payment_method_id,
-      installments: Number(data.installments ?? 1),
-      payerEmail: data.payer?.email ?? form.value.payerEmail,
-      payerDocType: data.payer?.identification?.type ?? form.value.docType,
-      payerDocNumber: data.payer?.identification?.number ?? form.value.docNumber,
-      organization: form.value.organization || undefined,
-      autoRenew: form.value.autoRenew,
-    });
-
-    subscription.value = result.subscription;
-    invoices.value = await billingApi.invoices();
-    chosenPlan.value = null;
-
-    notice.value =
-      result.payment.status === 'approved'
-        ? `Pago aprobado. Factura ${result.payment.invoiceNumber}. Tu licencia esta activa.`
-        : `El pago quedo en estado "${result.payment.status}". Te avisaremos en cuanto se confirme.`;
-
-    if (result.authorizationUrl) window.open(result.authorizationUrl, '_blank', 'noopener');
-  } catch (err) {
-    error.value = errorMessage(err);
-  } finally {
-    paying.value = false;
-  }
-}
-
-onMounted(load);
 </script>
 
 <template>
@@ -290,58 +186,20 @@ onMounted(load);
           </label>
         </section>
 
-        <!-- Contratacion -->
-        <section v-if="config?.enabled && (!subscription || subscription.status !== 'activa')" class="mt-8">
+        <!-- Contratar o renovar -->
+        <section
+          v-if="config?.enabled && (!subscription || subscription.status !== 'activa')"
+          class="card mt-8 p-6"
+        >
           <h2 class="text-xl font-black text-slate-900">
             {{ subscription ? 'Renovar o cambiar de plan' : 'Contratar un plan' }}
           </h2>
-
-          <ul v-if="!chosenPlan" class="mt-4 grid gap-4 lg:grid-cols-3">
-            <li v-for="plan in config.plans" :key="plan.id" class="card flex flex-col p-5">
-              <h3 class="font-black text-slate-900">{{ plan.name }}</h3>
-              <p class="mt-1 text-sm text-slate-500">{{ plan.summary }}</p>
-              <p class="mt-4 text-2xl font-black text-slate-900">{{ cop.format(plan.amountCop) }}</p>
-              <p class="text-xs text-slate-500">
-                al ano<span v-if="plan.monthlyCop"> · equivale a {{ cop.format(plan.monthlyCop) }}/mes</span>
-              </p>
-              <button type="button" class="btn-primary mt-4" @click="choosePlan(plan)">Contratar</button>
-            </li>
-          </ul>
-
-          <!-- Formulario de pago -->
-          <div v-else class="card mt-4 p-6">
-            <div class="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <h3 class="font-black text-slate-900">Plan {{ chosenPlan.name }}</h3>
-                <p class="text-sm text-slate-500">{{ cop.format(chosenPlan.amountCop) }} al ano</p>
-              </div>
-              <button type="button" class="btn-secondary" @click="chosenPlan = null">Cambiar de plan</button>
-            </div>
-
-            <div class="mt-5 grid gap-4 sm:grid-cols-2">
-              <div>
-                <label class="label" for="b-org">Centro u organizacion (para la factura)</label>
-                <input id="b-org" v-model.trim="form.organization" type="text" class="input" />
-              </div>
-              <label class="flex items-start gap-2 pt-6 text-sm text-slate-700">
-                <input v-model="form.autoRenew" type="checkbox" class="mt-0.5 h-4 w-4 rounded" />
-                <span>Renovar automaticamente cada ano</span>
-              </label>
-            </div>
-
-            <div class="mt-5">
-              <p v-if="!brickReady" class="text-sm text-slate-500">Cargando el formulario seguro de pago...</p>
-              <!-- Mercado Pago monta aqui su formulario; la tarjeta no toca nuestro codigo -->
-              <div id="mp-card-brick"></div>
-            </div>
-
-            <p v-if="paying" class="mt-3 text-sm text-brand-600">Procesando el pago...</p>
-
-            <p class="mt-4 text-xs leading-relaxed text-slate-500">
-              El cobro lo procesa Mercado Pago. En tu extracto aparecera como
-              <strong>BookStudio</strong>. Los datos de la tarjeta no pasan por nuestros servidores.
-            </p>
-          </div>
+          <p class="mt-1 text-sm text-slate-600">
+            El pago se hace en la pagina de contratacion, con tarjeta y en un solo paso.
+          </p>
+          <RouterLink :to="{ name: 'checkout' }" class="btn-primary mt-4 inline-flex">
+            {{ subscription ? 'Renovar ahora' : 'Ver planes y contratar' }}
+          </RouterLink>
         </section>
 
         <!-- Facturas -->
