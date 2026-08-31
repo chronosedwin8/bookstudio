@@ -3,6 +3,7 @@ import type {
   AnswerResult,
   BillingConfig,
   Book,
+  BookActivity,
   CheckoutResult,
   Invoice,
   SignupCheckoutResult,
@@ -19,6 +20,8 @@ import type {
   ClassView,
   DistributeResult,
   ElementType,
+  Grade,
+  GradeBook,
   SourceGroup,
   GeocodeResult,
   LayoutFormat,
@@ -136,6 +139,11 @@ export const librariesApi = {
     );
     return data;
   },
+  /** Cuadricula de valoraciones de toda la clase. */
+  async gradebook(id: string) {
+    const { data } = await http.get<GradeBook>(`/libraries/${id}/gradebook`);
+    return data;
+  },
   async bulkDeleteBooks(id: string, bookIds: string[]) {
     const { data } = await http.post<{ deleted: number; ignored: number }>(
       `/libraries/${id}/books/bulk-delete`,
@@ -193,6 +201,36 @@ export const booksApi = {
   },
   async remove(id: string) {
     await http.delete(`/books/${id}`);
+  },
+
+  /** Valoraciones del libro. El alumno solo alcanza las de los suyos. */
+  async grades(bookId: string) {
+    const { data } = await http.get<{ grades: Grade[] }>(`/books/${bookId}/grades`);
+    return data.grades;
+  },
+  async addGrade(bookId: string, payload: { title: string; score: number; description: string }) {
+    const { data } = await http.post<{ grade: Grade }>(`/books/${bookId}/grades`, payload);
+    return data.grade;
+  },
+  async updateGrade(
+    bookId: string,
+    gradeId: string,
+    payload: { title: string; score: number; description: string },
+  ) {
+    const { data } = await http.patch<{ grade: Grade }>(`/books/${bookId}/grades/${gradeId}`, payload);
+    return data.grade;
+  },
+  async removeGrade(bookId: string, gradeId: string) {
+    await http.delete(`/books/${bookId}/grades/${gradeId}`);
+  },
+
+  /** Aviso de que se sigue trabajando; el servidor alarga la sesion en curso. */
+  async touchActivity(bookId: string) {
+    await http.post(`/books/${bookId}/activity`);
+  },
+  async activity(bookId: string) {
+    const { data } = await http.get<BookActivity>(`/books/${bookId}/activity`);
+    return data;
   },
 
   async setSharing(id: string, visibility: ShareVisibility) {

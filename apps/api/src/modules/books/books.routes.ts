@@ -10,6 +10,8 @@ import {
   createBookSchema,
   createPageSchema,
   elementParamsSchema,
+  gradeParamsSchema,
+  gradeSchema,
   listBooksQuerySchema,
   pageParamsSchema,
   questionParamsSchema,
@@ -19,6 +21,8 @@ import {
   updatePageSchema,
 } from './books.schemas.js';
 import * as service from './books.service.js';
+import * as grades from './grades.service.js';
+import * as activity from './activity.service.js';
 
 export const booksRouter = Router();
 
@@ -98,6 +102,66 @@ booksRouter.post(
       req.body.answer,
     );
     res.json({ result });
+  }),
+);
+
+/**
+ * Valoraciones. El alumno puede leer las de sus libros; ponerlas, cambiarlas o
+ * borrarlas es cosa del profesorado, y se comprueba en el servicio.
+ */
+booksRouter.get(
+  '/:id/grades',
+  validate(bookIdSchema, 'params'),
+  asyncHandler(async (req, res) => {
+    res.json({ grades: await grades.listGrades(req.params.id, req.auth!.userId) });
+  }),
+);
+
+booksRouter.post(
+  '/:id/grades',
+  validate(bookIdSchema, 'params'),
+  validate(gradeSchema),
+  asyncHandler(async (req, res) => {
+    res.status(201).json({ grade: await grades.createGrade(req.params.id, req.auth!.userId, req.body) });
+  }),
+);
+
+booksRouter.patch(
+  '/:id/grades/:gradeId',
+  validate(gradeParamsSchema, 'params'),
+  validate(gradeSchema),
+  asyncHandler(async (req, res) => {
+    const grade = await grades.updateGrade(req.params.id, req.params.gradeId, req.auth!.userId, req.body);
+    res.json({ grade });
+  }),
+);
+
+booksRouter.delete(
+  '/:id/grades/:gradeId',
+  validate(gradeParamsSchema, 'params'),
+  asyncHandler(async (req, res) => {
+    await grades.deleteGrade(req.params.id, req.params.gradeId, req.auth!.userId);
+    res.status(204).end();
+  }),
+);
+
+/**
+ * Bitacora. El aviso lo manda el editor cada minuto; la lectura la hace el docente
+ * (o el alumno sobre sus propios libros).
+ */
+booksRouter.post(
+  '/:id/activity',
+  validate(bookIdSchema, 'params'),
+  asyncHandler(async (req, res) => {
+    res.json(await activity.touch(req.params.id, req.auth!.userId));
+  }),
+);
+
+booksRouter.get(
+  '/:id/activity',
+  validate(bookIdSchema, 'params'),
+  asyncHandler(async (req, res) => {
+    res.json(await activity.listActivity(req.params.id, req.auth!.userId));
   }),
 );
 

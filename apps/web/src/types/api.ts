@@ -117,6 +117,60 @@ export interface Candidate {
   hasAccount: boolean;
 }
 
+/**
+ * Valoracion de un libro. Escala alemana: 1.0 es la mejor nota y 6.0 la peor, con un
+ * decimal. Ojo al pintarla: la media mas baja es la mejor.
+ */
+export interface Grade {
+  id: string;
+  bookId: string;
+  title: string;
+  score: number;
+  description: string;
+  teacherId: string | null;
+  teacherName: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface GradeBookEntry {
+  studentId: string;
+  studentName: string;
+  course: string | null;
+  average: number | null;
+  grades: Array<Grade & { bookTitle: string }>;
+}
+
+export interface GradeBook {
+  titles: string[];
+  students: GradeBookEntry[];
+  classAverage: number | null;
+}
+
+/** Una sesion de trabajo sobre un libro: desde que se abrio hasta el ultimo aviso. */
+export interface WorkSession {
+  id: string;
+  userId: string;
+  userName: string;
+  role: string;
+  startedAt: string;
+  lastSeenAt: string;
+  durationSeconds: number;
+}
+
+export interface BookActivity {
+  sessions: WorkSession[];
+  people: Array<{
+    userId: string;
+    userName: string;
+    role: string;
+    sessions: number;
+    totalSeconds: number;
+    firstAt: string;
+    lastAt: string;
+  }>;
+}
+
 export interface DistributeResult {
   delivered: number;
   created: number;

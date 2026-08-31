@@ -18,6 +18,7 @@ import {
 } from './libraries.schemas.js';
 import * as service from './libraries.service.js';
 import { distribute } from './distribute.service.js';
+import { getGradeBook } from '../books/grades.service.js';
 
 export const librariesRouter = Router();
 
@@ -145,6 +146,16 @@ librariesRouter.post(
   validate(addStudentsSchema),
   asyncHandler(async (req, res) => {
     res.status(201).json(await service.addStudents(req.params.id, req.auth!.userId, req.body.keys));
+  }),
+);
+
+/** Cuadricula de valoraciones de toda la clase. */
+librariesRouter.get(
+  '/:id/gradebook',
+  requireRole('teacher', 'admin'),
+  validate(libraryIdSchema, 'params'),
+  asyncHandler(async (req, res) => {
+    res.json(await getGradeBook(req.params.id, req.auth!.userId));
   }),
 );
 

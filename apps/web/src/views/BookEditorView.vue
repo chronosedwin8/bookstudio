@@ -9,6 +9,7 @@ import ShapeRenderer from '@/components/canvas/ShapeRenderer.vue';
 import PagePreview from '@/components/canvas/PagePreview.vue';
 import PagesPanel from '@/components/canvas/PagesPanel.vue';
 import ShareDialog from '@/components/ShareDialog.vue';
+import BookGradesPanel from '@/components/library/BookGradesPanel.vue';
 import DistributeDialog from '@/components/library/DistributeDialog.vue';
 import MapSearchDialog from '@/components/media/MapSearchDialog.vue';
 import EmbedDialog from '@/components/media/EmbedDialog.vue';
@@ -19,7 +20,7 @@ import SoundLibraryDialog from '@/components/media/SoundLibraryDialog.vue';
 import RecorderDialog from '@/components/media/RecorderDialog.vue';
 import StickerDialog from '@/components/media/StickerDialog.vue';
 import TemplateDialog from '@/components/media/TemplateDialog.vue';
-import { mediaApi } from '@/services/api';
+import { booksApi, mediaApi } from '@/services/api';
 import { errorMessage } from '@/services/http';
 import { useAuthStore } from '@/stores/auth';
 import { useEditorStore } from '@/stores/editor';
@@ -317,6 +318,7 @@ async function onPageDrop(index: number): Promise<void> {
 const showPages = ref(false);
 const showShare = ref(false);
 const showDistribute = ref(false);
+const showGrades = ref(false);
 const entregaAviso = ref<string | null>(null);
 
 function onDistributed(resultado: DistributeResult): void {
@@ -571,13 +573,43 @@ function onKeydown(event: KeyboardEvent): void {
   }
 }
 
+/**
+ * Bitacora: se avisa al abrir y luego cada minuto.
+ *
+ * El servidor alarga la sesion en curso en vez de guardar un evento por aviso, y la
+ * corta sola tras unos minutos de silencio. Por eso no hace falta avisar al cerrar:
+ * si el navegador se duerme o se cierra la pestana, el tiempo deja de contar solo.
+ *
+ * Solo se registra en libros de una biblioteca: los personales no llevan bitacora.
+ */
+const LATIDO_MS = 60_000;
+let latido: ReturnType<typeof setInterval> | undefined;
+
+async function avisarActividad(): Promise<void> {
+  const libro = editor.book;
+  if (!libro?.libraryId) return;
+  try {
+    await booksApi.touchActivity(libro.id);
+  } catch {
+    // Un aviso perdido no interrumpe el trabajo: el siguiente lo arregla.
+  }
+}
+
 onMounted(async () => {
   await editor.load(route.params.id as string);
   titleDraft.value = editor.book?.title ?? '';
   window.addEventListener('keydown', onKeydown);
+
+  if (editor.book?.libraryId) {
+    void avisarActividad();
+    latido = setInterval(() => void avisarActividad(), LATIDO_MS);
+  }
 });
 
-onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onKeydown);
+  clearInterval(latido);
+});
 
 async function saveTitle(): Promise<void> {
   if (titleDraft.value.trim() && titleDraft.value !== editor.book?.title) {
@@ -631,6 +663,16 @@ async function saveTitle(): Promise<void> {
             v-if="editor.book.shareVisibility && editor.book.shareVisibility !== 'private'"
             class="rounded bg-emerald-100 px-1.5 text-[10px] font-bold text-emerald-700"
           >{{ editor.book.shareVisibility === 'public' ? 'público' : 'clase' }}</span>
+        </button>
+
+        <!-- Valoraciones: el docente las pone, el alumno las lee -->
+        <button
+          v-if="editor.book.libraryId"
+          type="button"
+          class="btn-secondary"
+          @click="showGrades = true"
+        >
+          {{ editor.isManager ? 'Valorar' : 'Mis notas' }}
         </button>
 
         <!-- Entregar: solo tiene sentido con biblioteca y para quien la dirige -->
@@ -1000,6 +1042,14 @@ async function saveTitle(): Promise<void> {
       @close="showShare = false"
       @changed="editor.applyShareState($event)"
       @collaborative="editor.setCollaborative($event)"
+    />
+
+    <BookGradesPanel
+      v-if="showGrades && editor.book"
+      :book-id="editor.book.id"
+      :book-title="editor.book.title"
+      :can-grade="editor.isManager"
+      @close="showGrades = false"
     />
 
     <DistributeDialog

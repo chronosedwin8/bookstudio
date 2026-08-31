@@ -81,8 +81,31 @@ export const reorderPagesSchema = z.object({
   pageIds: z.array(z.string().uuid()).min(1).max(500),
 });
 
+/**
+ * Valoracion de un libro. La escala es la alemana: 1.0 lo mejor, 6.0 lo peor, con un
+ * decimal. El paso de 0.1 se comprueba en el servidor porque el campo del navegador
+ * se puede saltar.
+ */
+export const gradeSchema = z.object({
+  title: z.string().min(2, 'Ponle un titulo, por ejemplo "Revision 1"').max(120).trim(),
+  score: z.coerce
+    .number()
+    .min(1, 'La mejor nota es 1.0')
+    .max(6, 'La peor nota es 6.0')
+    // La columna es NUMERIC(2,1): un 2.55 se guardaria redondeado a 2.6 sin avisar.
+    // Se compara contra el decimo mas cercano con holgura, porque 1.1 * 10 no da
+    // exactamente 11 en coma flotante.
+    .refine((n) => Math.abs(n * 10 - Math.round(n * 10)) < 1e-9, 'Usa como mucho un decimal'),
+  description: z.string().max(4000).trim().default(''),
+});
+
+export const gradeParamsSchema = bookIdSchema.extend({
+  gradeId: z.string().uuid('El id de la valoracion debe ser un UUID'),
+});
+
 export type CreateBookInput = z.infer<typeof createBookSchema>;
 export type UpdateBookInput = z.infer<typeof updateBookSchema>;
 export type ListBooksQuery = z.infer<typeof listBooksQuerySchema>;
 export type CreatePageInput = z.infer<typeof createPageSchema>;
 export type UpdatePageInput = z.infer<typeof updatePageSchema>;
+export type GradeSchemaInput = z.infer<typeof gradeSchema>;

@@ -4,7 +4,10 @@ import { useRoute } from 'vue-router';
 import AlertMessage from '@/components/AlertMessage.vue';
 import BookCard from '@/components/BookCard.vue';
 import AddStudentsDialog from '@/components/library/AddStudentsDialog.vue';
+import BookActivityPanel from '@/components/library/BookActivityPanel.vue';
+import BookGradesPanel from '@/components/library/BookGradesPanel.vue';
 import DistributeDialog from '@/components/library/DistributeDialog.vue';
+import GradeBookGrid from '@/components/library/GradeBookGrid.vue';
 import PhidiasImportDialog from '@/components/media/PhidiasImportDialog.vue';
 import { authApi, booksApi, librariesApi, phidiasApi } from '@/services/api';
 import { errorMessage } from '@/services/http';
@@ -117,6 +120,11 @@ async function onStudentsAdded(resultado: { added: number; accountsCreated: numb
   notice.value = partes.join(' · ');
   await loadAll();
 }
+
+// --- Valoraciones y bitacora ---
+const valorando = ref<Book | null>(null);
+const bitacora = ref<Book | null>(null);
+const cuadricula = ref<InstanceType<typeof GradeBookGrid> | null>(null);
 
 // --- Borrado masivo de libros ---
 const seleccion = ref<Set<string>>(new Set());
@@ -536,9 +544,14 @@ function formatDate(value: string | null): string {
             @remove="removeBook($event.id, $event.title)"
           >
             <template v-if="isManager" #acciones>
-              <button type="button" class="btn-secondary w-full text-xs" @click="entregando = book">
-                Entregar a los alumnos
-              </button>
+              <div class="mt-2 flex gap-2">
+                <button type="button" class="btn-secondary flex-1 text-xs" @click="valorando = book">
+                  Valorar
+                </button>
+                <button type="button" class="btn-secondary flex-1 text-xs" @click="entregando = book">
+                  Entregar
+                </button>
+              </div>
             </template>
           </BookCard>
         </ul>
@@ -609,12 +622,23 @@ function formatDate(value: string | null): string {
                   <span v-else class="text-xs text-slate-400">Borrador</span>
                 </td>
                 <td class="px-4 py-2 text-right">
-                  <button
-                    v-if="isManager"
-                    type="button"
-                    class="text-xs font-semibold text-brand-600 hover:underline"
-                    @click="entregando = book"
-                  >Entregar</button>
+                  <span v-if="isManager" class="flex justify-end gap-3">
+                    <button
+                      type="button"
+                      class="text-xs font-semibold text-brand-600 hover:underline"
+                      @click="valorando = book"
+                    >Valorar</button>
+                    <button
+                      type="button"
+                      class="text-xs font-semibold text-brand-600 hover:underline"
+                      @click="bitacora = book"
+                    >Bitácora</button>
+                    <button
+                      type="button"
+                      class="text-xs font-semibold text-brand-600 hover:underline"
+                      @click="entregando = book"
+                    >Entregar</button>
+                  </span>
                 </td>
               </tr>
             </tbody>
@@ -724,6 +748,29 @@ function formatDate(value: string | null): string {
         @close="entregando = null"
         @done="onDistributed"
       />
+
+      <BookGradesPanel
+        v-if="valorando"
+        :book-id="valorando.id"
+        :book-title="valorando.title"
+        :student-name="valorando.creatorName ?? undefined"
+        :can-grade="isManager"
+        @close="valorando = null"
+        @changed="cuadricula?.recargar()"
+      />
+
+      <BookActivityPanel
+        v-if="bitacora"
+        :book-id="bitacora.id"
+        :book-title="bitacora.title"
+        :student-name="bitacora.creatorName ?? undefined"
+        @close="bitacora = null"
+      />
+
+      <!-- Cuadricula de valoraciones de toda la clase -->
+      <div v-if="isManager" class="mt-10">
+        <GradeBookGrid ref="cuadricula" :library-id="libraryId" />
+      </div>
 
       <!-- Alumnado inscrito: de que curso viene cada uno y como sacarlo de aqui -->
       <section v-if="isManager && members?.students.length" class="mt-8">
