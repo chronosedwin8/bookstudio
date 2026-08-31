@@ -34,6 +34,11 @@ const alcance = ref<Alcance>(props.currentPageId ? 'pagina' : 'libro');
 const pageId = ref<string>(props.currentPageId ?? props.pages?.[0]?.id ?? '');
 const titulo = ref(props.sourceTitle);
 
+/** Donde cae: en un libro propio de la entrega o dentro de los que ya tienen. */
+const destino = ref<'nuevo' | 'existentes'>('nuevo');
+/** Al principio o detras de lo que ya haya. */
+const posicion = ref<'inicio' | 'final'>('final');
+
 const members = ref<LibraryMembers | null>(null);
 const aTodos = ref(true);
 const selected = ref<Set<string>>(new Set());
@@ -76,7 +81,9 @@ async function enviar(): Promise<void> {
       sourceBookId: props.sourceBookId,
       pageId: alcance.value === 'pagina' ? pageId.value : undefined,
       studentIds: aTodos.value ? undefined : [...selected.value],
-      title: titulo.value.trim() || undefined,
+      title: destino.value === 'nuevo' ? titulo.value.trim() || undefined : undefined,
+      target: destino.value,
+      position: posicion.value,
     });
     emit('done', resultado);
   } catch (err) {
@@ -146,14 +153,59 @@ async function enviar(): Promise<void> {
           </select>
         </fieldset>
 
+        <!-- Dónde cae -->
+        <fieldset>
+          <legend class="text-xs font-bold uppercase tracking-wide text-slate-500">Dónde cae</legend>
+          <div class="mt-2 grid gap-2 sm:grid-cols-2">
+            <label
+              class="flex cursor-pointer items-start gap-3 rounded-lg border-2 p-3"
+              :class="destino === 'nuevo' ? 'border-brand-500 bg-brand-50' : 'border-slate-200'"
+            >
+              <input v-model="destino" type="radio" value="nuevo" class="mt-1 h-4 w-4" />
+              <span>
+                <span class="block text-sm font-semibold text-slate-800">En un libro propio de la entrega</span>
+                <span class="block text-xs text-slate-500">
+                  Cada alumno recibe un libro aparte. Si entregas más páginas de este material, se añaden a ese mismo.
+                </span>
+              </span>
+            </label>
+
+            <label
+              class="flex cursor-pointer items-start gap-3 rounded-lg border-2 p-3"
+              :class="destino === 'existentes' ? 'border-brand-500 bg-brand-50' : 'border-slate-200'"
+            >
+              <input v-model="destino" type="radio" value="existentes" class="mt-1 h-4 w-4" />
+              <span>
+                <span class="block text-sm font-semibold text-slate-800">Dentro de los libros que ya tienen</span>
+                <span class="block text-xs text-slate-500">
+                  Se inserta en todos los libros que cada alumno tenga en esta biblioteca.
+                </span>
+              </span>
+            </label>
+          </div>
+
+          <div class="mt-2 flex flex-wrap gap-4 rounded-lg bg-slate-50 p-3">
+            <label class="flex cursor-pointer items-center gap-2 text-sm text-slate-700">
+              <input v-model="posicion" type="radio" value="inicio" class="h-4 w-4" />
+              Al principio del libro
+            </label>
+            <label class="flex cursor-pointer items-center gap-2 text-sm text-slate-700">
+              <input v-model="posicion" type="radio" value="final" class="h-4 w-4" />
+              Detrás de lo que ya haya
+            </label>
+          </div>
+        </fieldset>
+
         <!-- Nombre del libro que recibirán -->
-        <div>
+        <div v-if="destino === 'nuevo'">
           <label class="label" for="entregar-titulo-libro">Título del libro que recibirán</label>
           <input id="entregar-titulo-libro" v-model="titulo" type="text" maxlength="255" class="input" />
-          <p class="mt-1 text-xs text-slate-500">
-            Si vuelves a entregar más páginas de este mismo material, caerán en este libro y no en uno nuevo.
-          </p>
         </div>
+
+        <p v-else class="rounded-lg bg-amber-50 p-3 text-sm text-amber-800">
+          A quien no tenga ningún libro propio en esta biblioteca no se le entrega nada: no hay dónde insertarlo.
+          Te diré cuántos han quedado así.
+        </p>
 
         <!-- A quién -->
         <fieldset>

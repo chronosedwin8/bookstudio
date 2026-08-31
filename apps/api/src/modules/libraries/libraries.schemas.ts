@@ -41,8 +41,19 @@ export const studentSearchSchema = z.object({
   limit: z.coerce.number().int().min(1).max(50).default(20),
 });
 
+/** Lista de un grupo concreto: un curso ya en BookStudio o una seccion de Phidias. */
+export const rosterSchema = z.object({
+  kind: z.enum(['library', 'phidias']),
+  id: z.string().min(1).max(60),
+});
+
+/**
+ * Alta de alumnado. Cada clave es un uuid (cuenta que ya existe) o "phidias:<id>"
+ * (alumno de una seccion al que todavia hay que crearle la cuenta). Admitir las dos
+ * en la misma peticion permite elegir cinco de 10A y seis de 10B de una sentada.
+ */
 export const addStudentsSchema = z.object({
-  studentIds: z.array(z.string().uuid()).min(1, 'Elige al menos un alumno').max(200),
+  keys: z.array(z.string().min(1).max(80)).min(1, 'Elige al menos un alumno').max(300),
 });
 
 /**
@@ -56,11 +67,26 @@ export const distributeSchema = z.object({
   pageId: z.string().uuid().optional(),
   studentIds: z.array(z.string().uuid()).max(500).optional(),
   title: z.string().min(1).max(255).trim().optional(),
+  /**
+   * Donde cae el material:
+   *   nuevo      -> un libro propio de la entrega, que se amplia en cada envio
+   *   existentes -> dentro de los libros que el alumno ya tiene en la biblioteca
+   */
+  target: z.enum(['nuevo', 'existentes']).default('nuevo'),
+  /** Al principio del libro o detras de lo que ya haya. */
+  position: z.enum(['inicio', 'final']).default('final'),
+});
+
+/** Borrado masivo: los ids se envian explicitos, nunca un "borra todo" a ciegas. */
+export const bulkDeleteBooksSchema = z.object({
+  bookIds: z.array(z.string().uuid()).min(1, 'Elige al menos un libro').max(500),
 });
 
 export type CreateLibraryInput = z.infer<typeof createLibrarySchema>;
 export type UpdateLibraryInput = z.infer<typeof updateLibrarySchema>;
 export type ClassViewQuery = z.infer<typeof classViewQuerySchema>;
 export type StudentSearchQuery = z.infer<typeof studentSearchSchema>;
+export type RosterQuery = z.infer<typeof rosterSchema>;
 export type AddStudentsInput = z.infer<typeof addStudentsSchema>;
 export type DistributeInput = z.infer<typeof distributeSchema>;
+export type BulkDeleteBooksInput = z.infer<typeof bulkDeleteBooksSchema>;

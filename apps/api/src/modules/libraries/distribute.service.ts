@@ -25,6 +25,10 @@ export interface DistributeResult {
   updated: number;
   /** Paginas copiadas en total. */
   pages: number;
+  /** Libros tocados en total: con "existentes" un alumno puede tener varios. */
+  books: number;
+  /** Alumnos sin ningun libro propio donde insertar, con destino "existentes". */
+  withoutBooks: number;
   /** Alumnos indicados que no pertenecen a la biblioteca. */
   skipped: number;
 }
@@ -80,17 +84,35 @@ async function cargarPaginas(sourceBookId: string, pageId?: string): Promise<Pag
   return rows;
 }
 
-/** Copia las paginas indicadas al final del libro destino, con sus elementos. */
+/**
+ * Copia las paginas indicadas dentro del libro destino, con sus elementos.
+ *
+ * Al insertar al principio hay que abrir hueco corriendo lo que ya hay. Se hace en
+ * dos pasos, pasando por numeros negativos, porque (book_id, page_number) es unico y
+ * un desplazamiento directo chocaria consigo mismo a mitad de camino.
+ */
 async function copiarPaginas(
   client: pg.PoolClient,
   paginas: PaginaRow[],
   destinoId: string,
+  posicion: 'inicio' | 'final',
 ): Promise<number> {
-  const { rows } = await client.query<{ siguiente: number }>(
-    'SELECT COALESCE(MAX(page_number), 0) + 1 AS siguiente FROM pages WHERE book_id = $1',
-    [destinoId],
-  );
-  let numero = Number(rows[0].siguiente);
+  let numero: number;
+
+  if (posicion === 'inicio') {
+    await client.query('UPDATE pages SET page_number = -page_number WHERE book_id = $1', [destinoId]);
+    await client.query(
+      'UPDATE pages SET page_number = -page_number + $2 WHERE book_id = $1 AND page_number < 0',
+      [destinoId, paginas.length],
+    );
+    numero = 1;
+  } else {
+    const { rows } = await client.query<{ siguiente: number }>(
+      'SELECT COALESCE(MAX(page_number), 0) + 1 AS siguiente FROM pages WHERE book_id = $1',
+      [destinoId],
+    );
+    numero = Number(rows[0].siguiente);
+  }
 
   for (const pagina of paginas) {
     const insertada = await client.query<{ id: string }>(
@@ -138,6 +160,8 @@ export async function distribute(
     created: 0,
     updated: 0,
     pages: 0,
+    books: 0,
+    withoutBooks: 0,
     skipped: (input.studentIds?.length ?? destinatarios.length) - destinatarios.length,
   };
 
@@ -145,30 +169,53 @@ export async function distribute(
     // Una transaccion por alumno: si una entrega falla, el resto ya repartido se
     // conserva y repetir la operacion completa los que faltan.
     await withTransaction(async (client) => {
-      const existente = await client.query<{ id: string }>(
-        `SELECT id FROM books
-         WHERE origin_book_id = $1 AND creator_id = $2 AND library_id = $3
-         LIMIT 1
-         FOR UPDATE`,
-        [fuente.id, alumnoId, libraryId],
-      );
+      const destinos: string[] = [];
 
-      let destinoId = existente.rows[0]?.id;
-
-      if (destinoId) {
-        resultado.updated += 1;
-      } else {
-        const creado = await client.query<{ id: string }>(
-          `INSERT INTO books (title, library_id, creator_id, layout_format, origin_book_id)
-           VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-          [titulo, libraryId, alumnoId, fuente.layout_format, fuente.id],
+      if (input.target === 'existentes') {
+        // Dentro de los libros que el alumno ya tiene en esta biblioteca. Se excluye
+        // el propio material de origen, que es del docente, y las copias de esta
+        // misma entrega, para no duplicarla sobre si misma.
+        const suyos = await client.query<{ id: string }>(
+          `SELECT id FROM books
+           WHERE library_id = $1 AND creator_id = $2 AND id <> $3
+           ORDER BY created_at
+           FOR UPDATE`,
+          [libraryId, alumnoId, fuente.id],
         );
-        destinoId = creado.rows[0].id;
-        resultado.created += 1;
+        destinos.push(...suyos.rows.map((r) => r.id));
+        if (!destinos.length) {
+          resultado.withoutBooks += 1;
+          return;
+        }
+        resultado.updated += destinos.length;
+      } else {
+        const existente = await client.query<{ id: string }>(
+          `SELECT id FROM books
+           WHERE origin_book_id = $1 AND creator_id = $2 AND library_id = $3
+           LIMIT 1
+           FOR UPDATE`,
+          [fuente.id, alumnoId, libraryId],
+        );
+
+        if (existente.rows[0]) {
+          destinos.push(existente.rows[0].id);
+          resultado.updated += 1;
+        } else {
+          const creado = await client.query<{ id: string }>(
+            `INSERT INTO books (title, library_id, creator_id, layout_format, origin_book_id)
+             VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+            [titulo, libraryId, alumnoId, fuente.layout_format, fuente.id],
+          );
+          destinos.push(creado.rows[0].id);
+          resultado.created += 1;
+        }
       }
 
-      resultado.pages += await copiarPaginas(client, paginas, destinoId);
-      await client.query('UPDATE books SET updated_at = CURRENT_TIMESTAMP WHERE id = $1', [destinoId]);
+      for (const destinoId of destinos) {
+        resultado.pages += await copiarPaginas(client, paginas, destinoId, input.position);
+        await client.query('UPDATE books SET updated_at = CURRENT_TIMESTAMP WHERE id = $1', [destinoId]);
+      }
+      resultado.books += destinos.length;
       resultado.delivered += 1;
     });
   }

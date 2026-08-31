@@ -1,9 +1,16 @@
 import { query, withTransaction } from '../../db/pool.js';
 import { HttpError } from '../../lib/http-error.js';
 import { generateInviteCode } from '../../lib/invite-code.js';
+import {
+  ensureStudentAccounts,
+  isPhidiasEnabled,
+  listSections,
+  listSectionStudents,
+} from '../phidias/phidias.service.js';
 import type {
   ClassViewQuery,
   CreateLibraryInput,
+  RosterQuery,
   StudentSearchQuery,
   UpdateLibraryInput,
 } from './libraries.schemas.js';
@@ -386,23 +393,166 @@ export async function searchStudents(
   }));
 }
 
-/** Suma alumnado ya existente a la biblioteca. Repetir a alguien no da error. */
+export interface GrupoOrigen {
+  kind: 'library' | 'phidias';
+  id: string;
+  name: string;
+  studentCount: number;
+}
+
+/**
+ * Grupos de los que se puede sacar alumnado: los cursos ya creados en BookStudio y
+ * las secciones del sistema academico.
+ *
+ * Es lo que permite armar una biblioteca con cinco de 10A y seis de 10B: se elige el
+ * grupo, se ve su lista y se marca a quien haga falta.
+ */
+export async function listSourceGroups(libraryId: string, userId: string): Promise<GrupoOrigen[]> {
+  await requireManager(libraryId, userId);
+
+  const { rows } = await query<{ id: string; name: string; total: string }>(
+    `SELECT l.id, l.name, COUNT(ls.student_id) AS total
+     FROM libraries l
+     LEFT JOIN library_students ls ON ls.library_id = l.id
+     WHERE l.id <> $1
+     GROUP BY l.id, l.name
+     HAVING COUNT(ls.student_id) > 0
+     ORDER BY l.name`,
+    [libraryId],
+  );
+
+  const grupos: GrupoOrigen[] = rows.map((r) => ({
+    kind: 'library',
+    id: r.id,
+    name: r.name,
+    studentCount: Number(r.total),
+  }));
+
+  // Las secciones de Phidias se suman si la integracion esta configurada. Que falle
+  // no debe dejar sin usar los grupos que ya estan en BookStudio.
+  if (isPhidiasEnabled()) {
+    try {
+      const secciones = await listSections();
+      for (const s of secciones) {
+        grupos.push({ kind: 'phidias', id: String(s.id), name: s.name, studentCount: s.studentCount });
+      }
+    } catch {
+      // Phidias caido: se sigue con lo local.
+    }
+  }
+
+  return grupos;
+}
+
+export interface Candidato {
+  /** uuid de la cuenta, o "phidias:<id>" si todavia hay que crearla. */
+  key: string;
+  fullName: string;
+  email: string | null;
+  alreadyIn: boolean;
+  hasAccount: boolean;
+}
+
+/** Lista completa de un grupo, marcando a quien ya esta en la biblioteca. */
+export async function getRoster(
+  libraryId: string,
+  userId: string,
+  { kind, id }: RosterQuery,
+): Promise<Candidato[]> {
+  await requireManager(libraryId, userId);
+
+  const yaEstan = await query<{ student_id: string; email: string | null }>(
+    `SELECT ls.student_id, u.email FROM library_students ls
+     JOIN users u ON u.id = ls.student_id
+     WHERE ls.library_id = $1`,
+    [libraryId],
+  );
+  const idsDentro = new Set(yaEstan.rows.map((r) => r.student_id));
+  const correosDentro = new Set(yaEstan.rows.map((r) => r.email).filter(Boolean));
+
+  if (kind === 'library') {
+    const { rows } = await query<{ id: string; full_name: string; email: string | null }>(
+      `SELECT u.id, u.full_name, u.email
+       FROM library_students ls JOIN users u ON u.id = ls.student_id
+       WHERE ls.library_id = $1 AND u.role = 'student' AND u.is_active
+       ORDER BY u.full_name`,
+      [id],
+    );
+    return rows.map((r) => ({
+      key: r.id,
+      fullName: r.full_name,
+      email: r.email,
+      alreadyIn: idsDentro.has(r.id),
+      hasAccount: true,
+    }));
+  }
+
+  const seccion = Number(id);
+  if (!Number.isInteger(seccion)) throw HttpError.badRequest('Seccion de Phidias no valida');
+
+  const alumnos = await listSectionStudents(seccion);
+  // La clave lleva la seccion: sin ella habria que recorrer todo el colegio para
+  // volver a encontrar al alumno cuando toque crearle la cuenta.
+  return alumnos.map((a) => ({
+    key: `phidias:${seccion}:${a.id}`,
+    fullName: a.fullName,
+    email: a.email,
+    alreadyIn: correosDentro.has(a.email),
+    hasAccount: a.hasAccount,
+  }));
+}
+
+/**
+ * Suma alumnado a la biblioteca. Las claves pueden ser uuid de cuentas existentes o
+ * "phidias:<id>", en cuyo caso la cuenta se crea antes. Repetir a alguien no da error.
+ */
 export async function addStudents(
   libraryId: string,
   userId: string,
-  studentIds: string[],
-): Promise<{ added: number; skipped: number }> {
+  keys: string[],
+): Promise<{ added: number; skipped: number; accountsCreated: number }> {
   await requireManager(libraryId, userId);
 
-  // Solo cuentas de alumnado: sin esto se podria colar a un docente como alumno y
-  // dejarle los permisos de la biblioteca al reves.
-  const validos = await query<{ id: string }>(
-    `SELECT id FROM users WHERE id = ANY($1::uuid[]) AND role = 'student' AND is_active`,
-    [studentIds],
-  );
-  if (!validos.rowCount) throw HttpError.badRequest('Ninguna de las cuentas indicadas es de alumnado activo');
+  const uuids: string[] = [];
+  // Agrupadas por seccion: una sola consulta a Phidias por grupo, no una por alumno.
+  const porSeccion = new Map<number, number[]>();
 
-  const ids = validos.rows.map((r) => r.id);
+  for (const clave of keys) {
+    if (!clave.startsWith('phidias:')) {
+      uuids.push(clave);
+      continue;
+    }
+    const [, seccion, alumno] = clave.split(':');
+    const idSeccion = Number(seccion);
+    const idAlumno = Number(alumno);
+    if (!Number.isInteger(idSeccion) || !Number.isInteger(idAlumno)) continue;
+    porSeccion.set(idSeccion, [...(porSeccion.get(idSeccion) ?? []), idAlumno]);
+  }
+
+  const ids: string[] = [];
+
+  if (uuids.length) {
+    // Solo cuentas de alumnado: sin esto se podria colar a un docente como alumno y
+    // dejarle los permisos de la biblioteca al reves.
+    const validos = await query<{ id: string }>(
+      `SELECT id FROM users WHERE id = ANY($1::uuid[]) AND role = 'student' AND is_active`,
+      [uuids],
+    );
+    ids.push(...validos.rows.map((r) => r.id));
+  }
+
+  let accountsCreated = 0;
+  if (porSeccion.size) {
+    const existiendo = await query<{ total: string }>("SELECT COUNT(*) AS total FROM users WHERE role = 'student'");
+    for (const [seccion, alumnos] of porSeccion) {
+      ids.push(...(await ensureStudentAccounts(seccion, alumnos)));
+    }
+    const ahora = await query<{ total: string }>("SELECT COUNT(*) AS total FROM users WHERE role = 'student'");
+    accountsCreated = Number(ahora.rows[0].total) - Number(existiendo.rows[0].total);
+  }
+
+  if (!ids.length) throw HttpError.badRequest('Ninguna de las cuentas indicadas es de alumnado activo');
+
   const { rowCount } = await query(
     `INSERT INTO library_students (library_id, student_id, added_by)
      SELECT $1, unnest($2::uuid[]), $3
@@ -410,7 +560,30 @@ export async function addStudents(
     [libraryId, ids, userId],
   );
 
-  return { added: rowCount ?? 0, skipped: studentIds.length - (rowCount ?? 0) };
+  return { added: rowCount ?? 0, skipped: keys.length - (rowCount ?? 0), accountsCreated };
+}
+
+/**
+ * Borra varios libros de la biblioteca de una vez.
+ *
+ * Los ids van explicitos: no existe un "borra todo" que pueda dispararse por error.
+ * Solo se tocan libros de esta biblioteca, y solo puede hacerlo quien la dirige.
+ * Las paginas y los elementos caen con el libro por las claves foraneas.
+ */
+export async function bulkDeleteBooks(
+  libraryId: string,
+  userId: string,
+  bookIds: string[],
+): Promise<{ deleted: number; ignored: number }> {
+  await requireManager(libraryId, userId);
+
+  const { rowCount } = await query(
+    'DELETE FROM books WHERE library_id = $1 AND id = ANY($2::uuid[])',
+    [libraryId, bookIds],
+  );
+
+  const borrados = rowCount ?? 0;
+  return { deleted: borrados, ignored: bookIds.length - borrados };
 }
 
 /**

@@ -104,10 +104,68 @@ const showPhidias = ref(false);
 // --- Alumnado de otros cursos ---
 const showAddStudents = ref(false);
 
-async function onStudentsAdded(count: number): Promise<void> {
+async function onStudentsAdded(resultado: { added: number; accountsCreated: number }): Promise<void> {
   showAddStudents.value = false;
-  notice.value = count === 1 ? 'Alumno añadido a la biblioteca' : `${count} alumnos añadidos a la biblioteca`;
+  const partes = [resultado.added === 1 ? '1 alumno añadido' : `${resultado.added} alumnos añadidos`];
+  if (resultado.accountsCreated) {
+    partes.push(
+      resultado.accountsCreated === 1
+        ? '1 cuenta creada'
+        : `${resultado.accountsCreated} cuentas creadas`,
+    );
+  }
+  notice.value = partes.join(' · ');
   await loadAll();
+}
+
+// --- Borrado masivo de libros ---
+const seleccion = ref<Set<string>>(new Set());
+const borrando = ref(false);
+
+const todosSeleccionados = computed(
+  () => librosOrdenados.value.length > 0 && librosOrdenados.value.every((b) => seleccion.value.has(b.id)),
+);
+
+function alternarLibro(id: string): void {
+  const copia = new Set(seleccion.value);
+  if (copia.has(id)) copia.delete(id);
+  else copia.add(id);
+  seleccion.value = copia;
+}
+
+function alternarTodos(): void {
+  seleccion.value = todosSeleccionados.value
+    ? new Set()
+    : new Set(librosOrdenados.value.map((b) => b.id));
+}
+
+/**
+ * Borra los libros marcados. Es destructivo y se lleva por delante trabajo de otras
+ * personas, asi que se pide escribir cuantos son: un "aceptar" a ciegas es demasiado
+ * facil de pulsar sin leer.
+ */
+async function borrarSeleccionados(): Promise<void> {
+  const cuantos = seleccion.value.size;
+  if (!cuantos) return;
+
+  const respuesta = window.prompt(
+    `Vas a borrar ${cuantos} ${cuantos === 1 ? 'libro' : 'libros'} con todas sus páginas. ` +
+      `No se puede deshacer.\n\nEscribe ${cuantos} para confirmar:`,
+  );
+  if (respuesta?.trim() !== String(cuantos)) return;
+
+  borrando.value = true;
+  error.value = null;
+  try {
+    const resultado = await librariesApi.bulkDeleteBooks(libraryId.value, [...seleccion.value]);
+    seleccion.value = new Set();
+    notice.value = `${resultado.deleted} ${resultado.deleted === 1 ? 'libro borrado' : 'libros borrados'}`;
+    await loadAll();
+  } catch (err) {
+    error.value = errorMessage(err);
+  } finally {
+    borrando.value = false;
+  }
 }
 
 async function removeStudent(studentId: string, nombre: string): Promise<void> {
@@ -143,6 +201,7 @@ function onDistributed(resultado: DistributeResult): void {
   const partes = [`${resultado.delivered} alumnos`, `${resultado.pages} páginas`];
   if (resultado.created) partes.push(`${resultado.created} libros nuevos`);
   if (resultado.updated) partes.push(`${resultado.updated} ampliados`);
+  if (resultado.withoutBooks) partes.push(`${resultado.withoutBooks} sin libro donde insertar`);
   notice.value = `Entregado: ${partes.join(' · ')}`;
   void loadAll();
 }
@@ -441,6 +500,26 @@ function formatDate(value: string | null): string {
           >
             <span aria-hidden="true">{{ opcion.icono }}</span> {{ opcion.label }}
           </button>
+
+          <!-- El borrado masivo vive en la vista de lista, que es donde se marca -->
+          <button
+            v-if="isManager && vista !== 'lista'"
+            type="button"
+            class="ml-auto text-xs font-semibold text-slate-500 hover:text-brand-700"
+            @click="vista = 'lista'"
+          >Seleccionar y borrar varios</button>
+
+          <div v-else-if="isManager" class="ml-auto flex items-center gap-3">
+            <span class="text-xs text-slate-500">
+              {{ seleccion.size ? `${seleccion.size} marcados` : 'Marca libros para borrarlos' }}
+            </span>
+            <button
+              type="button"
+              class="btn-danger px-3 py-1.5 text-xs"
+              :disabled="!seleccion.size || borrando"
+              @click="borrarSeleccionados"
+            >{{ borrando ? 'Borrando...' : 'Borrar marcados' }}</button>
+          </div>
         </div>
 
         <p v-if="!books.length" class="card p-8 text-center text-sm text-slate-500">
@@ -469,6 +548,15 @@ function formatDate(value: string | null): string {
           <table class="w-full text-sm">
             <thead class="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
               <tr>
+                <th v-if="isManager" class="w-10 px-4 py-2">
+                  <input
+                    type="checkbox"
+                    class="h-4 w-4 rounded"
+                    :checked="todosSeleccionados"
+                    aria-label="Marcar todos los libros"
+                    @change="alternarTodos"
+                  />
+                </th>
                 <th class="px-4 py-2">Título</th>
                 <th class="px-4 py-2">Autor</th>
                 <th class="px-4 py-2">Curso</th>
@@ -479,7 +567,21 @@ function formatDate(value: string | null): string {
               </tr>
             </thead>
             <tbody class="divide-y divide-slate-100">
-              <tr v-for="book in librosOrdenados" :key="book.id" class="hover:bg-slate-50">
+              <tr
+                v-for="book in librosOrdenados"
+                :key="book.id"
+                class="hover:bg-slate-50"
+                :class="seleccion.has(book.id) ? 'bg-red-50' : ''"
+              >
+                <td v-if="isManager" class="px-4 py-2">
+                  <input
+                    type="checkbox"
+                    class="h-4 w-4 rounded"
+                    :checked="seleccion.has(book.id)"
+                    :aria-label="`Marcar ${book.title}`"
+                    @change="alternarLibro(book.id)"
+                  />
+                </td>
                 <td class="px-4 py-2">
                   <RouterLink
                     :to="{ name: 'book-editor', params: { id: book.id } }"

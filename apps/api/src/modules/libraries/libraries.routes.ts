@@ -6,11 +6,13 @@ import { validate } from '../../middleware/validate.js';
 import {
   addStudentsSchema,
   addTeacherSchema,
+  bulkDeleteBooksSchema,
   classViewQuerySchema,
   createLibrarySchema,
   distributeSchema,
   joinLibrarySchema,
   libraryIdSchema,
+  rosterSchema,
   studentSearchSchema,
   updateLibrarySchema,
 } from './libraries.schemas.js';
@@ -103,7 +105,28 @@ librariesRouter.post(
   }),
 );
 
-/** Busca alumnado de cualquier curso para sumarlo a esta biblioteca. */
+/** Grupos de los que se puede sacar alumnado: cursos de BookStudio y de Phidias. */
+librariesRouter.get(
+  '/:id/sources',
+  requireRole('teacher', 'admin'),
+  validate(libraryIdSchema, 'params'),
+  asyncHandler(async (req, res) => {
+    res.json({ groups: await service.listSourceGroups(req.params.id, req.auth!.userId) });
+  }),
+);
+
+/** Lista completa de un grupo, para marcar a quien haga falta. */
+librariesRouter.get(
+  '/:id/roster',
+  requireRole('teacher', 'admin'),
+  validate(libraryIdSchema, 'params'),
+  validate(rosterSchema, 'query'),
+  asyncHandler(async (req, res) => {
+    res.json({ students: await service.getRoster(req.params.id, req.auth!.userId, req.query as never) });
+  }),
+);
+
+/** Busca alumnado por nombre o correo, cuando ya se sabe a quien se quiere. */
 librariesRouter.get(
   '/:id/students/search',
   requireRole('teacher', 'admin'),
@@ -121,7 +144,18 @@ librariesRouter.post(
   validate(libraryIdSchema, 'params'),
   validate(addStudentsSchema),
   asyncHandler(async (req, res) => {
-    res.status(201).json(await service.addStudents(req.params.id, req.auth!.userId, req.body.studentIds));
+    res.status(201).json(await service.addStudents(req.params.id, req.auth!.userId, req.body.keys));
+  }),
+);
+
+/** Borrado masivo de libros de la biblioteca. */
+librariesRouter.post(
+  '/:id/books/bulk-delete',
+  requireRole('teacher', 'admin'),
+  validate(libraryIdSchema, 'params'),
+  validate(bulkDeleteBooksSchema),
+  asyncHandler(async (req, res) => {
+    res.json(await service.bulkDeleteBooks(req.params.id, req.auth!.userId, req.body.bookIds));
   }),
 );
 

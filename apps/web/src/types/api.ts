@@ -100,11 +100,30 @@ export interface StudentSearchResult {
   alreadyIn: boolean;
 }
 
+/** Grupo del que sacar alumnado: un curso de BookStudio o una seccion de Phidias. */
+export interface SourceGroup {
+  kind: 'library' | 'phidias';
+  id: string;
+  name: string;
+  studentCount: number;
+}
+
+/** Alumno de un grupo. La clave es su uuid o "phidias:<seccion>:<alumno>". */
+export interface Candidate {
+  key: string;
+  fullName: string;
+  email: string | null;
+  alreadyIn: boolean;
+  hasAccount: boolean;
+}
+
 export interface DistributeResult {
   delivered: number;
   created: number;
   updated: number;
   pages: number;
+  books: number;
+  withoutBooks: number;
   skipped: number;
 }
 

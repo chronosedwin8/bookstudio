@@ -15,9 +15,11 @@ import type {
   UserStats,
   BookDetail,
   CanvasElement,
+  Candidate,
   ClassView,
   DistributeResult,
   ElementType,
+  SourceGroup,
   GeocodeResult,
   LayoutFormat,
   Library,
@@ -106,7 +108,19 @@ export const librariesApi = {
     await http.delete(`/libraries/${id}/teachers/${teacherId}`);
   },
 
-  /** Busca alumnado de cualquier curso para sumarlo a esta biblioteca. */
+  /** Grupos de los que se puede sacar alumnado: cursos de BookStudio y de Phidias. */
+  async sourceGroups(id: string) {
+    const { data } = await http.get<{ groups: SourceGroup[] }>(`/libraries/${id}/sources`);
+    return data.groups;
+  },
+  /** Lista completa de un grupo, para marcar a quien haga falta. */
+  async roster(id: string, kind: SourceGroup['kind'], groupId: string) {
+    const { data } = await http.get<{ students: Candidate[] }>(`/libraries/${id}/roster`, {
+      params: { kind, id: groupId },
+    });
+    return data.students;
+  },
+  /** Busca alumnado por nombre o correo, cuando ya se sabe a quien se quiere. */
   async searchStudents(id: string, q: string) {
     const { data } = await http.get<{ students: StudentSearchResult[] }>(
       `/libraries/${id}/students/search`,
@@ -114,10 +128,18 @@ export const librariesApi = {
     );
     return data.students;
   },
-  async addStudents(id: string, studentIds: string[]) {
-    const { data } = await http.post<{ added: number; skipped: number }>(
+  /** Las claves son uuid de cuentas existentes o "phidias:<seccion>:<alumno>". */
+  async addStudents(id: string, keys: string[]) {
+    const { data } = await http.post<{ added: number; skipped: number; accountsCreated: number }>(
       `/libraries/${id}/students`,
-      { studentIds },
+      { keys },
+    );
+    return data;
+  },
+  async bulkDeleteBooks(id: string, bookIds: string[]) {
+    const { data } = await http.post<{ deleted: number; ignored: number }>(
+      `/libraries/${id}/books/bulk-delete`,
+      { bookIds },
     );
     return data;
   },
@@ -128,7 +150,15 @@ export const librariesApi = {
   /** Entrega una pagina o un libro entero como copia propia de cada alumno. */
   async distribute(
     id: string,
-    payload: { sourceBookId: string; pageId?: string; studentIds?: string[]; title?: string },
+    payload: {
+      sourceBookId: string;
+      pageId?: string;
+      studentIds?: string[];
+      title?: string;
+      /** nuevo: libro propio de la entrega. existentes: dentro de los que ya tienen. */
+      target?: 'nuevo' | 'existentes';
+      position?: 'inicio' | 'final';
+    },
   ) {
     const { data } = await http.post<DistributeResult>(`/libraries/${id}/distribute`, payload);
     return data;

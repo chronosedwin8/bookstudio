@@ -151,6 +151,82 @@ async function findSection(sectionId: number): Promise<{ section: PhidiasSection
   throw HttpError.notFound('Esa sección no existe en Phidias');
 }
 
+export interface SectionStudent {
+  /** Id del alumno en Phidias. */
+  id: number;
+  fullName: string;
+  email: string;
+  /** Ya tiene cuenta en BookStudio. */
+  hasAccount: boolean;
+}
+
+/**
+ * Alumnado de una seccion, para poder elegir a unos pocos.
+ *
+ * Importar la seccion entera sirve cuando la biblioteca es la clase; para armar una
+ * biblioteca con cinco de 10A y seis de 10B hace falta ver la lista y marcar.
+ */
+export async function listSectionStudents(sectionId: number): Promise<SectionStudent[]> {
+  const { section } = await findSection(sectionId);
+  const students = (section.students ?? []).filter(hasEmail);
+  if (!students.length) return [];
+
+  const correos = students.map((s) => s.email!.trim().toLowerCase());
+  const { rows } = await query<{ email: string }>(
+    'SELECT email FROM users WHERE email = ANY($1::text[])',
+    [correos],
+  );
+  const conCuenta = new Set(rows.map((r) => r.email));
+
+  return students
+    .map((student) => ({
+      id: student.id,
+      fullName: fullNameOf(student),
+      email: student.email!.trim().toLowerCase(),
+      hasAccount: conCuenta.has(student.email!.trim().toLowerCase()),
+    }))
+    .sort((a, b) => a.fullName.localeCompare(b.fullName, 'es'));
+}
+
+/**
+ * Crea (o reutiliza) las cuentas de unos alumnos concretos de una seccion y devuelve
+ * sus ids. No inscribe en ninguna biblioteca: de eso se encarga quien llama.
+ */
+export async function ensureStudentAccounts(
+  sectionId: number,
+  studentIds: number[],
+): Promise<string[]> {
+  const { section } = await findSection(sectionId);
+  const pedidos = new Set(studentIds);
+  const students = (section.students ?? []).filter((s) => hasEmail(s) && pedidos.has(s.id));
+  if (!students.length) return [];
+
+  const passwordHash = await bcrypt.hash(env.PHIDIAS_DEFAULT_PASSWORD, 12);
+
+  return withTransaction(async (client) => {
+    const ids: string[] = [];
+    for (const student of students) {
+      const email = student.email!.trim().toLowerCase();
+      const upserted = await client.query<{ id: string }>(
+        `INSERT INTO users (email, password_hash, full_name, role, external_source, external_id)
+         VALUES ($1, $2, $3, 'student', 'phidias', $4)
+         ON CONFLICT (email) DO UPDATE SET full_name = EXCLUDED.full_name
+         RETURNING id`,
+        [email, passwordHash, fullNameOf(student).slice(0, 100), String(student.id)],
+      );
+      const id = upserted.rows[0].id;
+      ids.push(id);
+
+      await client.query(
+        `INSERT INTO student_portfolios (student_id, name)
+         VALUES ($1, $2) ON CONFLICT (student_id) DO NOTHING`,
+        [id, `Portafolio de ${fullNameOf(student)}`.slice(0, 150)],
+      );
+    }
+    return ids;
+  });
+}
+
 export interface ImportResult {
   libraryId: string;
   libraryName: string;
