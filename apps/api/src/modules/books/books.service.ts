@@ -65,6 +65,12 @@ export interface Book {
   shareToken?: string | null;
   /** Todo miembro de la biblioteca puede editarlo, no solo su autor. */
   collaborative?: boolean;
+  /** Nombre de quien lo creo; solo llega al listar, para agrupar por autor. */
+  creatorName?: string | null;
+  /** Curso del autor, tomado de su clase del sistema academico. */
+  creatorCourse?: string | null;
+  /** Material del que salio, si el libro llego por una entrega del docente. */
+  originBookId?: string | null;
 }
 
 export type ShareVisibility = 'private' | 'library' | 'public';
@@ -88,6 +94,9 @@ interface BookRow {
   share_visibility?: ShareVisibility;
   share_token?: string | null;
   collaborative?: boolean;
+  creator_name?: string | null;
+  creator_course?: string | null;
+  origin_book_id?: string | null;
 }
 
 const BOOK_COLUMNS = `id, title, library_id, portfolio_id, creator_id, layout_format,
@@ -115,6 +124,9 @@ function toBook(row: BookRow): Book {
         }
       : {}),
     ...(row.page_count !== undefined ? { pageCount: Number(row.page_count) } : {}),
+    ...(row.creator_name !== undefined ? { creatorName: row.creator_name } : {}),
+    ...(row.creator_course !== undefined ? { creatorCourse: row.creator_course } : {}),
+    ...(row.origin_book_id !== undefined ? { originBookId: row.origin_book_id } : {}),
     ...(row.cover_background !== undefined
       ? {
           cover: row.cover_background
@@ -144,11 +156,24 @@ interface BookContext {
 /** Resuelve el libro junto a los permisos efectivos derivados de la biblioteca y del rol. */
 async function loadContext(bookId: string, userId: string): Promise<BookContext> {
   // LEFT JOIN: los libros personales no tienen biblioteca de la que heredar permisos.
-  const { rows } = await query<BookRow & { student_editable: boolean; student_publishable: boolean }>(
+  const { rows } = await query<
+    BookRow & {
+      student_editable: boolean;
+      student_publishable: boolean;
+      students_see_peers: boolean;
+      creator_is_manager: boolean;
+    }
+  >(
     `SELECT b.id, b.title, b.library_id, b.portfolio_id, b.creator_id, b.layout_format,
             b.is_template, b.is_published, b.publishing_settings, b.created_at, b.updated_at,
             b.share_visibility, b.share_token, b.collaborative,
-            l.student_editable, l.student_publishable
+            l.student_editable, l.student_publishable, l.students_see_peers,
+            -- El material que reparte el profesorado se ve siempre, aunque el resto
+            -- de creaciones esten ocultas entre companeros.
+            (b.creator_id = l.owner_id OR EXISTS (
+               SELECT 1 FROM library_teachers lt
+               WHERE lt.library_id = l.id AND lt.teacher_id = b.creator_id
+             )) AS creator_is_manager
      FROM books b LEFT JOIN libraries l ON l.id = b.library_id
      WHERE b.id = $1`,
     [bookId],
@@ -171,6 +196,15 @@ async function loadContext(bookId: string, userId: string): Promise<BookContext>
   const isOwner = row.creator_id === userId;
   // Libro colaborativo: cualquier miembro de la biblioteca aporta contenido.
   const collaborator = row.collaborative === true && row.student_editable;
+
+  // Con la visibilidad entre companeros apagada, un alumno solo alcanza lo suyo, lo
+  // que reparte el profesorado y lo que se hace en comun. Se comprueba aqui, y no
+  // solo al listar, porque si no bastaria con conocer la URL del libro de otro.
+  const puedeVer =
+    isManager || isOwner || row.students_see_peers !== false || row.creator_is_manager || row.collaborative === true;
+  if (!puedeVer) {
+    throw HttpError.forbidden('En esta biblioteca no se pueden ver las creaciones de otros companeros');
+  }
 
   return {
     book: row,
@@ -320,6 +354,16 @@ export async function listBooks(userId: string, filters: ListBooksQuery): Promis
          OR EXISTS (SELECT 1 FROM library_students ls WHERE ls.library_id = l.id AND ls.student_id = $1)
       ))
       OR (b.library_id IS NULL AND b.creator_id = $1))`,
+    // Visibilidad entre companeros: si la biblioteca la tiene apagada y quien mira es
+    // alumno, solo salen sus libros, los del profesorado y los colaborativos.
+    `(b.library_id IS NULL
+      OR l.students_see_peers
+      OR b.creator_id = $1
+      OR b.collaborative
+      OR l.owner_id = $1
+      OR EXISTS (SELECT 1 FROM library_teachers lt WHERE lt.library_id = l.id AND lt.teacher_id = $1)
+      OR b.creator_id = l.owner_id
+      OR EXISTS (SELECT 1 FROM library_teachers lt2 WHERE lt2.library_id = l.id AND lt2.teacher_id = b.creator_id))`,
   ];
 
   if (filters.scope === 'personal') conditions.push('b.library_id IS NULL');
@@ -342,13 +386,25 @@ export async function listBooks(userId: string, filters: ListBooksQuery): Promis
   const { rows } = await query<BookRow>(
     `SELECT b.id, b.title, b.library_id, b.portfolio_id, b.creator_id, b.layout_format,
             b.is_template, b.is_published, b.publishing_settings, b.created_at, b.updated_at,
-            b.share_visibility, b.share_token, b.collaborative,
+            b.share_visibility, b.share_token, b.collaborative, b.origin_book_id,
             (SELECT COUNT(*) FROM pages p WHERE p.book_id = b.id) AS page_count,
+            autor.full_name AS creator_name,
+            -- El curso del autor: su clase traida del sistema academico (K10A y
+            -- similares). Una biblioteca puede mezclar grupos, y sin esto no se
+            -- distingue de que curso es cada trabajo.
+            (SELECT lc.name
+               FROM library_students lsc
+               JOIN libraries lc ON lc.id = lsc.library_id
+              WHERE lsc.student_id = b.creator_id
+                AND lc.external_source IS NOT NULL
+              ORDER BY lc.name
+              LIMIT 1) AS creator_course,
             cover.background_color AS cover_background,
             cover.background_pattern AS cover_pattern,
             elems.elements AS cover_elements
      FROM books b
      LEFT JOIN libraries l ON l.id = b.library_id
+     LEFT JOIN users autor ON autor.id = b.creator_id
      LEFT JOIN LATERAL (
        SELECT p.id, p.background_color, p.background_pattern
        FROM pages p WHERE p.book_id = b.id ORDER BY p.page_number LIMIT 1

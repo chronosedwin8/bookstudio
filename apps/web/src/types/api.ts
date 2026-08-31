@@ -37,6 +37,8 @@ export interface Library {
   studentEditable: boolean;
   studentPublishable: boolean;
   commentsEnabled: boolean;
+  /** Si esta apagado, cada alumno solo ve lo suyo y lo que reparte el docente. */
+  studentsSeePeers: boolean;
   createdAt: string;
 }
 
@@ -69,16 +71,41 @@ export interface ClassView {
   totalPages: number;
 }
 
+export interface LibraryMember {
+  id: string;
+  fullName: string;
+  email: string;
+  /** Clase de origen del sistema academico; null si no viene de ninguna. */
+  course?: string | null;
+}
+
 export interface LibraryMembers {
-  owner: { id: string; fullName: string; email: string };
-  teachers: Array<{ id: string; fullName: string; email: string }>;
-  students: Array<{ id: string; fullName: string; email: string }>;
+  owner: LibraryMember;
+  teachers: LibraryMember[];
+  students: LibraryMember[];
 }
 
 export interface StudentCredential {
   user: User;
   qrToken: string;
   qrDataUrl: string;
+}
+
+/** Alumno encontrado al buscar por el centro, con los cursos en los que ya esta. */
+export interface StudentSearchResult {
+  id: string;
+  fullName: string;
+  email: string | null;
+  libraries: string[];
+  alreadyIn: boolean;
+}
+
+export interface DistributeResult {
+  delivered: number;
+  created: number;
+  updated: number;
+  pages: number;
+  skipped: number;
 }
 
 export type LayoutFormat = 'portrait' | 'square' | 'landscape';
@@ -252,6 +279,12 @@ export interface Book {
   shareVisibility?: ShareVisibility;
   shareToken?: string | null;
   collaborative?: boolean;
+  /** Nombre de quien lo creo; llega al listar, para agrupar por autor. */
+  creatorName?: string | null;
+  /** Curso del autor, tomado de su clase del sistema academico. */
+  creatorCourse?: string | null;
+  /** Material del que salio, si llego por una entrega del docente. */
+  originBookId?: string | null;
 }
 
 export type ShareVisibility = 'private' | 'library' | 'public';

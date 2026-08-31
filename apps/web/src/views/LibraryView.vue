@@ -3,11 +3,22 @@ import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import AlertMessage from '@/components/AlertMessage.vue';
 import BookCard from '@/components/BookCard.vue';
+import AddStudentsDialog from '@/components/library/AddStudentsDialog.vue';
+import DistributeDialog from '@/components/library/DistributeDialog.vue';
 import PhidiasImportDialog from '@/components/media/PhidiasImportDialog.vue';
 import { authApi, booksApi, librariesApi, phidiasApi } from '@/services/api';
 import { errorMessage } from '@/services/http';
 import { useAuthStore } from '@/stores/auth';
-import type { Book, ClassView, LayoutFormat, Library, LibraryMembers, StudentCredential } from '@/types/api';
+import type {
+  Book,
+  ClassView,
+  DistributeResult,
+  LayoutFormat,
+  Library,
+  LibraryMembers,
+  Page,
+  StudentCredential,
+} from '@/types/api';
 
 const route = useRoute();
 const auth = useAuthStore();
@@ -51,9 +62,90 @@ async function copyJoinUrl(): Promise<void> {
   }
 }
 
+// --- Vistas del contenido ---
+// La cuadricula de portadas es bonita pero no responde a "quien no ha entregado" ni
+// a "que hay aqui dentro". Cada vista contesta una pregunta distinta.
+type VistaLibros = 'portadas' | 'lista' | 'autor';
+const vista = ref<VistaLibros>('portadas');
+
+const VISTAS: Array<{ id: VistaLibros; label: string; icono: string; ayuda: string }> = [
+  { id: 'portadas', label: 'Portadas', icono: '▦', ayuda: 'Cuadrícula con la primera página de cada libro' },
+  { id: 'lista', label: 'Lista', icono: '☰', ayuda: 'Tabla compacta con autor, páginas y última edición' },
+  { id: 'autor', label: 'Por alumno', icono: '👥', ayuda: 'Agrupados por quien los creó' },
+];
+
+const fechaCorta = (valor: string) =>
+  new Date(valor).toLocaleDateString('es', { day: '2-digit', month: 'short', year: '2-digit' });
+
+const librosOrdenados = computed(() =>
+  [...books.value].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
+);
+
+/** Agrupa por autor, con su curso, y ordena alfabeticamente para poder buscar a alguien. */
+const porAutor = computed(() => {
+  const grupos = new Map<string, { nombre: string; curso: string | null; libros: Book[] }>();
+  for (const libro of librosOrdenados.value) {
+    const clave = libro.creatorId ?? 'sin-autor';
+    const grupo = grupos.get(clave) ?? {
+      nombre: libro.creatorName ?? 'Sin autor',
+      curso: libro.creatorCourse ?? null,
+      libros: [],
+    };
+    grupo.libros.push(libro);
+    grupos.set(clave, grupo);
+  }
+  return [...grupos.values()].sort((a, b) => a.nombre.localeCompare(b.nombre));
+});
+
 // --- Alumnos desde Phidias ---
 const phidiasEnabled = ref(false);
 const showPhidias = ref(false);
+
+// --- Alumnado de otros cursos ---
+const showAddStudents = ref(false);
+
+async function onStudentsAdded(count: number): Promise<void> {
+  showAddStudents.value = false;
+  notice.value = count === 1 ? 'Alumno añadido a la biblioteca' : `${count} alumnos añadidos a la biblioteca`;
+  await loadAll();
+}
+
+async function removeStudent(studentId: string, nombre: string): Promise<void> {
+  if (!window.confirm(`Sacar a ${nombre} de esta biblioteca? Sus libros se conservan.`)) return;
+  try {
+    await librariesApi.removeStudent(libraryId.value, studentId);
+    notice.value = `${nombre} ya no pertenece a esta biblioteca`;
+    await loadAll();
+  } catch (err) {
+    error.value = errorMessage(err);
+  }
+}
+
+// --- Entrega de material ---
+const entregando = ref<Book | null>(null);
+const entregaPaginas = ref<Page[]>([]);
+
+// Las paginas se piden al abrir el dialogo: hacen falta para elegir cual mandar, y
+// cargarlas antes seria traer el contenido de todos los libros de la biblioteca.
+watch(entregando, async (libro) => {
+  entregaPaginas.value = [];
+  if (!libro) return;
+  try {
+    const detalle = await booksApi.get(libro.id);
+    entregaPaginas.value = detalle.pages;
+  } catch (err) {
+    error.value = errorMessage(err);
+  }
+});
+
+function onDistributed(resultado: DistributeResult): void {
+  entregando.value = null;
+  const partes = [`${resultado.delivered} alumnos`, `${resultado.pages} páginas`];
+  if (resultado.created) partes.push(`${resultado.created} libros nuevos`);
+  if (resultado.updated) partes.push(`${resultado.updated} ampliados`);
+  notice.value = `Entregado: ${partes.join(' · ')}`;
+  void loadAll();
+}
 
 async function onPhidiasImported(): Promise<void> {
   showPhidias.value = false;
@@ -177,7 +269,9 @@ async function removeCoTeacher(teacherId: string): Promise<void> {
   }
 }
 
-async function toggleSetting(key: 'studentEditable' | 'studentPublishable' | 'commentsEnabled'): Promise<void> {
+type Ajuste = 'studentEditable' | 'studentPublishable' | 'commentsEnabled' | 'studentsSeePeers';
+
+async function toggleSetting(key: Ajuste): Promise<void> {
   if (!library.value) return;
   try {
     library.value = await librariesApi.update(libraryId.value, { [key]: !library.value[key] });
@@ -236,6 +330,10 @@ function formatDate(value: string | null): string {
           </div>
           <p class="mt-2 text-xs text-slate-500">Se genera un acceso sin correo ni contraseña.</p>
 
+          <button type="button" class="btn-secondary mt-2 w-full justify-start" @click="showAddStudents = true">
+            👥 Añadir alumnos de otros cursos
+          </button>
+
           <button
             v-if="phidiasEnabled"
             type="button"
@@ -268,6 +366,21 @@ function formatDate(value: string | null): string {
             <label class="flex items-center gap-2">
               <input type="checkbox" :checked="library.commentsEnabled" class="h-4 w-4 rounded" @change="toggleSetting('commentsEnabled')" />
               Comentarios habilitados
+            </label>
+            <label class="flex items-start gap-2 border-t border-slate-100 pt-2">
+              <input
+                type="checkbox"
+                :checked="library.studentsSeePeers"
+                class="mt-1 h-4 w-4 rounded"
+                @change="toggleSetting('studentsSeePeers')"
+              />
+              <span>
+                Ver las creaciones de los compañeros
+                <span class="block text-xs text-slate-500">
+                  Si lo apagas, cada alumno solo verá sus libros, los que entregues tú y los
+                  colaborativos.
+                </span>
+              </span>
             </label>
           </div>
         </div>
@@ -312,19 +425,126 @@ function formatDate(value: string | null): string {
           </form>
         </div>
 
+        <!-- Cada vista contesta una pregunta distinta sobre el mismo contenido -->
+        <div v-if="books.length" class="mb-3 flex flex-wrap items-center gap-1">
+          <button
+            v-for="opcion in VISTAS"
+            :key="opcion.id"
+            type="button"
+            class="rounded-lg border px-3 py-1.5 text-sm font-semibold transition"
+            :class="vista === opcion.id
+              ? 'border-brand-500 bg-brand-50 text-brand-700'
+              : 'border-slate-200 text-slate-600 hover:border-brand-300'"
+            :title="opcion.ayuda"
+            :aria-pressed="vista === opcion.id"
+            @click="vista = opcion.id"
+          >
+            <span aria-hidden="true">{{ opcion.icono }}</span> {{ opcion.label }}
+          </button>
+        </div>
+
         <p v-if="!books.length" class="card p-8 text-center text-sm text-slate-500">
-          Todavia no hay libros en esta biblioteca.
+          Todavía no hay libros en esta biblioteca.
         </p>
 
-        <ul v-else class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <!-- Portadas -->
+        <ul v-else-if="vista === 'portadas'" class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <BookCard
-            v-for="book in books"
+            v-for="book in librosOrdenados"
             :key="book.id"
             :book="book"
             :can-delete="isManager || book.creatorId === auth.user?.id"
             @remove="removeBook($event.id, $event.title)"
-          />
+          >
+            <template v-if="isManager" #acciones>
+              <button type="button" class="btn-secondary w-full text-xs" @click="entregando = book">
+                Entregar a los alumnos
+              </button>
+            </template>
+          </BookCard>
         </ul>
+
+        <!-- Lista -->
+        <div v-else-if="vista === 'lista'" class="card overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
+              <tr>
+                <th class="px-4 py-2">Título</th>
+                <th class="px-4 py-2">Autor</th>
+                <th class="px-4 py-2">Curso</th>
+                <th class="px-4 py-2 text-right">Páginas</th>
+                <th class="px-4 py-2">Editado</th>
+                <th class="px-4 py-2">Estado</th>
+                <th class="px-4 py-2"></th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              <tr v-for="book in librosOrdenados" :key="book.id" class="hover:bg-slate-50">
+                <td class="px-4 py-2">
+                  <RouterLink
+                    :to="{ name: 'book-editor', params: { id: book.id } }"
+                    class="font-semibold text-slate-800 hover:text-brand-700 hover:underline"
+                  >{{ book.title }}</RouterLink>
+                  <span v-if="book.originBookId" class="ml-2 rounded bg-sky-100 px-1.5 py-0.5 text-[11px] text-sky-700">
+                    entregado
+                  </span>
+                </td>
+                <td class="px-4 py-2 text-slate-600">{{ book.creatorName ?? '—' }}</td>
+                <td class="px-4 py-2">
+                  <span
+                    v-if="book.creatorCourse"
+                    class="rounded bg-slate-100 px-1.5 py-0.5 text-xs font-semibold text-slate-600"
+                  >{{ book.creatorCourse }}</span>
+                  <span v-else class="text-xs text-slate-400">—</span>
+                </td>
+                <td class="px-4 py-2 text-right tabular-nums text-slate-600">{{ book.pageCount ?? '—' }}</td>
+                <td class="px-4 py-2 text-slate-500">{{ fechaCorta(book.updatedAt) }}</td>
+                <td class="px-4 py-2">
+                  <span
+                    v-if="book.isPublished"
+                    class="rounded bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700"
+                  >Publicado</span>
+                  <span v-else class="text-xs text-slate-400">Borrador</span>
+                </td>
+                <td class="px-4 py-2 text-right">
+                  <button
+                    v-if="isManager"
+                    type="button"
+                    class="text-xs font-semibold text-brand-600 hover:underline"
+                    @click="entregando = book"
+                  >Entregar</button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Por alumno -->
+        <div v-else class="space-y-5">
+          <section v-for="grupo in porAutor" :key="grupo.nombre" class="card p-4">
+            <div class="mb-3 flex flex-wrap items-baseline justify-between gap-3">
+              <h3 class="flex items-baseline gap-2 font-bold text-slate-900">
+                {{ grupo.nombre }}
+                <span
+                  v-if="grupo.curso"
+                  class="rounded bg-slate-100 px-1.5 py-0.5 text-xs font-semibold text-slate-600"
+                >{{ grupo.curso }}</span>
+              </h3>
+              <span class="text-xs text-slate-500">
+                {{ grupo.libros.length }} {{ grupo.libros.length === 1 ? 'libro' : 'libros' }}
+              </span>
+            </div>
+            <ul class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <BookCard
+                v-for="book in grupo.libros"
+                :key="book.id"
+                :book="book"
+                :can-delete="isManager || book.creatorId === auth.user?.id"
+                @remove="removeBook($event.id, $event.title)"
+              />
+            </ul>
+          </section>
+        </div>
       </section>
 
       <section v-if="isManager" class="mt-8">
@@ -383,6 +603,60 @@ function formatDate(value: string | null): string {
         @close="showPhidias = false"
         @imported="onPhidiasImported"
       />
+
+      <AddStudentsDialog
+        v-if="showAddStudents && library"
+        :library-id="library.id"
+        :library-name="library.name"
+        @close="showAddStudents = false"
+        @added="onStudentsAdded"
+      />
+
+      <DistributeDialog
+        v-if="entregando && library"
+        :library-id="library.id"
+        :library-name="library.name"
+        :source-book-id="entregando.id"
+        :source-title="entregando.title"
+        :pages="entregaPaginas"
+        @close="entregando = null"
+        @done="onDistributed"
+      />
+
+      <!-- Alumnado inscrito: de que curso viene cada uno y como sacarlo de aqui -->
+      <section v-if="isManager && members?.students.length" class="mt-8">
+        <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <h2 class="font-bold text-slate-800">
+            Alumnado inscrito
+            <span class="ml-1 text-sm font-normal text-slate-500">({{ members.students.length }})</span>
+          </h2>
+          <button type="button" class="btn-secondary" @click="showAddStudents = true">Añadir alumnos</button>
+        </div>
+
+        <ul class="card divide-y divide-slate-100">
+          <li
+            v-for="alumno in members.students"
+            :key="alumno.id"
+            class="flex items-center justify-between gap-3 px-4 py-2.5"
+          >
+            <div class="min-w-0">
+              <p class="truncate text-sm font-semibold text-slate-800">{{ alumno.fullName }}</p>
+              <p class="truncate text-xs text-slate-500">{{ alumno.email || 'Accede con código QR' }}</p>
+            </div>
+            <div class="flex shrink-0 items-center gap-2">
+              <span
+                v-if="alumno.course"
+                class="rounded bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600"
+              >{{ alumno.course }}</span>
+              <button
+                type="button"
+                class="text-xs font-semibold text-red-600 hover:underline"
+                @click="removeStudent(alumno.id, alumno.fullName)"
+              >Sacar</button>
+            </div>
+          </li>
+        </ul>
+      </section>
 
       <section v-if="members" class="mt-8">
         <h2 class="mb-3 font-bold text-slate-800">Equipo docente</h2>

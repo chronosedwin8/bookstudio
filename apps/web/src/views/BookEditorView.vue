@@ -9,6 +9,7 @@ import ShapeRenderer from '@/components/canvas/ShapeRenderer.vue';
 import PagePreview from '@/components/canvas/PagePreview.vue';
 import PagesPanel from '@/components/canvas/PagesPanel.vue';
 import ShareDialog from '@/components/ShareDialog.vue';
+import DistributeDialog from '@/components/library/DistributeDialog.vue';
 import MapSearchDialog from '@/components/media/MapSearchDialog.vue';
 import EmbedDialog from '@/components/media/EmbedDialog.vue';
 import MediaSearchDialog from '@/components/media/MediaSearchDialog.vue';
@@ -23,7 +24,14 @@ import { errorMessage } from '@/services/http';
 import { useAuthStore } from '@/stores/auth';
 import { useEditorStore } from '@/stores/editor';
 import { usePreferencesStore } from '@/stores/preferences';
-import type { CanvasElement, ChartType, ElementType, MediaResult, TransformMatrix } from '@/types/api';
+import type {
+  CanvasElement,
+  ChartType,
+  DistributeResult,
+  ElementType,
+  MediaResult,
+  TransformMatrix,
+} from '@/types/api';
 import { MIN_SCORE, recognize, type Candidate } from '@/utils/recognize';
 import { downloadBookHtml } from '@/utils/exportBook';
 import { PAPER_CATALOGUE, PAPER_GROUPS, paperStyle } from '@/utils/papers';
@@ -308,6 +316,14 @@ async function onPageDrop(index: number): Promise<void> {
 
 const showPages = ref(false);
 const showShare = ref(false);
+const showDistribute = ref(false);
+const entregaAviso = ref<string | null>(null);
+
+function onDistributed(resultado: DistributeResult): void {
+  showDistribute.value = false;
+  entregaAviso.value = `Entregado a ${resultado.delivered} alumnos · ${resultado.pages} páginas copiadas`;
+  setTimeout(() => (entregaAviso.value = null), 6000);
+}
 const showTemplates = ref(false);
 const showExport = ref(false);
 
@@ -617,6 +633,16 @@ async function saveTitle(): Promise<void> {
           >{{ editor.book.shareVisibility === 'public' ? 'público' : 'clase' }}</span>
         </button>
 
+        <!-- Entregar: solo tiene sentido con biblioteca y para quien la dirige -->
+        <button
+          v-if="editor.book.libraryId && editor.isManager"
+          type="button"
+          class="btn-secondary"
+          @click="showDistribute = true"
+        >
+          Entregar
+        </button>
+
         <RouterLink :to="{ name: 'book-reader', params: { id: editor.book.id } }" class="btn-secondary">
           Leer
         </RouterLink>
@@ -655,6 +681,7 @@ async function saveTitle(): Promise<void> {
 
       <div class="px-4 pt-2">
         <AlertMessage :message="editor.error" />
+        <AlertMessage :message="entregaAviso" variant="success" />
       </div>
 
       <div class="flex min-h-0 flex-1">
@@ -973,6 +1000,18 @@ async function saveTitle(): Promise<void> {
       @close="showShare = false"
       @changed="editor.applyShareState($event)"
       @collaborative="editor.setCollaborative($event)"
+    />
+
+    <DistributeDialog
+      v-if="showDistribute && editor.book?.libraryId"
+      :library-id="editor.book.libraryId"
+      library-name="esta biblioteca"
+      :source-book-id="editor.book.id"
+      :source-title="editor.book.title"
+      :pages="editor.book.pages"
+      :current-page-id="editor.currentPage?.id"
+      @close="showDistribute = false"
+      @done="onDistributed"
     />
 
     <PagesPanel

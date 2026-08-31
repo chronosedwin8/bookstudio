@@ -16,6 +16,7 @@ async function run(): Promise<void> {
   const library = await createLibrary(teacher.id, {
     name: 'Lengua 4B',
     studentBookLimit: 40,
+    studentsSeePeers: true,
     studentEditable: true,
     studentPublishable: false,
     commentsEnabled: true,

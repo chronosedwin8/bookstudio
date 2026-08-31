@@ -1,7 +1,12 @@
 import { query, withTransaction } from '../../db/pool.js';
 import { HttpError } from '../../lib/http-error.js';
 import { generateInviteCode } from '../../lib/invite-code.js';
-import type { ClassViewQuery, CreateLibraryInput, UpdateLibraryInput } from './libraries.schemas.js';
+import type {
+  ClassViewQuery,
+  CreateLibraryInput,
+  StudentSearchQuery,
+  UpdateLibraryInput,
+} from './libraries.schemas.js';
 
 export interface Library {
   id: string;
@@ -12,6 +17,7 @@ export interface Library {
   studentEditable: boolean;
   studentPublishable: boolean;
   commentsEnabled: boolean;
+  studentsSeePeers: boolean;
   createdAt: string;
 }
 
@@ -24,6 +30,7 @@ interface LibraryRow {
   student_editable: boolean;
   student_publishable: boolean;
   comments_enabled: boolean;
+  students_see_peers: boolean;
   created_at: Date;
 }
 
@@ -37,12 +44,13 @@ function toLibrary(row: LibraryRow): Library {
     studentEditable: row.student_editable,
     studentPublishable: row.student_publishable,
     commentsEnabled: row.comments_enabled,
+    studentsSeePeers: row.students_see_peers,
     createdAt: row.created_at.toISOString(),
   };
 }
 
 const LIBRARY_COLUMNS = `id, name, code_invite, owner_id, student_book_limit,
-  student_editable, student_publishable, comments_enabled, created_at`;
+  student_editable, student_publishable, comments_enabled, students_see_peers, created_at`;
 
 /** Reintenta ante colision del indice unico de code_invite. */
 export async function createLibrary(ownerId: string, input: CreateLibraryInput): Promise<Library> {
@@ -50,8 +58,8 @@ export async function createLibrary(ownerId: string, input: CreateLibraryInput):
     try {
       const { rows } = await query<LibraryRow>(
         `INSERT INTO libraries (name, code_invite, owner_id, student_book_limit,
-           student_editable, student_publishable, comments_enabled)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
+           student_editable, student_publishable, comments_enabled, students_see_peers)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
          RETURNING ${LIBRARY_COLUMNS}`,
         [
           input.name,
@@ -61,6 +69,7 @@ export async function createLibrary(ownerId: string, input: CreateLibraryInput):
           input.studentEditable,
           input.studentPublishable,
           input.commentsEnabled,
+          input.studentsSeePeers,
         ],
       );
       return toLibrary(rows[0]);
@@ -108,7 +117,7 @@ export async function getAccess(libraryId: string, userId: string): Promise<Libr
   return rows[0].access;
 }
 
-async function requireManager(libraryId: string, userId: string): Promise<void> {
+export async function requireManager(libraryId: string, userId: string): Promise<void> {
   const access = await getAccess(libraryId, userId);
   if (access === 'student') throw HttpError.forbidden('Solo los docentes pueden realizar esta accion');
 }
@@ -125,6 +134,7 @@ const UPDATABLE: Record<keyof UpdateLibraryInput, string> = {
   studentEditable: 'student_editable',
   studentPublishable: 'student_publishable',
   commentsEnabled: 'comments_enabled',
+  studentsSeePeers: 'students_see_peers',
 };
 
 export async function updateLibrary(
@@ -316,30 +326,148 @@ export async function getClassView(
   };
 }
 
+export interface StudentSearchResult {
+  id: string;
+  fullName: string;
+  email: string | null;
+  /** Bibliotecas a las que ya pertenece: sirve para reconocer de que curso es. */
+  libraries: string[];
+  alreadyIn: boolean;
+}
+
+/**
+ * Busca alumnado de todo el centro para sumarlo a una biblioteca.
+ *
+ * Una biblioteca puede reunir alumnado de cursos distintos, asi que la busqueda no se
+ * limita a los grupos de quien pregunta. A cambio se exige ser docente de la
+ * biblioteca destino, se filtra por rol y se acotan los resultados: es un buscador
+ * para anadir a alguien concreto, no un volcado del listado del colegio.
+ */
+export async function searchStudents(
+  libraryId: string,
+  userId: string,
+  { q, limit }: StudentSearchQuery,
+): Promise<StudentSearchResult[]> {
+  await requireManager(libraryId, userId);
+
+  const { rows } = await query<{
+    id: string;
+    full_name: string;
+    email: string | null;
+    libraries: string[] | null;
+    already_in: boolean;
+  }>(
+    `SELECT u.id, u.full_name, u.email,
+            ARRAY(
+              SELECT l.name FROM library_students ls2
+              JOIN libraries l ON l.id = ls2.library_id
+              WHERE ls2.student_id = u.id
+              ORDER BY l.name
+            ) AS libraries,
+            EXISTS (
+              SELECT 1 FROM library_students ls
+              WHERE ls.student_id = u.id AND ls.library_id = $1
+            ) AS already_in
+     FROM users u
+     WHERE u.role = 'student'
+       AND u.is_active
+       AND (u.full_name ILIKE '%' || $2 || '%' OR u.email ILIKE '%' || $2 || '%')
+     ORDER BY u.full_name
+     LIMIT $3`,
+    [libraryId, q, limit],
+  );
+
+  return rows.map((r) => ({
+    id: r.id,
+    fullName: r.full_name,
+    email: r.email,
+    libraries: r.libraries ?? [],
+    alreadyIn: r.already_in,
+  }));
+}
+
+/** Suma alumnado ya existente a la biblioteca. Repetir a alguien no da error. */
+export async function addStudents(
+  libraryId: string,
+  userId: string,
+  studentIds: string[],
+): Promise<{ added: number; skipped: number }> {
+  await requireManager(libraryId, userId);
+
+  // Solo cuentas de alumnado: sin esto se podria colar a un docente como alumno y
+  // dejarle los permisos de la biblioteca al reves.
+  const validos = await query<{ id: string }>(
+    `SELECT id FROM users WHERE id = ANY($1::uuid[]) AND role = 'student' AND is_active`,
+    [studentIds],
+  );
+  if (!validos.rowCount) throw HttpError.badRequest('Ninguna de las cuentas indicadas es de alumnado activo');
+
+  const ids = validos.rows.map((r) => r.id);
+  const { rowCount } = await query(
+    `INSERT INTO library_students (library_id, student_id, added_by)
+     SELECT $1, unnest($2::uuid[]), $3
+     ON CONFLICT DO NOTHING`,
+    [libraryId, ids, userId],
+  );
+
+  return { added: rowCount ?? 0, skipped: studentIds.length - (rowCount ?? 0) };
+}
+
+/**
+ * Saca a un alumno de la biblioteca. Sus libros se quedan donde estan: borrarlos
+ * seria destruir su trabajo por un cambio de matricula.
+ */
+export async function removeStudent(libraryId: string, userId: string, studentId: string): Promise<void> {
+  await requireManager(libraryId, userId);
+  await query('DELETE FROM library_students WHERE library_id = $1 AND student_id = $2', [libraryId, studentId]);
+}
+
+export interface LibraryMember {
+  id: string;
+  fullName: string;
+  email: string;
+  /** Clase de origen del sistema academico; null si no viene de ninguna. */
+  course?: string | null;
+}
+
 export interface LibraryMembers {
-  owner: { id: string; fullName: string; email: string };
-  teachers: Array<{ id: string; fullName: string; email: string }>;
-  students: Array<{ id: string; fullName: string; email: string }>;
+  owner: LibraryMember;
+  teachers: LibraryMember[];
+  students: LibraryMember[];
 }
 
 export async function getMembers(libraryId: string, userId: string): Promise<LibraryMembers> {
   await getAccess(libraryId, userId);
 
-  const { rows } = await query<{ id: string; full_name: string; email: string; membership: string }>(
-    `SELECT u.id, u.full_name, u.email, 'owner' AS membership
+  const { rows } = await query<{
+    id: string;
+    full_name: string;
+    email: string;
+    membership: string;
+    course: string | null;
+  }>(
+    // El curso solo tiene sentido para el alumnado, y sale de su clase traida del
+    // sistema academico: una biblioteca puede mezclar grupos y hay que distinguirlos.
+    `SELECT u.id, u.full_name, u.email, 'owner' AS membership, NULL::varchar AS course
        FROM libraries l JOIN users u ON u.id = l.owner_id WHERE l.id = $1
      UNION ALL
-     SELECT u.id, u.full_name, u.email, 'teacher'
+     SELECT u.id, u.full_name, u.email, 'teacher', NULL::varchar
        FROM library_teachers lt JOIN users u ON u.id = lt.teacher_id WHERE lt.library_id = $1
      UNION ALL
-     SELECT u.id, u.full_name, u.email, 'student'
+     SELECT u.id, u.full_name, u.email, 'student',
+            (SELECT lc.name FROM library_students lsc
+               JOIN libraries lc ON lc.id = lsc.library_id
+              WHERE lsc.student_id = u.id AND lc.external_source IS NOT NULL
+              ORDER BY lc.name LIMIT 1)
        FROM library_students ls JOIN users u ON u.id = ls.student_id WHERE ls.library_id = $1
      ORDER BY 4, 2`,
     [libraryId],
   );
 
-  const map = (m: string) =>
-    rows.filter((r) => r.membership === m).map((r) => ({ id: r.id, fullName: r.full_name, email: r.email }));
+  const map = (m: string): LibraryMember[] =>
+    rows
+      .filter((r) => r.membership === m)
+      .map((r) => ({ id: r.id, fullName: r.full_name, email: r.email, course: r.course }));
 
   const [owner] = map('owner');
   return { owner, teachers: map('teacher'), students: map('student') };

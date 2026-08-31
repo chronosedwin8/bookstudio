@@ -16,6 +16,7 @@ import type {
   BookDetail,
   CanvasElement,
   ClassView,
+  DistributeResult,
   ElementType,
   GeocodeResult,
   LayoutFormat,
@@ -27,6 +28,7 @@ import type {
   ShareVisibility,
   SharedBook,
   StudentCredential,
+  StudentSearchResult,
   TransformMatrix,
   UploadedFile,
   User,
@@ -102,6 +104,34 @@ export const librariesApi = {
   },
   async removeTeacher(id: string, teacherId: string) {
     await http.delete(`/libraries/${id}/teachers/${teacherId}`);
+  },
+
+  /** Busca alumnado de cualquier curso para sumarlo a esta biblioteca. */
+  async searchStudents(id: string, q: string) {
+    const { data } = await http.get<{ students: StudentSearchResult[] }>(
+      `/libraries/${id}/students/search`,
+      { params: { q } },
+    );
+    return data.students;
+  },
+  async addStudents(id: string, studentIds: string[]) {
+    const { data } = await http.post<{ added: number; skipped: number }>(
+      `/libraries/${id}/students`,
+      { studentIds },
+    );
+    return data;
+  },
+  async removeStudent(id: string, studentId: string) {
+    await http.delete(`/libraries/${id}/students/${studentId}`);
+  },
+
+  /** Entrega una pagina o un libro entero como copia propia de cada alumno. */
+  async distribute(
+    id: string,
+    payload: { sourceBookId: string; pageId?: string; studentIds?: string[]; title?: string },
+  ) {
+    const { data } = await http.post<DistributeResult>(`/libraries/${id}/distribute`, payload);
+    return data;
   },
 };
 

@@ -41,10 +41,24 @@ const coverWidth = useElementWidth(coverBox);
     </RouterLink>
 
     <h3 class="truncate font-semibold text-slate-900" :title="book.title">{{ book.title }}</h3>
+
+    <!-- Quien lo hizo y de que curso es: en una biblioteca con alumnado de varios
+         grupos, el titulo por si solo no dice de quien es el trabajo. -->
+    <p v-if="book.creatorName" class="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs">
+      <span class="truncate font-medium text-slate-700" :title="book.creatorName">{{ book.creatorName }}</span>
+      <span
+        v-if="book.creatorCourse"
+        class="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 font-semibold text-slate-600"
+      >{{ book.creatorCourse }}</span>
+    </p>
+
     <p class="mt-0.5 text-xs text-slate-500">
       {{ book.pageCount ?? 0 }} páginas · {{ book.layoutFormat }}
       <span v-if="book.isPublished" class="ml-1 rounded bg-emerald-100 px-1.5 py-0.5 text-emerald-700">Publicado</span>
+      <span v-if="book.originBookId" class="ml-1 rounded bg-sky-100 px-1.5 py-0.5 text-sky-700">Entregado</span>
     </p>
+
+    <slot name="acciones" />
 
     <div class="mt-3 flex gap-2 border-t border-slate-100 pt-3">
       <RouterLink :to="{ name: 'book-reader', params: { id: book.id } }" class="btn-secondary flex-1">Leer</RouterLink>
