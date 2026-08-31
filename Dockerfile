@@ -23,8 +23,16 @@ COPY --from=deps /app ./
 # El codigo se superpone encima; .dockerignore deja fuera node_modules y dist.
 COPY . .
 
-# vue-tsc y tsc fallan el build si hay errores de tipos: eso es deliberado.
-RUN npm run build --workspace @bookstudio/web \
+# El frontend se compila con "build:app", que NO pasa vue-tsc.
+#
+# No es por relajar el control: vue-tsc necesita mas memoria de la que tiene este
+# servidor y dejaba la construccion colgada media hora, sin error, con el contenedor
+# viejo sirviendo. La comprobacion de tipos se hace antes de publicar (npm run
+# verify), donde un fallo se ve y se arregla, en vez de dentro del servidor.
+#
+# El API si usa tsc, pero ahi tsc es el compilador que genera dist, no un vigilante:
+# un error de tipos sigue deteniendo la construccion.
+RUN npm run build:app --workspace @bookstudio/web \
  && npm run build --workspace @bookstudio/api
 
 # ---------- 3. Imagen final ----------
