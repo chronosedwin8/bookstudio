@@ -32,6 +32,12 @@ COPY . .
 #
 # El API si usa tsc, pero ahi tsc es el compilador que genera dist, no un vigilante:
 # un error de tipos sigue deteniendo la construccion.
+# Techo al monton de V8. Medido: la compilacion cabe de sobra en 320 MB y tarda 13
+# segundos. Sin techo, Node crece hasta donde le dejen y en un servidor con poca
+# memoria libre acaba en la zona de intercambio, donde 13 segundos se vuelven horas.
+# Con el limite recolecta antes de llegar ahi.
+ENV NODE_OPTIONS=--max-old-space-size=400
+
 RUN npm run build:app --workspace @bookstudio/web \
  && npm run build --workspace @bookstudio/api
 
