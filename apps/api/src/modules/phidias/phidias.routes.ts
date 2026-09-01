@@ -5,7 +5,13 @@ import { requireAuth, requireRole } from '../../middleware/auth.js';
 import { validate } from '../../middleware/validate.js';
 import { isTrialUser } from '../auth/trial.service.js';
 import { HttpError } from '../../lib/http-error.js';
-import { clearCache, importSection, isPhidiasEnabled, listSections } from './phidias.service.js';
+import {
+  clearCache,
+  importSection,
+  isPhidiasEnabled,
+  listSections,
+  syncGroups,
+} from './phidias.service.js';
 
 const importSchema = z.object({
   sectionId: z.coerce.number().int().positive(),
@@ -61,5 +67,20 @@ phidiasRouter.post(
   asyncHandler(async (_req, res) => {
     clearCache();
     res.json({ ok: true });
+  }),
+);
+
+/**
+ * Pone al dia el curso de todo el alumnado traido de Phidias.
+ *
+ * Se ejecuta a mano: al empezar el ano, cuando cambian las matriculas, o para
+ * rellenar las cuentas creadas antes de que se guardara el curso.
+ */
+phidiasRouter.post(
+  '/sync-groups',
+  requireRole('admin'),
+  asyncHandler(async (_req, res) => {
+    clearCache();
+    res.json(await syncGroups());
   }),
 );

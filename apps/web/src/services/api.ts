@@ -416,6 +416,15 @@ export const phidiasApi = {
     );
     return data.result;
   },
+  /** Pone al dia el curso (K10A...) de todo el alumnado traido de Phidias. */
+  async syncGroups() {
+    const { data } = await http.post<{ total: number; actualizadas: number; sinSeccion: number }>(
+      '/phidias/sync-groups',
+      {},
+      { timeout: 120_000 },
+    );
+    return data;
+  },
   async refresh() {
     await http.post('/phidias/refresh');
   },

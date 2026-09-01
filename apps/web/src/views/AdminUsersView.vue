@@ -141,6 +141,31 @@ async function deleteUser(user: ManagedUser): Promise<void> {
   }
 }
 
+/**
+ * Pone al dia el curso de todo el alumnado de Phidias.
+ *
+ * Hace falta al empezar el ano, cuando cambian las matriculas, y para las cuentas
+ * creadas antes de que el curso se guardara en la ficha.
+ */
+const sincronizando = ref(false);
+
+async function sincronizarCursos(): Promise<void> {
+  sincronizando.value = true;
+  error.value = null;
+  notice.value = null;
+  try {
+    const r = await phidiasApi.syncGroups();
+    const partes = [`${r.actualizadas} cuentas actualizadas de ${r.total}`];
+    if (r.sinSeccion) partes.push(`${r.sinSeccion} ya no estan en ninguna seccion`);
+    notice.value = `Cursos al dia: ${partes.join(' · ')}`;
+    await load();
+  } catch (err) {
+    error.value = errorMessage(err);
+  } finally {
+    sincronizando.value = false;
+  }
+}
+
 // --- Importacion desde Phidias ---
 const phidiasEnabled = ref(false);
 const sections = ref<PhidiasSection[]>([]);
@@ -264,9 +289,20 @@ onMounted(async () => {
             Crea la biblioteca de la sección y da de alta a sus alumnos con su correo institucional.
           </p>
         </div>
-        <button type="button" class="btn-secondary" :disabled="loadingSections" @click="loadSections">
-          {{ loadingSections ? 'Consultando...' : sectionsLoaded ? 'Actualizar lista' : 'Ver grupos' }}
-        </button>
+        <div class="flex flex-wrap gap-2">
+          <button
+            type="button"
+            class="btn-secondary"
+            :disabled="sincronizando"
+            title="Rellena el curso (K10A, 11C...) de todo el alumnado de Phidias"
+            @click="sincronizarCursos"
+          >
+            {{ sincronizando ? 'Actualizando cursos...' : 'Actualizar cursos' }}
+          </button>
+          <button type="button" class="btn-secondary" :disabled="loadingSections" @click="loadSections">
+            {{ loadingSections ? 'Consultando...' : sectionsLoaded ? 'Actualizar lista' : 'Ver grupos' }}
+          </button>
+        </div>
       </div>
 
       <template v-if="sectionsLoaded">

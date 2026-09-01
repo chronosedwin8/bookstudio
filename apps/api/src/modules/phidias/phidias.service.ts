@@ -192,6 +192,70 @@ export async function listSectionStudents(sectionId: number): Promise<SectionStu
  * Crea (o reutiliza) las cuentas de unos alumnos concretos de una seccion y devuelve
  * sus ids. No inscribe en ninguna biblioteca: de eso se encarga quien llama.
  */
+export interface SincronizacionGrupos {
+  /** Cuentas de Phidias que hay en BookStudio. */
+  total: number;
+  /** A cuantas se les ha puesto o corregido el curso. */
+  actualizadas: number;
+  /** Cuentas que ya no aparecen en ninguna seccion (bajas, cambios de centro). */
+  sinSeccion: number;
+}
+
+/**
+ * Pone al dia el curso de todo el alumnado traido de Phidias.
+ *
+ * Hace falta por dos motivos. Uno: las cuentas creadas antes de que se guardara el
+ * curso no lo tienen, y sin el los libros no dicen de que grupo es cada trabajo. Dos:
+ * el curso cambia cada ano, asi que esto hay que poder repetirlo.
+ *
+ * Se resuelve con una sola lectura de Phidias y una consulta por seccion, en vez de
+ * preguntar alumno por alumno.
+ */
+export async function syncGroups(): Promise<SincronizacionGrupos> {
+  const levels = await fetchConsolidate();
+
+  // Id del alumno en Phidias -> nombre de su seccion.
+  const porAlumno = new Map<string, string>();
+  for (const level of levels) {
+    for (const course of level.courses ?? []) {
+      for (const section of course.sections ?? []) {
+        for (const student of section.students ?? []) {
+          porAlumno.set(String(student.id), section.name.slice(0, 60));
+        }
+      }
+    }
+  }
+
+  const { rows } = await query<{ id: string; external_id: string | null; external_group: string | null }>(
+    "SELECT id, external_id, external_group FROM users WHERE external_source = 'phidias'",
+  );
+
+  // Se agrupan por seccion para actualizar de una vez todos los de cada curso.
+  const porSeccion = new Map<string, string[]>();
+  let sinSeccion = 0;
+
+  for (const fila of rows) {
+    const seccion = fila.external_id ? porAlumno.get(fila.external_id) : undefined;
+    if (!seccion) {
+      sinSeccion += 1;
+      continue;
+    }
+    if (fila.external_group === seccion) continue;
+    porSeccion.set(seccion, [...(porSeccion.get(seccion) ?? []), fila.id]);
+  }
+
+  let actualizadas = 0;
+  for (const [seccion, ids] of porSeccion) {
+    const { rowCount } = await query('UPDATE users SET external_group = $1 WHERE id = ANY($2::uuid[])', [
+      seccion,
+      ids,
+    ]);
+    actualizadas += rowCount ?? 0;
+  }
+
+  return { total: rows.length, actualizadas, sinSeccion };
+}
+
 export interface CuentaCreada {
   id: string;
   fullName: string;
