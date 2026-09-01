@@ -75,11 +75,40 @@ export const FEATURES: Feature[] = [
       'atribución automática, y contenido de YouTube, Google, Canva o Genially.',
   },
   {
+    icon: '🎯',
+    title: 'Valoraciones con nota y comentario',
+    description:
+      'Pon nota a cada libro las veces que haga falta, con título y el porqué. Una cuadrícula ' +
+      'reúne a toda la clase con el promedio de cada alumno, y ellos ven sus notas y tus ' +
+      'comentarios en su propio libro.',
+  },
+  {
+    icon: '📬',
+    title: 'Entrega material a toda la clase',
+    description:
+      'Manda una página o un libro entero y cada alumno recibe su copia editable. Eliges si va ' +
+      'en un libro aparte o dentro de los que ya tiene, y si cae al principio o al final.',
+  },
+  {
+    icon: '🧭',
+    title: 'Bitácora de trabajo',
+    description:
+      'Cuántas veces ha entrado cada alumno a un libro, cuándo y cuánto tiempo. Las sesiones se ' +
+      'cierran solas tras unos minutos, así que mide trabajo real y no pestañas olvidadas.',
+  },
+  {
+    icon: '🧩',
+    title: 'Grupos con alumnos de varios cursos',
+    description:
+      'Arma una biblioteca con cinco de 10A, seis de 10B y nueve de 10C: eliges el curso, ves su ' +
+      'lista y marcas. Se conecta con el sistema académico del centro para traer los grupos.',
+  },
+  {
     icon: '🔗',
     title: 'Se comparte con un enlace',
     description:
       'Público para cualquiera, o restringido a tu grupo. Siempre en solo lectura, con enlace ' +
-      'revocable en un clic.',
+      'revocable en un clic. Puedes decidir si el alumnado ve las creaciones de sus compañeros.',
   },
   {
     icon: '👥',
@@ -113,7 +142,9 @@ export const USE_CASES: UseCase[] = [
       'Cuentos, diarios de lectura y portafolios donde el alumnado graba su propia voz.',
       'Organizadores gráficos listos: Venn, KWL, mapa del cuento, espina de pescado, Cornell.',
       'Autoevaluacion con preguntas que se corrigen solas y dan animo al acertar.',
-      'Grupos creados en segundos desde el sistema académico del centro.',
+      'Valoraciones con nota y comentario, y una cuadrícula con el promedio de la clase.',
+      'Reparte la misma ficha a todo el grupo y cada alumno trabaja sobre su copia.',
+      'Bibliotecas con alumnado de varios cursos, traido del sistema académico del centro.',
       'Accesibilidad de serie: tipografías para dislexia, tamaño mínimo legible y audio.',
     ],
   },
@@ -126,7 +157,7 @@ export const USE_CASES: UseCase[] = [
       'Propuestas y memorias de proyecto con gráficas y mapas dentro del propio documento.',
       'Formacion interna con comprobaciones de comprension al final de cada capitulo.',
       'Catalogos y presentaciones que se comparten con un enlace y se exportan a PDF.',
-      'Todo dentro de tu infraestructura, sin subir información sensible a terceros.',
+      'Sin seguimiento publicitario ni cesion de datos a terceros.',
     ],
   },
 ];
@@ -134,8 +165,16 @@ export const USE_CASES: UseCase[] = [
 export const STEPS = [
   { number: 1, title: 'Crea el libro', text: 'Elige formato y arranca de cero o con una de las 24 plantillas.' },
   { number: 2, title: 'Llena las páginas', text: 'Arrastra texto, imagenes, audio, gráficas o preguntas al lienzo.' },
-  { number: 3, title: 'Invita a tu grupo', text: 'Con un enlace o un código QR. Pueden leer o escribir contigo.' },
-  { number: 4, title: 'Publica o exporta', text: 'Comparte el enlace, o llevatelo en PDF o como página web.' },
+  {
+    number: 3,
+    title: 'Invita a tu grupo',
+    text: 'Con un enlace, un código QR o eligiendo alumnos curso por curso.',
+  },
+  {
+    number: 4,
+    title: 'Corrige y publica',
+    text: 'Pon nota con tu comentario, comparte el enlace o llevatelo en PDF.',
+  },
 ];
 
 export const PLANS: Plan[] = [
@@ -229,8 +268,29 @@ export const FAQS: Faq[] = [
     question: 'Que necesita el alumnado para entrar?',
     answer:
       'Un navegador. Los más pequeños entran con un código QR, sin correo ni contraseña. El resto ' +
-      'con su correo institucional. También se pueden importar los grupos completos desde el ' +
-      'sistema académico del centro.',
+      'con su correo institucional. Al darlos de alta te decimos qué clave repartir, y cada uno ' +
+      'puede cambiarla por la suya en cualquier momento.',
+  },
+  {
+    question: 'Puedo poner notas y llevar el seguimiento?',
+    answer:
+      'Si. Valoras cada libro las veces que quieras, con titulo, nota y el porqué, y las corriges ' +
+      'cuando haga falta. Una cuadricula reúne a toda la clase con el promedio de cada alumno, y ' +
+      'una bitácora muestra cuántas veces ha entrado cada uno a trabajar y cuánto tiempo estuvo.',
+  },
+  {
+    question: 'Puedo hacer un grupo con alumnos de cursos distintos?',
+    answer:
+      'Si. Eliges un curso, ves su lista completa y marcas a quien quieras; cambias de curso y ' +
+      'sigues marcando. Asi se arma un taller o un club con cinco de un grupo, seis de otro y los ' +
+      'que hagan falta, sin mover a nadie de su clase.',
+  },
+  {
+    question: 'Y si un alumno se va del centro?',
+    answer:
+      'Se borra su cuenta con todo lo suyo: libros, páginas, valoraciones y los archivos que haya ' +
+      'subido. Es definitivo y hay que confirmarlo escribiendo su nombre, para que no ocurra por ' +
+      'un clic despistado.',
   },
   {
     question: 'Se pueden sacar los libros de la plataforma?',
@@ -278,8 +338,8 @@ export const SITE = {
   tagline: 'Libros interactivos que el alumnado crea, escucha y comparte',
   description:
     'Crea libros interactivos con voz, video, mapas, gráficas y preguntas autocorregibles. ' +
-    'Plataforma para centros educativos y equipos profesionales, con planes desde un docente ' +
-    'hasta toda la institucion.',
+    'Con valoraciones, seguimiento del trabajo y grupos formados con alumnado de varios cursos. ' +
+    'Para centros educativos y equipos profesionales, desde un docente hasta toda la institucion.',
   email: 'hola@bookstudio.uk',
   url: 'https://bookstudio.uk',
 };
