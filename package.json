@@ -10,7 +10,7 @@
     "dev:api": "npm run dev --workspace @bookstudio/api",
     "dev:web": "npm run dev --workspace @bookstudio/web",
     "typecheck": "npm run typecheck --workspace @bookstudio/web && npm run typecheck --workspace @bookstudio/api",
-    "test:unit": "npm run test:unit --workspace @bookstudio/api",
+    "test:unit": "npm run test:unit --workspace @bookstudio/api && npm run test:unit --workspace @bookstudio/web",
     "verify": "npm run typecheck && npm run test:unit",
     "migrate": "npm run migrate --workspace @bookstudio/api",
     "seed": "npm run seed --workspace @bookstudio/api",

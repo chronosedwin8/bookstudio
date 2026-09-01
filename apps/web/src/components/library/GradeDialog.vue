@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import AlertMessage from '@/components/AlertMessage.vue';
+import { useDictado } from '@/composables/useDictado';
 import { booksApi } from '@/services/api';
 import { errorMessage } from '@/services/http';
 import {
@@ -42,6 +43,15 @@ const descripcion = ref(props.grade?.description ?? '');
 const guardando = ref(false);
 const error = ref<string | null>(null);
 const campo = ref<HTMLInputElement | null>(null);
+
+/**
+ * Dictado del comentario. Se anade al final de lo ya escrito, separado por un
+ * espacio, para poder combinar teclado y voz sin pisar nada.
+ */
+const dictado = useDictado((texto) => {
+  const previo = descripcion.value.trimEnd();
+  descripcion.value = previo ? `${previo} ${texto}` : texto;
+});
 
 onMounted(() => {
   if (editando.value) campo.value?.focus();
@@ -209,16 +219,62 @@ async function borrar(): Promise<void> {
           </div>
 
           <div>
-            <label class="label" for="grade-descripcion">Por qué esta nota</label>
+            <div class="flex items-center justify-between gap-2">
+              <label class="label mb-0" for="grade-descripcion">Por qué esta nota</label>
+
+              <!--
+                Donde no hay reconocimiento de voz se dice por que, en vez de
+                esconder el boton sin mas: si no, parece que la funcion no existe.
+              -->
+              <span
+                v-if="!dictado.soportado"
+                class="text-xs text-slate-400"
+                title="Firefox no incluye reconocimiento de voz. En Chrome, Edge o Safari aparece un botón para dictar."
+              >Dictado no disponible en este navegador</span>
+
+              <button
+                v-else
+                type="button"
+                class="flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-semibold transition"
+                :class="dictado.escuchando.value
+                  ? 'border-red-400 bg-red-50 text-red-700'
+                  : 'border-slate-200 text-slate-600 hover:border-brand-300 hover:text-brand-700'"
+                :aria-pressed="dictado.escuchando.value"
+                :title="dictado.escuchando.value ? 'Dejar de dictar' : 'Dictar en voz alta'"
+                @click="dictado.alternar"
+              >
+                <span
+                  class="grid h-4 w-4 place-items-center"
+                  :class="dictado.escuchando.value ? 'animate-pulse' : ''"
+                  aria-hidden="true"
+                >🎙️</span>
+                {{ dictado.escuchando.value ? 'Escuchando...' : 'Dictar' }}
+              </button>
+            </div>
+
             <textarea
               id="grade-descripcion"
               v-model="descripcion"
               rows="5"
               maxlength="4000"
-              class="input"
+              class="input mt-1"
+              :class="dictado.escuchando.value ? 'ring-2 ring-red-200' : ''"
               placeholder="Qué está bien, qué falta y qué conviene mejorar para la próxima."
             ></textarea>
-            <p class="mt-1 text-xs text-slate-500">Lo verá el alumno en su libro.</p>
+
+            <!-- Lo que se esta oyendo pero aun no es definitivo -->
+            <p v-if="dictado.provisional.value" class="mt-1 text-sm italic text-slate-400">
+              {{ dictado.provisional.value }}
+            </p>
+
+            <p v-if="dictado.error.value" class="mt-1 text-xs font-semibold text-red-600">
+              {{ dictado.error.value }}
+            </p>
+
+            <p class="mt-1 text-xs text-slate-500">
+              Lo verá el alumno en su libro.<span v-if="dictado.soportado">
+                Puedes dictarlo y corregirlo después con el teclado.</span>
+            </p>
           </div>
         </form>
       </div>
