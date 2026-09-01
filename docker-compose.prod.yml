@@ -15,6 +15,11 @@
 #   MP_ACCESS_TOKEN          token de acceso; nunca sale del servidor
 #   MP_WEBHOOK_SECRET        firma de los avisos de pago
 #
+# Para guardar el contenido multimedia en S3 (recomendado):
+#   S3_BUCKET                nombre del bucket
+#   S3_ACCESS_KEY_ID         y S3_SECRET_ACCESS_KEY de un usuario IAM
+#   S3_PREFIX                carpeta raiz; importa si el bucket esta compartido
+#
 # Opcionales:
 #   APP_URL                  dominio publico; por defecto https://bookstudio.uk
 #   PHIDIAS_TOKEN            sin el, la importacion de grupos se desactiva
@@ -68,6 +73,16 @@ services:
       MP_ACCESS_TOKEN: ${MP_ACCESS_TOKEN:-}
       MP_WEBHOOK_SECRET: ${MP_WEBHOOK_SECRET:-}
       MP_WEBHOOK_URL: ${MP_WEBHOOK_URL:-}
+
+      # Almacenamiento del contenido multimedia. Sin S3_BUCKET todo va al disco del
+      # servidor, que crece sin control y se pierde al recrear la maquina.
+      # La estructura dentro del bucket es {S3_PREFIX}/{image|audio|video}/{usuario}/
+      S3_BUCKET: ${S3_BUCKET:-}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
+      S3_PREFIX: ${S3_PREFIX:-bookstudio}
+      S3_PUBLIC_URL: ${S3_PUBLIC_URL:-}
 
       # Cuenta de administracion del primer arranque. Si la cuenta ya existe solo se
       # comprueba que siga siendo admin: la contrasena no se reescribe nunca.
