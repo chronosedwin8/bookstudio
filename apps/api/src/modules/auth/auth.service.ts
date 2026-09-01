@@ -80,6 +80,41 @@ export async function login(input: LoginInput): Promise<{ user: PublicUser; toke
   return { user, token: signAccessToken({ sub: user.id, role: user.role, kind: 'session' }) };
 }
 
+/**
+ * Cambio de contrasena por la propia persona.
+ *
+ * Quien entra con QR no tiene ninguna, asi que la primera vez no se le pide la
+ * anterior: su credencial ya es el codigo, y exigirle algo que no tiene le dejaria
+ * sin poder ponerse una nunca.
+ */
+export async function changeOwnPassword(
+  userId: string,
+  currentPassword: string | undefined,
+  newPassword: string,
+): Promise<void> {
+  const { rows } = await query<{ password_hash: string | null }>(
+    'SELECT password_hash FROM users WHERE id = $1',
+    [userId],
+  );
+  if (!rows[0]) throw HttpError.notFound('Usuario no encontrado');
+
+  const actual = rows[0].password_hash;
+  if (actual) {
+    if (!currentPassword) throw HttpError.badRequest('Escribe tu contraseña actual');
+    if (!(await bcrypt.compare(currentPassword, actual))) {
+      throw HttpError.unauthorized('La contraseña actual no es correcta');
+    }
+  }
+
+  const hash = await bcrypt.hash(newPassword, SALT_ROUNDS);
+  // password_is_default deja de ser cierto: a partir de aqui la clave es suya y el
+  // docente ya no debe verla al anadirlo a otra biblioteca.
+  await query('UPDATE users SET password_hash = $2, password_is_default = FALSE WHERE id = $1', [
+    userId,
+    hash,
+  ]);
+}
+
 export async function getUserById(userId: string): Promise<PublicUser> {
   const { rows } = await query<UserRow>(
     'SELECT id, email, password_hash, full_name, role, avatar_url, created_at FROM users WHERE id = $1',

@@ -1,9 +1,12 @@
 <script setup lang="ts">
+import { ref } from 'vue';
 import { useRouter } from 'vue-router';
+import CambiarClaveDialog from '@/components/CambiarClaveDialog.vue';
 import { useAuthStore } from '@/stores/auth';
 
 const auth = useAuthStore();
 const router = useRouter();
+const cambiarClave = ref(false);
 
 function handleLogout(): void {
   auth.logout();
@@ -31,14 +34,28 @@ function handleLogout(): void {
             class="text-sm text-slate-600 hover:text-brand-700"
           >Usuarios</RouterLink>
 
-          <div class="text-right">
-            <p class="text-sm font-semibold leading-tight text-slate-800">{{ auth.user?.fullName }}</p>
-            <p class="text-xs capitalize text-slate-500">{{ auth.user?.role }}</p>
-          </div>
+          <!-- Cambiar la contrasena: al alcance de todos, tambien del alumnado -->
+          <button
+            type="button"
+            class="text-right"
+            title="Cambiar mi contraseña"
+            @click="cambiarClave = true"
+          >
+            <span class="block text-sm font-semibold leading-tight text-slate-800 hover:text-brand-700">
+              {{ auth.user?.fullName }}
+            </span>
+            <span class="block text-xs capitalize text-slate-500">{{ auth.user?.role }}</span>
+          </button>
           <button type="button" class="btn-secondary" @click="handleLogout">Salir</button>
         </div>
       </div>
     </header>
+
+    <CambiarClaveDialog
+      v-if="cambiarClave"
+      :tiene-password="Boolean(auth.user?.email && !auth.user.email.endsWith('@qr.local'))"
+      @close="cambiarClave = false"
+    />
 
     <!--
       Las vistas normales (panel, biblioteca) hacen scroll aqui dentro; el editor y

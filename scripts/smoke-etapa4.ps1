@@ -163,7 +163,7 @@ $pngDataUrl = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcS
 $upload = Test-Step 'POST /media/uploads acepta PNG valido' {
     $r = Invoke-Api POST '/media/uploads' @{ dataUrl = $pngDataUrl } -Token $tToken
     if ($r.kind -ne 'image') { throw "Tipo incorrecto: $($r.kind)" }
-    if ($r.fileUrl -notlike '/storage/image/*') { throw "Ruta inesperada: $($r.fileUrl)" }
+    if ($r.fileUrl -notlike '*/image/*') { throw "Ruta inesperada: $($r.fileUrl)" }
     $r
 }
 
@@ -211,7 +211,7 @@ $videoUpload = Test-Step 'Acepta data URL de video con codecs separados por coma
     $r = Invoke-Api POST '/media/uploads' @{ dataUrl = "data:video/webm;codecs=vp9,opus;base64,$webm" } -Token $tToken
     if ($r.kind -ne 'video') { throw "Tipo incorrecto: $($r.kind)" }
     if ($r.mimeType -ne 'video/webm') { throw "MIME sin normalizar: $($r.mimeType)" }
-    if ($r.fileUrl -notlike '/storage/video/*') { throw "Ruta inesperada: $($r.fileUrl)" }
+    if ($r.fileUrl -notlike '*/video/*') { throw "Ruta inesperada: $($r.fileUrl)" }
     $r
 }
 

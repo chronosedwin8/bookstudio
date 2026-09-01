@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue';
 import AlertMessage from '@/components/AlertMessage.vue';
 import { librariesApi } from '@/services/api';
 import { errorMessage } from '@/services/http';
+import { useCierreExterior } from '@/composables/useCierreExterior';
 import type { DistributeResult, LibraryMembers, Page } from '@/types/api';
 
 /**
@@ -27,6 +28,8 @@ const emit = defineEmits<{
   close: [];
   done: [result: DistributeResult];
 }>();
+
+const cierre = useCierreExterior(() => emit('close'));
 
 type Alcance = 'libro' | 'pagina';
 
@@ -100,7 +103,8 @@ async function enviar(): Promise<void> {
     role="dialog"
     aria-modal="true"
     aria-labelledby="entregar-titulo"
-    @click.self="emit('close')"
+    @mousedown="cierre.onMousedown"
+    @mouseup="cierre.onMouseup"
     @keydown.esc="emit('close')"
   >
     <div class="mx-auto w-full max-w-2xl rounded-xl bg-white shadow-2xl">

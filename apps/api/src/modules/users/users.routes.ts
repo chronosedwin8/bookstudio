@@ -4,6 +4,7 @@ import { asyncHandler } from '../../lib/async-handler.js';
 import { requireAuth, requireRole } from '../../middleware/auth.js';
 import { validate } from '../../middleware/validate.js';
 import * as service from './users.service.js';
+import { prepararAlmacen } from '../../lib/storage.js';
 
 const listQuerySchema = z.object({
   search: z.string().max(120).trim().optional(),
@@ -36,6 +37,24 @@ const userIdSchema = z.object({ id: z.string().uuid() });
 export const usersRouter = Router();
 
 // Gestionar cuentas ajenas es cosa de administracion.
+/**
+ * Borra una cuenta con todo su contenido: libros, paginas, notas, bitacora y los
+ * archivos que haya subido, tambien los de S3.
+ *
+ * Un administrador puede borrar a cualquiera; un docente, solo alumnado de sus
+ * propias bibliotecas. La comprobacion vive en el servicio, no en la interfaz.
+ */
+usersRouter.delete(
+  '/:id',
+  requireAuth,
+  requireRole('teacher', 'admin'),
+  validate(userIdSchema, 'params'),
+  asyncHandler(async (req, res) => {
+    await service.assertPuedeBorrar(req.params.id, { id: req.auth!.userId, role: req.auth!.role });
+    res.json({ deleted: await service.deleteUser(req.params.id, req.auth!.userId) });
+  }),
+);
+
 usersRouter.use(requireAuth, requireRole('admin'));
 
 usersRouter.get(
@@ -77,5 +96,18 @@ usersRouter.post(
   asyncHandler(async (req, res) => {
     await service.resetPassword(req.params.id, req.body.password);
     res.status(204).end();
+  }),
+);
+
+/**
+ * Estado del almacenamiento y creacion de la estructura de carpetas.
+ *
+ * Sirve para comprobar de un vistazo si el contenido va al disco del servidor o al
+ * bucket, y para dejar el arbol creado la primera vez.
+ */
+usersRouter.post(
+  '/storage/prepare',
+  asyncHandler(async (_req, res) => {
+    res.json(await prepararAlmacen());
   }),
 );

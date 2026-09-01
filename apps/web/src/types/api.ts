@@ -171,6 +171,32 @@ export interface BookActivity {
   }>;
 }
 
+/** Clave que hay que repartir a un alumno recien dado de alta. */
+export interface ClaveEntregada {
+  fullName: string;
+  email: string;
+  password: string;
+  isNew: boolean;
+}
+
+export interface AddStudentsResult {
+  added: number;
+  skipped: number;
+  accountsCreated: number;
+  credentials: ClaveEntregada[];
+}
+
+/** Resumen de lo que se llevo por delante el borrado de una cuenta. */
+export interface BorradoUsuario {
+  fullName: string;
+  email: string;
+  books: number;
+  pages: number;
+  grades: number;
+  mediaDeleted: number;
+  storage: string;
+}
+
 export interface DistributeResult {
   delivered: number;
   created: number;

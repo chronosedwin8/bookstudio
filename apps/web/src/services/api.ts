@@ -16,6 +16,8 @@ import type {
   UserStats,
   BookDetail,
   CanvasElement,
+  AddStudentsResult,
+  BorradoUsuario,
   Candidate,
   ClassView,
   DistributeResult,
@@ -65,6 +67,10 @@ export const authApi = {
   async startTrial() {
     const { data } = await http.post<TrialSession>('/auth/trial');
     return data;
+  },
+  /** La actual no hace falta si la cuenta entra por QR y nunca tuvo una. */
+  async changePassword(payload: { currentPassword?: string; newPassword: string }) {
+    await http.post('/auth/password', payload);
   },
   async createStudent(payload: { fullName: string; libraryId: string }) {
     const { data } = await http.post<StudentCredential>('/auth/students', payload);
@@ -133,10 +139,7 @@ export const librariesApi = {
   },
   /** Las claves son uuid de cuentas existentes o "phidias:<seccion>:<alumno>". */
   async addStudents(id: string, keys: string[]) {
-    const { data } = await http.post<{ added: number; skipped: number; accountsCreated: number }>(
-      `/libraries/${id}/students`,
-      { keys },
-    );
+    const { data } = await http.post<AddStudentsResult>(`/libraries/${id}/students`, { keys });
     return data;
   },
   /** Cuadricula de valoraciones de toda la clase. */
@@ -386,6 +389,11 @@ export const usersApi = {
   },
   async resetPassword(id: string, password: string) {
     await http.post(`/users/${id}/password`, { password });
+  },
+  /** Borra la cuenta y todo su contenido: libros, notas y archivos, tambien de S3. */
+  async remove(id: string) {
+    const { data } = await http.delete<{ deleted: BorradoUsuario }>(`/users/${id}`);
+    return data.deleted;
   },
 };
 

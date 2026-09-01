@@ -189,10 +189,7 @@ export async function getGradeBook(libraryId: string, userId: string): Promise<G
   >(
     `SELECT ${GRADE_SELECT}, b.title AS book_title,
             alu.id AS student_id, alu.full_name AS student_name,
-            (SELECT lc.name FROM library_students lsc
-               JOIN libraries lc ON lc.id = lsc.library_id
-              WHERE lsc.student_id = alu.id AND lc.external_source IS NOT NULL
-              ORDER BY lc.name LIMIT 1) AS course
+            alu.external_group AS course
      FROM library_students ls
      JOIN users alu ON alu.id = ls.student_id
      LEFT JOIN books b ON b.library_id = ls.library_id AND b.creator_id = alu.id

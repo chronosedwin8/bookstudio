@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue';
 import AlertMessage from '@/components/AlertMessage.vue';
 import { booksApi } from '@/services/api';
 import { errorMessage } from '@/services/http';
+import { useCierreExterior } from '@/composables/useCierreExterior';
 import { fechaHora } from '@/utils/grades';
 import type { BookActivity } from '@/types/api';
 
@@ -20,6 +21,8 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{ close: [] }>();
+
+const cierre = useCierreExterior(() => emit('close'));
 
 const datos = ref<BookActivity | null>(null);
 const cargando = ref(true);
@@ -58,7 +61,8 @@ const totalTiempo = computed(() =>
     role="dialog"
     aria-modal="true"
     aria-labelledby="bitacora-titulo"
-    @click.self="emit('close')"
+    @mousedown="cierre.onMousedown"
+    @mouseup="cierre.onMouseup"
     @keydown.esc="emit('close')"
   >
     <div class="mx-auto w-full max-w-3xl rounded-xl bg-white shadow-2xl">

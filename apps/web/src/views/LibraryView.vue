@@ -6,14 +6,17 @@ import BookCard from '@/components/BookCard.vue';
 import AddStudentsDialog from '@/components/library/AddStudentsDialog.vue';
 import BookActivityPanel from '@/components/library/BookActivityPanel.vue';
 import BookGradesPanel from '@/components/library/BookGradesPanel.vue';
+import ClavesEntregadas from '@/components/library/ClavesEntregadas.vue';
 import DistributeDialog from '@/components/library/DistributeDialog.vue';
 import GradeBookGrid from '@/components/library/GradeBookGrid.vue';
 import PhidiasImportDialog from '@/components/media/PhidiasImportDialog.vue';
-import { authApi, booksApi, librariesApi, phidiasApi } from '@/services/api';
+import { authApi, booksApi, librariesApi, phidiasApi, usersApi } from '@/services/api';
 import { errorMessage } from '@/services/http';
 import { useAuthStore } from '@/stores/auth';
 import type {
+  AddStudentsResult,
   Book,
+  ClaveEntregada,
   ClassView,
   DistributeResult,
   LayoutFormat,
@@ -158,7 +161,10 @@ const resumen = computed(() => ({
 // --- Alumnado de otros cursos ---
 const showAddStudents = ref(false);
 
-async function onStudentsAdded(resultado: { added: number; accountsCreated: number }): Promise<void> {
+/** Claves a repartir tras el alta. Se muestran una sola vez. */
+const claves = ref<ClaveEntregada[]>([]);
+
+async function onStudentsAdded(resultado: AddStudentsResult): Promise<void> {
   showAddStudents.value = false;
   const partes = [resultado.added === 1 ? '1 alumno añadido' : `${resultado.added} alumnos añadidos`];
   if (resultado.accountsCreated) {
@@ -169,6 +175,9 @@ async function onStudentsAdded(resultado: { added: number; accountsCreated: numb
     );
   }
   notice.value = partes.join(' · ');
+  claves.value = resultado.credentials;
+  // Si hay claves que repartir, la pestana de alumnado es donde se ven.
+  if (resultado.credentials.length) pestana.value = 'alumnado';
   await loadAll();
 }
 
@@ -224,6 +233,30 @@ async function borrarSeleccionados(): Promise<void> {
     error.value = errorMessage(err);
   } finally {
     borrando.value = false;
+  }
+}
+
+/**
+ * Borra la cuenta del alumno y todo su contenido. Distinto de "sacar", que solo lo
+ * quita de esta biblioteca y le conserva el trabajo.
+ */
+async function deleteStudent(studentId: string, nombre: string): Promise<void> {
+  const respuesta = window.prompt(
+    `Vas a BORRAR la cuenta de ${nombre} y todo su contenido: sus libros, sus ` +
+      'valoraciones y sus archivos. No se puede deshacer.\n\n' +
+      `Escribe su nombre completo para confirmar:\n${nombre}`,
+  );
+  if (respuesta?.trim() !== nombre) {
+    if (respuesta !== null) error.value = 'El nombre no coincide: no se ha borrado nada.';
+    return;
+  }
+
+  try {
+    const borrado = await usersApi.remove(studentId);
+    notice.value = `${borrado.fullName} borrado: ${borrado.books} libros · ${borrado.mediaDeleted} archivos`;
+    await loadAll();
+  } catch (err) {
+    error.value = errorMessage(err);
   }
 }
 
@@ -682,6 +715,8 @@ function formatDate(value: string | null): string {
           </div>
         </div>
 
+        <ClavesEntregadas v-if="claves.length" class="mb-4" :credentials="claves" @close="claves = []" />
+
         <!-- Alta rápida con QR, para quien no tiene correo institucional -->
         <form class="card mb-4 flex flex-wrap items-end gap-2 p-4" @submit.prevent="addStudent">
           <div class="min-w-[14rem] flex-1">
@@ -754,11 +789,20 @@ function formatDate(value: string | null): string {
                 <td class="px-4 py-2 text-right tabular-nums text-slate-700">{{ alumno.publishedCount }}</td>
                 <td class="px-4 py-2 text-xs text-slate-500">{{ formatDate(alumno.lastActivityAt) }}</td>
                 <td class="px-4 py-2 text-right">
-                  <button
-                    type="button"
-                    class="text-xs font-semibold text-red-600 hover:underline"
-                    @click="removeStudent(alumno.studentId, alumno.studentName)"
-                  >Sacar</button>
+                  <span class="flex justify-end gap-3">
+                    <button
+                      type="button"
+                      class="text-xs font-semibold text-slate-500 hover:underline"
+                      title="Lo quita de esta biblioteca; su trabajo se conserva"
+                      @click="removeStudent(alumno.studentId, alumno.studentName)"
+                    >Sacar</button>
+                    <button
+                      type="button"
+                      class="text-xs font-semibold text-red-600 hover:underline"
+                      title="Borra su cuenta y todo su contenido"
+                      @click="deleteStudent(alumno.studentId, alumno.studentName)"
+                    >Borrar</button>
+                  </span>
                 </td>
               </tr>
             </tbody>

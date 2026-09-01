@@ -1,6 +1,7 @@
 import bcrypt from 'bcryptjs';
 import { query } from '../../db/pool.js';
 import { HttpError } from '../../lib/http-error.js';
+import { almacen } from '../../lib/storage.js';
 import type { UserRole } from '../../lib/tokens.js';
 
 const SALT_ROUNDS = 12;
@@ -176,13 +177,112 @@ export async function updateUser(
   return loadUser(userId);
 }
 
+export interface BorradoUsuario {
+  fullName: string;
+  email: string;
+  books: number;
+  pages: number;
+  grades: number;
+  mediaDeleted: number;
+  storage: string;
+}
+
+/**
+ * Borra una cuenta y todo lo suyo, sin vuelta atras.
+ *
+ * Las tablas caen solas por las claves foraneas (libros, paginas, elementos, notas,
+ * bitacora, inscripciones, portafolio). Lo que no cae solo son los archivos subidos,
+ * asi que se borran antes: si fallara el borrado de la base, mas vale haber perdido
+ * los ficheros que dejarlos huerfanos pagando almacenamiento para siempre.
+ *
+ * Los libros de una biblioteca se van con su autor. Es lo que pidio el centro, y es
+ * coherente: el trabajo es de quien lo hizo.
+ */
+export async function deleteUser(userId: string, actorId: string): Promise<BorradoUsuario> {
+  if (userId === actorId) throw HttpError.badRequest('No puedes borrar tu propia cuenta');
+
+  const { rows } = await query<{
+    full_name: string;
+    email: string;
+    role: string;
+    books: string;
+    pages: string;
+    grades: string;
+  }>(
+    `SELECT u.full_name, u.email, u.role,
+            (SELECT COUNT(*) FROM books b WHERE b.creator_id = u.id) AS books,
+            (SELECT COUNT(*) FROM pages p JOIN books b ON b.id = p.book_id WHERE b.creator_id = u.id) AS pages,
+            (SELECT COUNT(*) FROM book_grades g JOIN books b ON b.id = g.book_id WHERE b.creator_id = u.id) AS grades
+     FROM users u WHERE u.id = $1`,
+    [userId],
+  );
+  const fila = rows[0];
+  if (!fila) throw HttpError.notFound('Usuario no encontrado');
+
+  // Un administrador solo lo puede borrar otro administrador, y nunca al ultimo.
+  if (fila.role === 'admin') {
+    const restantes = await query<{ total: string }>(
+      "SELECT COUNT(*) AS total FROM users WHERE role = 'admin' AND id <> $1",
+      [userId],
+    );
+    if (Number(restantes.rows[0].total) === 0) {
+      throw HttpError.badRequest('Es el ultimo administrador: el sistema quedaria sin quien lo gestione');
+    }
+  }
+
+  const mediaDeleted = await almacen().borrarDeUsuario(userId);
+
+  // Los libros NO caen solos: books.creator_id es ON DELETE SET NULL, asi que al
+  // borrar la cuenta se quedarian huerfanos y sin autor dentro de la biblioteca.
+  // Se borran a proposito, y con ellos caen paginas, elementos, notas y bitacora.
+  await query('DELETE FROM books WHERE creator_id = $1', [userId]);
+  await query('DELETE FROM users WHERE id = $1', [userId]);
+
+  return {
+    fullName: fila.full_name,
+    email: fila.email,
+    books: Number(fila.books),
+    pages: Number(fila.pages),
+    grades: Number(fila.grades),
+    mediaDeleted,
+    storage: almacen().nombre,
+  };
+}
+
+/**
+ * Un docente solo puede borrar alumnado de sus propias bibliotecas. Sin esto,
+ * cualquier profesor podria borrar la cuenta de un companero o de un alumno ajeno.
+ */
+export async function assertPuedeBorrar(userId: string, actor: { id: string; role: string }): Promise<void> {
+  // Antes que el permiso: borrarse a uno mismo nunca tiene sentido, y sin esta linea
+  // un docente recibiria un "no es tu alumno" en vez del motivo real.
+  if (userId === actor.id) throw HttpError.badRequest('No puedes borrar tu propia cuenta');
+  if (actor.role === 'admin') return;
+
+  const { rows } = await query<{ permitido: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1 FROM library_students ls
+       JOIN libraries l ON l.id = ls.library_id
+       LEFT JOIN library_teachers lt ON lt.library_id = l.id AND lt.teacher_id = $2
+       WHERE ls.student_id = $1 AND (l.owner_id = $2 OR lt.teacher_id IS NOT NULL)
+     ) AND (SELECT role FROM users WHERE id = $1) = 'student' AS permitido`,
+    [userId, actor.id],
+  );
+
+  if (!rows[0]?.permitido) {
+    throw HttpError.forbidden('Solo puedes borrar alumnado de tus propias bibliotecas');
+  }
+}
+
 /** Cambia la contrasena sin pedir la anterior: es una accion de administracion. */
 export async function resetPassword(userId: string, password: string): Promise<void> {
   const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
-  const { rowCount } = await query('UPDATE users SET password_hash = $2 WHERE id = $1', [
-    userId,
-    passwordHash,
-  ]);
+  // Vuelve a ser una clave puesta por el sistema, no elegida por la persona: se
+  // marca para que al anadirla a una biblioteca el docente pueda repartirla.
+  const { rowCount } = await query(
+    'UPDATE users SET password_hash = $2, password_is_default = TRUE WHERE id = $1',
+    [userId, passwordHash],
+  );
   if (!rowCount) throw HttpError.notFound('Usuario no encontrado');
 }
 

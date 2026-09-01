@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue';
 import AlertMessage from '@/components/AlertMessage.vue';
 import { booksApi } from '@/services/api';
 import { errorMessage } from '@/services/http';
+import { useCierreExterior } from '@/composables/useCierreExterior';
 import {
   NOTA_MAXIMA,
   NOTA_MINIMA,
@@ -33,6 +34,8 @@ const emit = defineEmits<{
   saved: [grade: Grade];
   deleted: [gradeId: string];
 }>();
+
+const cierre = useCierreExterior(() => emit('close'));
 
 const editando = ref(!props.grade);
 const titulo = ref(props.grade?.title ?? '');
@@ -100,7 +103,8 @@ async function borrar(): Promise<void> {
     role="dialog"
     aria-modal="true"
     aria-labelledby="valoracion-titulo"
-    @click.self="emit('close')"
+    @mousedown="cierre.onMousedown"
+    @mouseup="cierre.onMouseup"
     @keydown.esc="emit('close')"
   >
     <div class="mx-auto w-full max-w-lg rounded-xl bg-white shadow-2xl">

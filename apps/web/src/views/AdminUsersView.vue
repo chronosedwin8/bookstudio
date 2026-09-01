@@ -109,6 +109,38 @@ async function resetPassword(user: ManagedUser): Promise<void> {
   }
 }
 
+/**
+ * Borra la cuenta y todo lo suyo: libros, paginas, notas, bitacora y los archivos
+ * que haya subido, tambien los de S3.
+ *
+ * Es irreversible y se lleva por delante el trabajo de una persona, asi que no vale
+ * un "aceptar": hay que escribir su nombre. Un dialogo de confirmacion normal se
+ * pulsa sin leer.
+ */
+async function deleteUser(user: ManagedUser): Promise<void> {
+  const respuesta = window.prompt(
+    `Vas a BORRAR a ${user.fullName} y todo su contenido: ${user.bookCount} ` +
+      `${user.bookCount === 1 ? 'libro' : 'libros'}, sus valoraciones y sus archivos.\n\n` +
+      'No se puede deshacer.\n\n' +
+      `Escribe su nombre completo para confirmar:\n${user.fullName}`,
+  );
+  if (respuesta?.trim() !== user.fullName) {
+    if (respuesta !== null) error.value = 'El nombre no coincide: no se ha borrado nada.';
+    return;
+  }
+
+  try {
+    const borrado = await usersApi.remove(user.id);
+    const partes = [`${borrado.books} libros`, `${borrado.pages} páginas`];
+    if (borrado.grades) partes.push(`${borrado.grades} valoraciones`);
+    partes.push(`${borrado.mediaDeleted} archivos (${borrado.storage})`);
+    notice.value = `${borrado.fullName} borrado: ${partes.join(' · ')}`;
+    await load();
+  } catch (err) {
+    error.value = errorMessage(err);
+  }
+}
+
 // --- Importacion desde Phidias ---
 const phidiasEnabled = ref(false);
 const sections = ref<PhidiasSection[]>([]);
@@ -341,6 +373,13 @@ onMounted(async () => {
                     :disabled="user.id === auth.user?.id"
                     @click="toggleActive(user)"
                   >{{ user.isActive ? 'Desactivar' : 'Reactivar' }}</button>
+                  <button
+                    type="button"
+                    class="px-2 py-1 text-xs font-semibold text-red-700 underline hover:text-red-900 disabled:opacity-40 disabled:no-underline"
+                    :disabled="user.id === auth.user?.id"
+                    title="Borra la cuenta y todo su contenido"
+                    @click="deleteUser(user)"
+                  >Borrar</button>
                 </div>
               </td>
             </tr>

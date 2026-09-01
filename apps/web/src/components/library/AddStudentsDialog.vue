@@ -3,7 +3,8 @@ import { computed, onMounted, ref, watch } from 'vue';
 import AlertMessage from '@/components/AlertMessage.vue';
 import { librariesApi } from '@/services/api';
 import { errorMessage } from '@/services/http';
-import type { Candidate, SourceGroup } from '@/types/api';
+import { useCierreExterior } from '@/composables/useCierreExterior';
+import type { AddStudentsResult, Candidate, SourceGroup } from '@/types/api';
 
 /**
  * Arma una biblioteca con alumnado suelto de varios grupos.
@@ -21,8 +22,10 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   close: [];
-  added: [resultado: { added: number; accountsCreated: number }];
+  added: [resultado: AddStudentsResult];
 }>();
+
+const cierre = useCierreExterior(() => emit('close'));
 
 type Modo = 'grupo' | 'buscar';
 const modo = ref<Modo>('grupo');
@@ -152,7 +155,8 @@ async function anadir(): Promise<void> {
     role="dialog"
     aria-modal="true"
     aria-labelledby="anadir-alumnos-titulo"
-    @click.self="emit('close')"
+    @mousedown="cierre.onMousedown"
+    @mouseup="cierre.onMouseup"
     @keydown.esc="emit('close')"
   >
     <div class="mx-auto w-full max-w-4xl rounded-xl bg-white shadow-2xl">

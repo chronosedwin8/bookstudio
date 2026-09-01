@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto';
-import { mkdir, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
 import { env } from '../../config/env.js';
 import { HttpError } from '../../lib/http-error.js';
+import { almacen, STORAGE_ROOT, STORAGE_URL_PREFIX, type UploadKind } from '../../lib/storage.js';
 
-export type UploadKind = 'audio' | 'video' | 'image';
+export { STORAGE_ROOT, STORAGE_URL_PREFIX };
+export type { UploadKind };
 
 interface MimeRule {
   extension: string;
@@ -49,9 +49,6 @@ const MAX_BYTES: Record<UploadKind, number> = {
   audio: 20 * 1024 * 1024,
   video: 60 * 1024 * 1024,
 };
-
-export const STORAGE_ROOT = join(process.cwd(), 'storage');
-export const STORAGE_URL_PREFIX = '/storage';
 
 function matchesMagic(buffer: Buffer, rule: MimeRule): boolean {
   if (rule.matches) return rule.matches(buffer);
@@ -118,19 +115,12 @@ export async function storeDataUrl(userId: string, dataUrl: string): Promise<Sto
     throw HttpError.badRequest('El contenido del archivo no coincide con el tipo declarado');
   }
 
-  // Un directorio por usuario evita colisiones y facilita cuotas o borrados futuros.
-  const directory = join(STORAGE_ROOT, rule.kind, userId);
-  await mkdir(directory, { recursive: true });
-
+  // Un directorio por usuario evita colisiones y hace que borrar a alguien sea
+  // borrar su carpeta, sin llevar un inventario de sus archivos.
   const fileName = `${randomUUID()}.${rule.extension}`;
-  await writeFile(join(directory, fileName), buffer);
+  const fileUrl = await almacen().guardar(rule.kind, userId, fileName, buffer, mimeType);
 
-  return {
-    fileUrl: `${STORAGE_URL_PREFIX}/${rule.kind}/${userId}/${fileName}`,
-    kind: rule.kind,
-    bytes: buffer.length,
-    mimeType,
-  };
+  return { fileUrl, kind: rule.kind, bytes: buffer.length, mimeType };
 }
 
 export const uploadLimits = {

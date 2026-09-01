@@ -506,11 +506,24 @@ export async function getRoster(
  * Suma alumnado a la biblioteca. Las claves pueden ser uuid de cuentas existentes o
  * "phidias:<id>", en cuyo caso la cuenta se crea antes. Repetir a alguien no da error.
  */
+export interface ClaveEntregada {
+  fullName: string;
+  email: string;
+  password: string;
+  isNew: boolean;
+}
+
 export async function addStudents(
   libraryId: string,
   userId: string,
   keys: string[],
-): Promise<{ added: number; skipped: number; accountsCreated: number }> {
+): Promise<{
+  added: number;
+  skipped: number;
+  accountsCreated: number;
+  /** A quien hay que darle una clave, y cual. Vacio si nadie la necesita. */
+  credentials: ClaveEntregada[];
+}> {
   await requireManager(libraryId, userId);
 
   const uuids: string[] = [];
@@ -542,13 +555,19 @@ export async function addStudents(
   }
 
   let accountsCreated = 0;
-  if (porSeccion.size) {
-    const existiendo = await query<{ total: string }>("SELECT COUNT(*) AS total FROM users WHERE role = 'student'");
-    for (const [seccion, alumnos] of porSeccion) {
-      ids.push(...(await ensureStudentAccounts(seccion, alumnos)));
+  const credentials: ClaveEntregada[] = [];
+
+  for (const [seccion, alumnos] of porSeccion) {
+    const cuentas = await ensureStudentAccounts(seccion, alumnos);
+    for (const c of cuentas) {
+      ids.push(c.id);
+      if (c.isNew) accountsCreated += 1;
+      // Solo se reparte clave a quien la necesita: los que ya se pusieron la suya
+      // no aparecen, y asi el docente no le entrega una que no funciona.
+      if (c.password) {
+        credentials.push({ fullName: c.fullName, email: c.email, password: c.password, isNew: c.isNew });
+      }
     }
-    const ahora = await query<{ total: string }>("SELECT COUNT(*) AS total FROM users WHERE role = 'student'");
-    accountsCreated = Number(ahora.rows[0].total) - Number(existiendo.rows[0].total);
   }
 
   if (!ids.length) throw HttpError.badRequest('Ninguna de las cuentas indicadas es de alumnado activo');
@@ -560,7 +579,12 @@ export async function addStudents(
     [libraryId, ids, userId],
   );
 
-  return { added: rowCount ?? 0, skipped: keys.length - (rowCount ?? 0), accountsCreated };
+  return {
+    added: rowCount ?? 0,
+    skipped: keys.length - (rowCount ?? 0),
+    accountsCreated,
+    credentials,
+  };
 }
 
 /**
@@ -627,11 +651,7 @@ export async function getMembers(libraryId: string, userId: string): Promise<Lib
      SELECT u.id, u.full_name, u.email, 'teacher', NULL::varchar
        FROM library_teachers lt JOIN users u ON u.id = lt.teacher_id WHERE lt.library_id = $1
      UNION ALL
-     SELECT u.id, u.full_name, u.email, 'student',
-            (SELECT lc.name FROM library_students lsc
-               JOIN libraries lc ON lc.id = lsc.library_id
-              WHERE lsc.student_id = u.id AND lc.external_source IS NOT NULL
-              ORDER BY lc.name LIMIT 1)
+     SELECT u.id, u.full_name, u.email, 'student', u.external_group
        FROM library_students ls JOIN users u ON u.id = ls.student_id WHERE ls.library_id = $1
      ORDER BY 4, 2`,
     [libraryId],

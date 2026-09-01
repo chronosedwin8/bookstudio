@@ -21,6 +21,13 @@ export const createStudentSchema = z.object({
   libraryId: z.string().uuid('libraryId debe ser un UUID'),
 });
 
+/** La actual es opcional: quien entra con QR no tiene ninguna todavia. */
+export const changePasswordSchema = z.object({
+  currentPassword: z.string().max(128).optional(),
+  newPassword: z.string().min(8, 'La contraseña debe tener al menos 8 caracteres').max(128),
+});
+
+export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
 export type QrLoginInput = z.infer<typeof qrLoginSchema>;

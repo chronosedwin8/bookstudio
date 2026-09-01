@@ -2,7 +2,13 @@ import { Router } from 'express';
 import { asyncHandler } from '../../lib/async-handler.js';
 import { requireAuth, requireRole } from '../../middleware/auth.js';
 import { validate } from '../../middleware/validate.js';
-import { createStudentSchema, loginSchema, qrLoginSchema, registerSchema } from './auth.schemas.js';
+import {
+  changePasswordSchema,
+  createStudentSchema,
+  loginSchema,
+  qrLoginSchema,
+  registerSchema,
+} from './auth.schemas.js';
 import { createRateLimiter } from '../../lib/rate-limit.js';
 import { HttpError } from '../../lib/http-error.js';
 import { createTrialSession } from './trial.service.js';
@@ -68,5 +74,16 @@ authRouter.post(
   asyncHandler(async (req, res) => {
     const result = await service.createStudentWithQr(req.auth!.userId, req.body);
     res.status(201).json(result);
+  }),
+);
+
+/** Cambio de contrasena por la propia persona. Todos los roles pueden hacerlo. */
+authRouter.post(
+  '/password',
+  requireAuth,
+  validate(changePasswordSchema),
+  asyncHandler(async (req, res) => {
+    await service.changeOwnPassword(req.auth!.userId, req.body.currentPassword, req.body.newPassword);
+    res.status(204).end();
   }),
 );

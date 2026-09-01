@@ -389,16 +389,11 @@ export async function listBooks(userId: string, filters: ListBooksQuery): Promis
             b.share_visibility, b.share_token, b.collaborative, b.origin_book_id,
             (SELECT COUNT(*) FROM pages p WHERE p.book_id = b.id) AS page_count,
             autor.full_name AS creator_name,
-            -- El curso del autor: su clase traida del sistema academico (K10A y
-            -- similares). Una biblioteca puede mezclar grupos, y sin esto no se
-            -- distingue de que curso es cada trabajo.
-            (SELECT lc.name
-               FROM library_students lsc
-               JOIN libraries lc ON lc.id = lsc.library_id
-              WHERE lsc.student_id = b.creator_id
-                AND lc.external_source IS NOT NULL
-              ORDER BY lc.name
-              LIMIT 1) AS creator_course,
+            -- El curso del autor (K10A y similares), guardado en su propia cuenta.
+            -- Antes se buscaba una biblioteca suya importada del sistema academico,
+            -- y salia vacio en cuanto se le anadia suelto a una biblioteca creada a
+            -- mano, que es justo el caso de una biblioteca con varios cursos.
+            autor.external_group AS creator_course,
             cover.background_color AS cover_background,
             cover.background_pattern AS cover_pattern,
             elems.elements AS cover_elements

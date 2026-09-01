@@ -192,10 +192,19 @@ export async function listSectionStudents(sectionId: number): Promise<SectionStu
  * Crea (o reutiliza) las cuentas de unos alumnos concretos de una seccion y devuelve
  * sus ids. No inscribe en ninguna biblioteca: de eso se encarga quien llama.
  */
+export interface CuentaCreada {
+  id: string;
+  fullName: string;
+  email: string;
+  /** Solo cuando la cuenta es nueva o sigue con la clave inicial. */
+  password: string | null;
+  isNew: boolean;
+}
+
 export async function ensureStudentAccounts(
   sectionId: number,
   studentIds: number[],
-): Promise<string[]> {
+): Promise<CuentaCreada[]> {
   const { section } = await findSection(sectionId);
   const pedidos = new Set(studentIds);
   const students = (section.students ?? []).filter((s) => hasEmail(s) && pedidos.has(s.id));
@@ -204,26 +213,46 @@ export async function ensureStudentAccounts(
   const passwordHash = await bcrypt.hash(env.PHIDIAS_DEFAULT_PASSWORD, 12);
 
   return withTransaction(async (client) => {
-    const ids: string[] = [];
+    const cuentas: CuentaCreada[] = [];
     for (const student of students) {
       const email = student.email!.trim().toLowerCase();
-      const upserted = await client.query<{ id: string }>(
-        `INSERT INTO users (email, password_hash, full_name, role, external_source, external_id)
-         VALUES ($1, $2, $3, 'student', 'phidias', $4)
-         ON CONFLICT (email) DO UPDATE SET full_name = EXCLUDED.full_name
-         RETURNING id`,
-        [email, passwordHash, fullNameOf(student).slice(0, 100), String(student.id)],
+
+      // Si la cuenta ya existe NO se le toca la contrasena: puede haberla cambiado.
+      // external_group si se refresca, porque el alumno cambia de curso cada ano.
+      const upserted = await client.query<{ id: string; password_is_default: boolean; inserted: boolean }>(
+        `INSERT INTO users (email, password_hash, full_name, role, external_source, external_id,
+                            external_group, password_is_default)
+         VALUES ($1, $2, $3, 'student', 'phidias', $4, $5, TRUE)
+         ON CONFLICT (email) DO UPDATE
+           SET full_name = EXCLUDED.full_name,
+               external_group = EXCLUDED.external_group
+         RETURNING id, password_is_default, (xmax = 0) AS inserted`,
+        [
+          email,
+          passwordHash,
+          fullNameOf(student).slice(0, 100),
+          String(student.id),
+          section.name.slice(0, 60),
+        ],
       );
-      const id = upserted.rows[0].id;
-      ids.push(id);
+
+      const fila = upserted.rows[0];
+      cuentas.push({
+        id: fila.id,
+        fullName: fullNameOf(student),
+        email,
+        // Se dice la clave solo si sirve de algo: cuenta nueva, o vieja que nunca la cambio.
+        password: fila.inserted || fila.password_is_default ? env.PHIDIAS_DEFAULT_PASSWORD : null,
+        isNew: fila.inserted,
+      });
 
       await client.query(
         `INSERT INTO student_portfolios (student_id, name)
          VALUES ($1, $2) ON CONFLICT (student_id) DO NOTHING`,
-        [id, `Portafolio de ${fullNameOf(student)}`.slice(0, 150)],
+        [fila.id, `Portafolio de ${fullNameOf(student)}`.slice(0, 150)],
       );
     }
-    return ids;
+    return cuentas;
   });
 }
 
@@ -314,11 +343,20 @@ export async function importSection(
 
       // ON CONFLICT sobre el email: si ya existe (por otra seccion), se reutiliza.
       const upserted = await client.query<{ id: string; inserted: boolean }>(
-        `INSERT INTO users (email, password_hash, full_name, role, external_source, external_id)
-         VALUES ($1, $2, $3, 'student', 'phidias', $4)
-         ON CONFLICT (email) DO UPDATE SET full_name = EXCLUDED.full_name
+        `INSERT INTO users (email, password_hash, full_name, role, external_source, external_id,
+                            external_group, password_is_default)
+         VALUES ($1, $2, $3, 'student', 'phidias', $4, $5, TRUE)
+         ON CONFLICT (email) DO UPDATE
+           SET full_name = EXCLUDED.full_name,
+               external_group = EXCLUDED.external_group
          RETURNING id, (xmax = 0) AS inserted`,
-        [email, passwordHash, fullNameOf(student).slice(0, 100), String(student.id)],
+        [
+          email,
+          passwordHash,
+          fullNameOf(student).slice(0, 100),
+          String(student.id),
+          section.name.slice(0, 60),
+        ],
       );
 
       const user = upserted.rows[0];

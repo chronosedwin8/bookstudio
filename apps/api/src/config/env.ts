@@ -29,6 +29,19 @@ const envSchema = z.object({
   MP_WEBHOOK_URL: z.string().default(''),
   APP_URL: z.string().default('https://bookstudio.uk'),
 
+  // Almacenamiento del contenido multimedia. Sin S3_BUCKET todo se guarda en el
+  // disco del servidor, que es lo que hacia hasta ahora.
+  S3_BUCKET: z.string().default(''),
+  S3_REGION: z.string().default('us-east-1'),
+  S3_ACCESS_KEY_ID: z.string().default(''),
+  S3_SECRET_ACCESS_KEY: z.string().default(''),
+  /** Carpeta raiz dentro del bucket; importa si el bucket esta compartido. */
+  S3_PREFIX: z.string().default('bookstudio'),
+  /** URL publica alternativa (CloudFront o similar). Vacio: la de AWS. */
+  S3_PUBLIC_URL: z.string().default(''),
+  /** Solo para almacenamientos compatibles que no son AWS (MinIO, R2). */
+  S3_ENDPOINT: z.string().default(''),
+
   JWT_SECRET: z.string().min(24, 'JWT_SECRET debe tener al menos 24 caracteres'),
   JWT_EXPIRES_IN: z.string().default('12h'),
   JWT_QR_EXPIRES_IN: z.string().default('365d'),
