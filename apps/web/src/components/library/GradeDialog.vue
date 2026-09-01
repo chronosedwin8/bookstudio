@@ -3,7 +3,6 @@ import { computed, onMounted, ref } from 'vue';
 import AlertMessage from '@/components/AlertMessage.vue';
 import { booksApi } from '@/services/api';
 import { errorMessage } from '@/services/http';
-import { useCierreExterior } from '@/composables/useCierreExterior';
 import {
   NOTA_MAXIMA,
   NOTA_MINIMA,
@@ -35,8 +34,6 @@ const emit = defineEmits<{
   deleted: [gradeId: string];
 }>();
 
-const cierre = useCierreExterior(() => emit('close'));
-
 const editando = ref(!props.grade);
 const titulo = ref(props.grade?.title ?? '');
 const nota = ref<string>(props.grade ? formatoNota(props.grade.score) : '');
@@ -50,10 +47,11 @@ onMounted(() => {
   if (editando.value) campo.value?.focus();
 });
 
-const notaNumero = computed(() => Number(nota.value.replace(',', '.')));
+/** Se acepta la coma: es lo que tiene el teclado en espanol. */
+const notaNumero = computed(() => Number(nota.value.trim().replace(',', '.')));
 const notaValida = computed(
   () =>
-    nota.value !== '' &&
+    nota.value.trim() !== '' &&
     Number.isFinite(notaNumero.value) &&
     notaNumero.value >= NOTA_MINIMA &&
     notaNumero.value <= NOTA_MAXIMA,
@@ -103,8 +101,6 @@ async function borrar(): Promise<void> {
     role="dialog"
     aria-modal="true"
     aria-labelledby="valoracion-titulo"
-    @mousedown="cierre.onMousedown"
-    @mouseup="cierre.onMouseup"
     @keydown.esc="emit('close')"
   >
     <div class="mx-auto w-full max-w-lg rounded-xl bg-white shadow-2xl">
@@ -180,22 +176,32 @@ async function borrar(): Promise<void> {
           <div>
             <label class="label" for="grade-nota">Nota</label>
             <div class="flex items-center gap-3">
+              <!--
+                Campo de texto, no type="number", y sin flechas.
+                Con un campo numerico el navegador vacia el valor en los estados
+                intermedios ("2." al escribir 2.5), rechaza la coma del teclado
+                espanol y las flechas cambian el valor al pasar la rueda del raton.
+                Aqui la validacion la hace notaValida, que acepta coma y punto.
+              -->
               <input
                 id="grade-nota"
                 v-model="nota"
-                type="number"
-                required
-                :min="NOTA_MINIMA"
-                :max="NOTA_MAXIMA"
-                step="0.1"
+                type="text"
+                inputmode="decimal"
+                autocomplete="off"
+                maxlength="4"
                 class="input w-28 text-center text-lg font-bold"
                 placeholder="2.5"
               />
+              <!--
+                La etiqueta esta siempre montada y solo cambia su texto. Con v-if
+                aparecia y desaparecia en cada tecla, y ese vaiven del DOM mientras
+                se escribe es una fuente de problemas que no compensa.
+              -->
               <span
-                v-if="notaValida"
-                class="rounded-lg border-2 px-3 py-1.5 text-sm font-bold"
-                :class="colorNota(notaNumero)"
-              >{{ etiquetaNota(notaNumero) }}</span>
+                class="rounded-lg border-2 px-3 py-1.5 text-sm font-bold transition"
+                :class="notaValida ? colorNota(notaNumero) : 'border-transparent text-transparent'"
+              >{{ notaValida ? etiquetaNota(notaNumero) : '—' }}</span>
             </div>
             <p class="mt-1 text-xs text-slate-500">
               De 1.0 a 6.0, con un decimal. <strong>1.0 es la mejor nota</strong> y 6.0 la peor.

@@ -4,7 +4,6 @@ import AlertMessage from '@/components/AlertMessage.vue';
 import GradeDialog from '@/components/library/GradeDialog.vue';
 import { booksApi } from '@/services/api';
 import { errorMessage } from '@/services/http';
-import { useCierreExterior } from '@/composables/useCierreExterior';
 import { colorNota, etiquetaNota, fechaHora, formatoNota } from '@/utils/grades';
 import type { Grade } from '@/types/api';
 
@@ -23,8 +22,6 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{ close: []; changed: [] }>();
-
-const cierre = useCierreExterior(() => emit('close'));
 
 const grades = ref<Grade[]>([]);
 const cargando = ref(true);
@@ -67,8 +64,6 @@ function onSaved(): void {
     role="dialog"
     aria-modal="true"
     aria-labelledby="notas-titulo"
-    @mousedown="cierre.onMousedown"
-    @mouseup="cierre.onMouseup"
     @keydown.esc="emit('close')"
   >
     <div class="mx-auto w-full max-w-2xl rounded-xl bg-white shadow-2xl">
@@ -152,27 +147,29 @@ function onSaved(): void {
       </div>
     </div>
 
-    <GradeDialog
-      v-if="creando"
-      :book-id="bookId"
-      :book-title="bookTitle"
-      :student-name="studentName"
-      editable
-      @close="creando = false"
-      @saved="onSaved"
-      @deleted="onSaved"
-    />
+    <Teleport to="body">
+      <GradeDialog
+        v-if="creando"
+        :book-id="bookId"
+        :book-title="bookTitle"
+        :student-name="studentName"
+        editable
+        @close="creando = false"
+        @saved="onSaved"
+        @deleted="onSaved"
+      />
 
-    <GradeDialog
-      v-if="abierta"
-      :book-id="bookId"
-      :book-title="bookTitle"
-      :student-name="studentName"
-      :grade="abierta"
-      :editable="canGrade"
-      @close="abierta = null"
-      @saved="onSaved"
-      @deleted="onSaved"
-    />
+      <GradeDialog
+        v-if="abierta"
+        :book-id="bookId"
+        :book-title="bookTitle"
+        :student-name="studentName"
+        :grade="abierta"
+        :editable="canGrade"
+        @close="abierta = null"
+        @saved="onSaved"
+        @deleted="onSaved"
+      />
+    </Teleport>
   </div>
 </template>
