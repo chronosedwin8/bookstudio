@@ -176,8 +176,11 @@ export async function createPreapproval(input: CreatePreapprovalInput): Promise<
       back_url: input.backUrl,
       ...(input.cardTokenId ? { card_token_id: input.cardTokenId, status: 'authorized' } : {}),
       auto_recurring: {
-        frequency: 1,
-        frequency_type: 'years',
+        // Doce meses, no "1 ano": Mercado Pago solo admite [days, months] y
+        // rechazaba la suscripcion con 400 "Invalid value for frequency type".
+        // Comprobado contra su API: con years da error, con 12 months pasa.
+        frequency: 12,
+        frequency_type: 'months',
         transaction_amount: input.amountCop,
         currency_id: 'COP',
       },

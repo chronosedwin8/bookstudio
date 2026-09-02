@@ -1,5 +1,6 @@
 import bcrypt from 'bcryptjs';
 import { query, withTransaction } from '../../db/pool.js';
+import { env } from '../../config/env.js';
 import { HttpError } from '../../lib/http-error.js';
 import { signAccessToken } from '../../lib/tokens.js';
 import * as mp from './mercadopago.service.js';
@@ -171,6 +172,8 @@ export interface CheckoutResult {
   };
   /** Enlace de autorizacion si la renovacion automatica lo necesita. */
   authorizationUrl?: string;
+  /** Por que no se pudo activar la renovacion, si es que fallo. */
+  autoRenewError?: string;
 }
 
 /** Estados de Mercado Pago que dan derecho a usar la licencia. */
@@ -248,29 +251,38 @@ export async function checkout(
     return { subscription: inserted.rows[0], invoiceNumber: Number(factura.rows[0].invoice_number) };
   });
 
-  // La renovacion automatica solo se intenta si el primer cobro salio bien.
+  /**
+   * Renovacion automatica, solo si el primer cobro salio bien.
+   *
+   * NO se reutiliza el token de la tarjeta: Mercado Pago los invalida al cobrar, asi
+   * que pasarlo aqui hacia fallar la suscripcion siempre. Se crea sin tarjeta y
+   * Mercado Pago devuelve un enlace donde la persona la autoriza.
+   */
   let authorizationUrl: string | undefined;
+  let autoRenewError: string | undefined;
+
   if (aprobado && input.autoRenew) {
     try {
       const preapproval = await mp.createPreapproval({
         payerEmail: input.payerEmail || ownerEmail,
         amountCop: plan.amountCop,
         reason: `BookStudio · Plan ${plan.name}`,
-        externalReference: reference,
-        backUrl: `${process.env.APP_URL ?? 'https://bookstudio.uk'}/clientes/facturacion`,
-        cardTokenId: input.token,
+        externalReference: `renovacion-${reference}`,
+        backUrl: `${env.APP_URL || 'https://bookstudio.uk'}/clientes/facturacion`,
       });
 
-      await query('UPDATE subscriptions SET auto_renew = TRUE, mp_preapproval_id = $2 WHERE id = $1', [
+      await query('UPDATE subscriptions SET mp_preapproval_id = $2 WHERE id = $1', [
         subscription.id,
         preapproval.id,
       ]);
-      subscription.auto_renew = true;
+      // auto_renew queda en falso hasta que Mercado Pago confirme la autorizacion:
+      // decir que esta activa antes de tiempo es peor que no decir nada.
       authorizationUrl = preapproval.init_point;
-    } catch {
+    } catch (error) {
       // Que falle la renovacion no invalida un pago ya cobrado: la licencia queda
-      // activa y la persona puede activarla luego desde el portal.
-      authorizationUrl = undefined;
+      // activa. Pero el motivo se devuelve en vez de tragarselo, que es como este
+      // fallo paso inadvertido tanto tiempo.
+      autoRenewError = error instanceof Error ? error.message : 'No se pudo activar la renovacion';
     }
   }
 
@@ -282,6 +294,7 @@ export async function checkout(
       invoiceNumber,
     },
     authorizationUrl,
+    autoRenewError,
   };
 }
 
@@ -389,7 +402,7 @@ export async function setAutoRenew(
       amountCop: Number(row.amount_cop),
       reason: `BookStudio · Plan ${plan?.name ?? row.plan}`,
       externalReference: mp.newExternalReference(`bs-renov-${row.id}`),
-      backUrl: `${process.env.APP_URL ?? 'https://bookstudio.uk'}/clientes/facturacion`,
+      backUrl: `${env.APP_URL || 'https://bookstudio.uk'}/clientes/facturacion`,
     });
 
     await query('UPDATE subscriptions SET auto_renew = TRUE, mp_preapproval_id = $2 WHERE id = $1', [
