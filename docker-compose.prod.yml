@@ -24,6 +24,15 @@
 #   APP_URL                  dominio publico; por defecto https://bookstudio.uk
 #   PHIDIAS_TOKEN            sin el, la importacion de grupos se desactiva
 #   PHIDIAS_DEFAULT_PASSWORD contrasena inicial del alumnado importado
+#
+# Entrada con la cuenta del colegio (Microsoft Entra ID). Sin las tres primeras
+# el boton no aparece y todo lo demas sigue igual:
+#   ENTRA_TENANT_ID          id del directorio en Azure
+#   ENTRA_CLIENT_ID          id de la aplicacion registrada
+#   ENTRA_CLIENT_SECRET      valor del secreto (no el id del secreto)
+#   ENTRA_REDIRECT_URI       por defecto {APP_URL}/api/auth/sso/callback
+#   ENTRA_ALLOWED_DOMAIN     dominio permitido; por defecto colegioaleman.edu.co
+#   ENTRA_DEFAULT_ROLE       rol de quien entra por primera vez (student|teacher)
 
 services:
   db:
@@ -93,6 +102,14 @@ services:
       PHIDIAS_BASE_URL: ${PHIDIAS_BASE_URL:-https://ds-barranquilla.phidias.co/rest}
       PHIDIAS_TOKEN: ${PHIDIAS_TOKEN:-}
       PHIDIAS_DEFAULT_PASSWORD: ${PHIDIAS_DEFAULT_PASSWORD:-bookstudio123}
+
+      # Entrada con la cuenta del colegio. Vacio = apagada, sin romper nada.
+      ENTRA_TENANT_ID: ${ENTRA_TENANT_ID:-}
+      ENTRA_CLIENT_ID: ${ENTRA_CLIENT_ID:-}
+      ENTRA_CLIENT_SECRET: ${ENTRA_CLIENT_SECRET:-}
+      ENTRA_REDIRECT_URI: ${ENTRA_REDIRECT_URI:-}
+      ENTRA_ALLOWED_DOMAIN: ${ENTRA_ALLOWED_DOMAIN:-colegioaleman.edu.co}
+      ENTRA_DEFAULT_ROLE: ${ENTRA_DEFAULT_ROLE:-student}
     volumes:
       # Fotos, audios y videos subidos: sin este volumen se pierden al redesplegar.
       - storage:/app/apps/api/storage

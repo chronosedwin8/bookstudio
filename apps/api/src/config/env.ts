@@ -42,6 +42,18 @@ const envSchema = z.object({
   /** Solo para almacenamientos compatibles que no son AWS (MinIO, R2). */
   S3_ENDPOINT: z.string().default(''),
 
+  // Entrada con la cuenta del colegio (Microsoft Entra ID). Vacio = apagada.
+  ENTRA_TENANT_ID: z.string().default(''),
+  ENTRA_CLIENT_ID: z.string().default(''),
+  ENTRA_CLIENT_SECRET: z.string().default(''),
+  // Por omision se deduce de APP_URL; debe coincidir con el registrado en Azure.
+  ENTRA_REDIRECT_URI: z.string().default(''),
+  // Puerta cerrada al resto del mundo: solo el correo del colegio.
+  ENTRA_ALLOWED_DOMAIN: z.string().default('colegioaleman.edu.co'),
+  // Con que rol nace quien entra por primera vez. Alumno por defecto: es lo
+  // seguro, porque dar clase de mas es peor que dar de menos.
+  ENTRA_DEFAULT_ROLE: z.enum(['student', 'teacher']).default('student'),
+
   JWT_SECRET: z.string().min(24, 'JWT_SECRET debe tener al menos 24 caracteres'),
   JWT_EXPIRES_IN: z.string().default('12h'),
   JWT_QR_EXPIRES_IN: z.string().default('365d'),

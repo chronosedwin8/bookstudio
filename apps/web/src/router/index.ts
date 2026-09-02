@@ -26,6 +26,11 @@ const routes: RouteRecordRaw[] = [
     meta: { guestOnly: true },
   },
   {
+    path: '/login/sso',
+    name: 'login-sso',
+    component: () => import('@/views/SsoCallbackView.vue'),
+  },
+  {
     path: '/login/qr',
     name: 'login-qr',
     component: () => import('@/views/QrLoginView.vue'),

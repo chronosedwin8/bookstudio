@@ -39,6 +39,23 @@ export const useAuthStore = defineStore('auth', () => {
     setSession(await authApi.login({ email, password }));
   }
 
+  /**
+   * Toma una sesion ya emitida por el servidor (entrada con la cuenta del
+   * colegio). El token se guarda antes de pedir el perfil porque es el propio
+   * interceptor quien lo adjunta a la peticion.
+   */
+  async function adoptarToken(nuevo: string): Promise<void> {
+    token.value = nuevo;
+    localStorage.setItem(TOKEN_STORAGE_KEY, nuevo);
+    initialized.value = true;
+    try {
+      user.value = await authApi.me();
+    } catch (err) {
+      logout();
+      throw err;
+    }
+  }
+
   async function register(payload: {
     email: string;
     password: string;
@@ -63,6 +80,7 @@ export const useAuthStore = defineStore('auth', () => {
   return {
     user,
     token,
+    adoptarToken,
     /** La usa la contratacion: el alta y el cobro devuelven la sesion ya hecha. */
     applySession: setSession,
     initialized,

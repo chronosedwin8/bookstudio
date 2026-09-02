@@ -86,6 +86,18 @@ export const authApi = {
   },
 };
 
+/** Estado de la entrada con la cuenta del colegio. */
+export const ssoApi = {
+  async config() {
+    const { data } = await http.get<{ enabled: boolean; domain: string }>('/auth/sso/config');
+    return data;
+  },
+  /** Sale del SPA a proposito: la vuelta la maneja el servidor. */
+  entrar(redirect = '/dashboard') {
+    window.location.href = `/api/auth/sso/start?redirect=${encodeURIComponent(redirect)}`;
+  },
+};
+
 export const librariesApi = {
   async list() {
     const { data } = await http.get<{ libraries: Library[] }>('/libraries');
