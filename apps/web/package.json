@@ -9,7 +9,7 @@
     "build:app": "vite build",
     "preview": "vite preview",
     "typecheck": "vue-tsc --noEmit",
-    "test:unit": "tsx src/composables/useDictado.check.mts"
+    "test:unit": "tsx src/composables/useDictado.check.mts && tsx src/stores/historial.check.mts"
   },
   "dependencies": {
     "@fontsource/atkinson-hyperlegible": "^5.3.0",

@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
 import { booksApi } from '@/services/api';
+import { crearHistorial, describirElemento } from './historial';
 import { errorMessage } from '@/services/http';
 import type {
   BookDetail,
@@ -49,6 +50,8 @@ export const useEditorStore = defineStore('editor', () => {
     () => sortedElements.value.find((el) => el.id === selectedElementId.value) ?? null,
   );
 
+  const historial = crearHistorial();
+
   function replaceElement(updated: CanvasElement): void {
     const page = book.value?.pages.find((p) => p.id === updated.pageId);
     if (!page) return;
@@ -58,6 +61,7 @@ export const useEditorStore = defineStore('editor', () => {
   }
 
   async function load(bookId: string): Promise<void> {
+    historial.limpiar();
     loading.value = true;
     error.value = null;
     try {
@@ -158,6 +162,26 @@ export const useEditorStore = defineStore('editor', () => {
     if (created) {
       currentPage.value.elements.push(created);
       selectedElementId.value = created.id;
+
+      const pageId = currentPage.value.id;
+      let vigente = created;
+      historial.registrar({
+        descripcion: `añadir ${describirElemento(created)}`,
+        deshacer: async () => {
+          await booksApi.deleteElement(book.value!.id, pageId, vigente.id);
+          const pagina = book.value!.pages.find((p) => p.id === pageId);
+          if (pagina) pagina.elements = pagina.elements.filter((el) => el.id !== vigente.id);
+        },
+        rehacer: async () => {
+          // Se recrea: el id cambia, asi que se guarda el nuevo para poder volver a
+          // deshacerlo. Sin esto el segundo deshacer buscaria un id que ya no existe.
+          const recreado = await booksApi.createElement(book.value!.id, pageId, {
+            type, transformMatrix, properties,
+          });
+          vigente = recreado;
+          book.value!.pages.find((p) => p.id === pageId)?.elements.push(recreado);
+        },
+      });
     }
     return created ?? undefined;
   }
@@ -185,13 +209,39 @@ export const useEditorStore = defineStore('editor', () => {
       booksApi.updateElement(book.value!.id, page.id, elementId, payload),
     );
 
-    if (updated) replaceElement(updated);
-    else page.elements[index] = previous;
+    if (updated) {
+      replaceElement(updated);
+
+      // Solo se guarda lo que de verdad cambio, para que deshacer no arrastre
+      // campos que nadie toco.
+      const antes: Record<string, unknown> = {};
+      for (const clave of Object.keys(payload) as Array<keyof typeof payload>) {
+        antes[clave] = (previous as unknown as Record<string, unknown>)[clave];
+      }
+
+      const pageId = page.id;
+      const aplicar = async (valores: Record<string, unknown>) => {
+        const r = await booksApi.updateElement(book.value!.id, pageId, elementId, valores as never);
+        replaceElement(r);
+      };
+
+      historial.registrar({
+        descripcion: payload.transformMatrix
+          ? `mover ${describirElemento(previous)}`
+          : `cambiar ${describirElemento(previous)}`,
+        deshacer: () => aplicar(antes),
+        rehacer: () => aplicar(payload as Record<string, unknown>),
+      });
+    } else {
+      page.elements[index] = previous;
+    }
   }
 
   async function removeElement(elementId: string): Promise<void> {
     if (!book.value || !currentPage.value) return;
     const page = currentPage.value;
+    // Copia previa: sin ella no habria con que reconstruirlo al deshacer.
+    const borrado = page.elements.find((el) => el.id === elementId);
     const ok = await withSaving(async () => {
       await booksApi.deleteElement(book.value!.id, page.id, elementId);
       return true;
@@ -199,6 +249,28 @@ export const useEditorStore = defineStore('editor', () => {
     if (ok) {
       page.elements = page.elements.filter((el) => el.id !== elementId);
       if (selectedElementId.value === elementId) selectedElementId.value = null;
+
+      if (borrado) {
+        const pageId = page.id;
+        let vigente = borrado.id;
+        historial.registrar({
+          descripcion: `borrar ${describirElemento(borrado)}`,
+          deshacer: async () => {
+            const recreado = await booksApi.createElement(book.value!.id, pageId, {
+              type: borrado.type,
+              transformMatrix: borrado.transformMatrix,
+              properties: borrado.properties as Record<string, unknown>,
+            });
+            vigente = recreado.id;
+            book.value!.pages.find((p) => p.id === pageId)?.elements.push(recreado);
+          },
+          rehacer: async () => {
+            await booksApi.deleteElement(book.value!.id, pageId, vigente);
+            const pagina = book.value!.pages.find((p) => p.id === pageId);
+            if (pagina) pagina.elements = pagina.elements.filter((el) => el.id !== vigente);
+          },
+        });
+      }
     }
   }
 
@@ -383,5 +455,13 @@ export const useEditorStore = defineStore('editor', () => {
     applyShareState,
     setCollaborative,
     renameBook,
+
+    // Deshacer y rehacer
+    puedeDeshacer: historial.puedeDeshacer,
+    puedeRehacer: historial.puedeRehacer,
+    siguienteDeshacer: historial.siguienteDeshacer,
+    siguienteRehacer: historial.siguienteRehacer,
+    deshacer: historial.deshacer,
+    rehacer: historial.rehacer,
   };
 });

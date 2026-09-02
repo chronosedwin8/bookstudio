@@ -316,6 +316,31 @@ async function onPageDrop(index: number): Promise<void> {
 }
 
 const showPages = ref(false);
+/**
+ * Deshacer y rehacer.
+ *
+ * Cada paso se confirma con un aviso corto ("Deshecho: mover imagen") porque en un
+ * lienzo grande el cambio puede quedar fuera de la vista y sin el aviso parece que
+ * no ha pasado nada.
+ */
+const avisoHistorial = ref<string | null>(null);
+
+function anunciar(texto: string | null): void {
+  if (!texto) return;
+  avisoHistorial.value = texto;
+  setTimeout(() => (avisoHistorial.value = null), 2500);
+}
+
+async function deshacer(): Promise<void> {
+  const que = await editor.deshacer();
+  anunciar(que ? `Deshecho: ${que}` : null);
+}
+
+async function rehacer(): Promise<void> {
+  const que = await editor.rehacer();
+  anunciar(que ? `Rehecho: ${que}` : null);
+}
+
 const showShare = ref(false);
 const showDistribute = ref(false);
 const showGrades = ref(false);
@@ -546,6 +571,23 @@ const PAGE_COLORS = ['#FFFFFF', '#F7F4EC', '#EDF2F0', '#FFF7ED', '#F1F5F9', '#1E
 function onKeydown(event: KeyboardEvent): void {
   const target = event.target as HTMLElement;
   if (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
+
+  // Deshacer va antes del guard de seleccion: se deshace lo ultimo que se hizo,
+  // haya algo seleccionado o no.
+  if (editor.canEdit && (event.ctrlKey || event.metaKey)) {
+    const tecla = event.key.toLowerCase();
+    if (tecla === 'z' && !event.shiftKey) {
+      event.preventDefault();
+      void deshacer();
+      return;
+    }
+    if (tecla === 'y' || (tecla === 'z' && event.shiftKey)) {
+      event.preventDefault();
+      void rehacer();
+      return;
+    }
+  }
+
   if (!editor.selectedElementId || !editor.canEdit) return;
 
   if (event.key === 'Delete' || event.key === 'Backspace') {
@@ -646,6 +688,26 @@ async function saveTitle(): Promise<void> {
           {{ editor.book.layoutFormat }}
         </span>
 
+        <!-- Deshacer y rehacer: lo primero que se busca al equivocarse -->
+        <div v-if="editor.canEdit" class="flex gap-1">
+          <button
+            type="button"
+            class="btn-secondary px-2"
+            :disabled="!editor.puedeDeshacer"
+            :title="editor.siguienteDeshacer ? `Deshacer ${editor.siguienteDeshacer} (Ctrl+Z)` : 'Nada que deshacer'"
+            aria-label="Deshacer"
+            @click="deshacer"
+          >↶</button>
+          <button
+            type="button"
+            class="btn-secondary px-2"
+            :disabled="!editor.puedeRehacer"
+            :title="editor.siguienteRehacer ? `Rehacer ${editor.siguienteRehacer} (Ctrl+Y)` : 'Nada que rehacer'"
+            aria-label="Rehacer"
+            @click="rehacer"
+          >↷</button>
+        </div>
+
         <button v-if="editor.canEdit" type="button" class="btn-secondary" @click="showTemplates = true">
           Plantillas
         </button>
@@ -724,6 +786,7 @@ async function saveTitle(): Promise<void> {
       <div class="px-4 pt-2">
         <AlertMessage :message="editor.error" />
         <AlertMessage :message="entregaAviso" variant="success" />
+        <AlertMessage :message="avisoHistorial" variant="success" />
       </div>
 
       <div class="flex min-h-0 flex-1">
