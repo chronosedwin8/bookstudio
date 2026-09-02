@@ -24,6 +24,18 @@ function httpsOptions(): ServerOptions['https'] {
 
 export default defineConfig({
   plugins: [vue()],
+  build: {
+    /*
+     * No calcular el tamano comprimido de cada trozo.
+     *
+     * Solo sirve para la columna "gzip" del informe de compilacion, pero obliga a
+     * comprimir todo el resultado en memoria al final. El servidor de produccion
+     * va justo de RAM y el 2 de septiembre de 2026 un despliegue se quedo colgado
+     * exactamente ahi, en "computing gzip size...", sin dar ningun error. Lo que
+     * se sirve al navegador no cambia: quien comprime de verdad es el proxy.
+     */
+    reportCompressedSize: false,
+  },
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
