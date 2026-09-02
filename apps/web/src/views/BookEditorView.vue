@@ -228,6 +228,55 @@ async function onPickMap(payload: {
   await editor.addElement('map', { x: 15, y: 15, width: 55, height: 40, angle: 0 }, { ...payload });
 }
 
+/**
+ * Pegar imagenes con Ctrl+V.
+ *
+ * El portapapeles trae dos cosas segun de donde se copie:
+ *   - Una captura o un archivo -> llega como fichero y se sube igual que si se
+ *     hubiera elegido desde el equipo.
+ *   - Una imagen copiada de una pagina web -> a menudo solo llega su direccion. Se
+ *     inserta apuntando a ella, como ya hace el buscador de imagenes libres.
+ *
+ * No se toca el pegado dentro de un campo de texto: ahi Ctrl+V debe pegar texto.
+ */
+async function onPaste(event: ClipboardEvent): Promise<void> {
+  if (!editor.canEdit) return;
+
+  const destino = event.target as HTMLElement | null;
+  if (destino && ['INPUT', 'TEXTAREA'].includes(destino.tagName)) return;
+
+  const datos = event.clipboardData;
+  if (!datos) return;
+
+  const archivo = [...datos.items]
+    .filter((item) => item.kind === 'file' && item.type.startsWith('image/'))
+    .map((item) => item.getAsFile())
+    .find(Boolean);
+
+  if (archivo) {
+    event.preventDefault();
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const lector = new FileReader();
+      lector.onload = () => resolve(String(lector.result));
+      lector.onerror = () => reject(new Error('No se pudo leer la imagen del portapapeles'));
+      lector.readAsDataURL(archivo);
+    });
+    await uploadAndInsert(dataUrl, 0, 'Imagen pegada');
+    return;
+  }
+
+  // Sin archivo: puede venir la direccion de una imagen de internet.
+  const texto = datos.getData('text/plain').trim();
+  if (/^https?:\/\/\S+\.(png|jpe?g|gif|webp|avif)(\?\S*)?$/i.test(texto)) {
+    event.preventDefault();
+    await editor.addElement(
+      'image',
+      { x: 15, y: 15, width: 45, height: 34, angle: 0 },
+      { fileUrl: texto, altText: 'Imagen pegada' },
+    );
+  }
+}
+
 /** Sube el archivo y lo coloca en la pagina segun el tipo que devuelva el servidor. */
 async function uploadAndInsert(dataUrl: string, durationSeconds: number, altText = ''): Promise<void> {
   uploading.value = true;
@@ -641,6 +690,7 @@ onMounted(async () => {
   await editor.load(route.params.id as string);
   titleDraft.value = editor.book?.title ?? '';
   window.addEventListener('keydown', onKeydown);
+  window.addEventListener('paste', onPaste);
 
   if (editor.book?.libraryId) {
     void avisarActividad();
@@ -650,6 +700,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeydown);
+  window.removeEventListener('paste', onPaste);
   clearInterval(latido);
 });
 
@@ -1080,7 +1131,8 @@ async function saveTitle(): Promise<void> {
           @patch="onInspectorPatch"
           @move="editor.selectedElementId && editor.moveLayer(editor.selectedElementId, $event)"
           @remove="editor.selectedElementId && editor.removeElement(editor.selectedElementId)"
-        />
+          :page-numbers="editor.book?.pages.map((p) => p.pageNumber) ?? []"
+      />
       </div>
     </template>
 

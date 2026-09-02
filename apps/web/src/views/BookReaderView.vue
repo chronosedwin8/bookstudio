@@ -47,6 +47,17 @@ function turn(step: number): void {
   index.value = next;
 }
 
+/**
+ * Salto desde un marcador dentro del libro.
+ *
+ * El marcador guarda el numero de pagina que ve el lector (la portada es la 1), no
+ * el indice interno, para que siga apuntando bien aunque se reordenen las paginas.
+ */
+function irAPaginaNumero(numero: number): void {
+  const destino = (book.value?.pages ?? []).findIndex((p) => p.pageNumber === numero);
+  if (destino >= 0) goTo(destino);
+}
+
 function goTo(target: number): void {
   direction.value = target > index.value ? 'next' : 'prev';
   index.value = target;
@@ -229,6 +240,7 @@ onBeforeUnmount(() => {
                 :width="pageWidth"
                 interactive
                 :check-answer="checkAnswer"
+                @ir-a-pagina="irAPaginaNumero"
               />
             </div>
           </Transition>

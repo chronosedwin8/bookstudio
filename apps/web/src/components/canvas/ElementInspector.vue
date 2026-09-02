@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref, watch } from 'vue';
 import ChartInspector from './ChartInspector.vue';
 import QuestionInspector from './QuestionInspector.vue';
 import {
@@ -14,6 +14,8 @@ import {
 const props = defineProps<{
   element: CanvasElement | null;
   isManager: boolean;
+  /** Numeros de pagina del libro, para los marcadores internos. */
+  pageNumbers?: number[];
 }>();
 
 const emit = defineEmits<{
@@ -29,6 +31,38 @@ const canLink = computed(() => LINKABLE.includes(props.element?.type as (typeof 
 const linkUrl = computed(() => String(props.element?.properties.linkUrl ?? ''));
 
 /** Vacia el campo o guarda la URL; el backend rechaza esquemas no navegables. */
+type ModoEnlace = 'ninguno' | 'pagina' | 'externo';
+
+const MODOS_ENLACE: Array<{ id: ModoEnlace; label: string }> = [
+  { id: 'ninguno', label: 'Sin enlace' },
+  { id: 'pagina', label: 'A una página' },
+  { id: 'externo', label: 'A una web' },
+];
+
+/** Numero de pagina al que apunta el marcador, si lo es. */
+const paginaEnlazada = computed(() => {
+  const m = /^#pagina-(\d{1,4})$/.exec(String(props.element?.properties.linkUrl ?? ''));
+  return m ? Number(m[1]) : null;
+});
+
+const modoEnlace = ref<ModoEnlace>('ninguno');
+
+// Al cambiar de elemento, el selector refleja el enlace que ese elemento ya tenga.
+watch(
+  () => props.element?.id,
+  () => {
+    const url = String(props.element?.properties.linkUrl ?? '').trim();
+    modoEnlace.value = paginaEnlazada.value !== null ? 'pagina' : url ? 'externo' : 'ninguno';
+  },
+  { immediate: true },
+);
+
+function cambiarModoEnlace(modo: ModoEnlace): void {
+  modoEnlace.value = modo;
+  // Cambiar de modo borra el enlace anterior: dejarlo escondido confundiria.
+  if (modo === 'ninguno') patchLink('');
+}
+
 function patchLink(value: string): void {
   patchProperty('linkUrl', value.trim());
 }
@@ -351,20 +385,60 @@ const SOFT_BACKGROUNDS = ['transparent', '#F7F4EC', '#EDF2F0', '#FBF3E4', '#EFEA
       </section>
 
       <!-- Enlace: se abre al pulsar el elemento en el modo lectura -->
-      <section v-if="canLink">
-        <label class="label" :for="`link-${element.id}`">Enlace</label>
-        <input
-          :id="`link-${element.id}`"
-          type="url"
-          class="input"
-          placeholder="https://..."
-          :value="linkUrl"
-          @change="patchLink(($event.target as HTMLInputElement).value)"
-        />
-        <p class="mt-1 text-[11px] leading-tight text-slate-400">
-          {{ linkUrl
-            ? 'Se abrira en una pestana nueva al pulsarlo en el modo lectura.'
-            : 'Pega una dirección para convertir este elemento en un enlace.' }}
+      <section v-if="canLink" class="space-y-2">
+        <h3 class="label">Enlace</h3>
+
+        <div class="flex gap-1">
+          <button
+            v-for="modo in MODOS_ENLACE"
+            :key="modo.id"
+            type="button"
+            class="flex-1 rounded-lg border px-2 py-1 text-xs font-semibold transition"
+            :class="modoEnlace === modo.id
+              ? 'border-brand-500 bg-brand-50 text-brand-700'
+              : 'border-slate-200 text-slate-600 hover:border-brand-300'"
+            @click="cambiarModoEnlace(modo.id)"
+          >{{ modo.label }}</button>
+        </div>
+
+        <!-- Marcador: salta a otra pagina del propio libro -->
+        <template v-if="modoEnlace === 'pagina'">
+          <select
+            :id="`link-${element.id}`"
+            class="input"
+            :value="paginaEnlazada ?? ''"
+            @change="patchLink(
+              ($event.target as HTMLSelectElement).value
+                ? `#pagina-${($event.target as HTMLSelectElement).value}`
+                : '',
+            )"
+          >
+            <option value="">Elige la página de destino</option>
+            <option v-for="n in pageNumbers" :key="n" :value="n">
+              {{ n === 1 ? 'Portada' : `Página ${n}` }}
+            </option>
+          </select>
+          <p class="text-[11px] leading-tight text-slate-400">
+            Al pulsarlo en el modo lectura, el libro salta a esa página. Sirve para hacer un índice.
+          </p>
+        </template>
+
+        <template v-else-if="modoEnlace === 'externo'">
+          <input
+            :id="`link-${element.id}`"
+            type="url"
+            class="input"
+            placeholder="https://..."
+            :value="linkUrl"
+            @change="patchLink(($event.target as HTMLInputElement).value)"
+          />
+          <p class="text-[11px] leading-tight text-slate-400">
+            Se abrirá en una pestaña nueva al pulsarlo en el modo lectura.
+          </p>
+        </template>
+
+        <p v-else class="text-[11px] leading-tight text-slate-400">
+          Este elemento no lleva enlace.
         </p>
       </section>
 

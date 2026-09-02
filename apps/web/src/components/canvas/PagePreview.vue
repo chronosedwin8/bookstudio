@@ -21,6 +21,9 @@ const props = defineProps<{
   checkAnswer?: (elementId: string, answer: string[]) => Promise<AnswerResult>;
 }>();
 
+/** Salto a otra pagina del propio libro, desde un marcador. */
+const emit = defineEmits<{ irAPagina: [numero: number] }>();
+
 const BASE_WIDTH = 1000;
 
 const baseHeight = computed(() => BASE_WIDTH / props.aspectRatio);
@@ -49,7 +52,16 @@ function linkOf(element: CanvasElement): string | null {
   if (!props.interactive) return null;
   const url = String(element.properties.linkUrl ?? '').trim();
   if (!url) return null;
+  // Los saltos internos no son enlaces del navegador: los atiende el lector.
+  if (paginaDestino(element) !== null) return null;
   return /^https?:\/\//i.test(url) || url.startsWith('/') ? url : null;
+}
+
+/** Numero de pagina al que salta el elemento, si es un marcador interno. */
+export function paginaDestino(element: CanvasElement): number | null {
+  const url = String(element.properties.linkUrl ?? '').trim();
+  const m = /^#pagina-(\d{1,4})$/.exec(url);
+  return m ? Number(m[1]) : null;
 }
 </script>
 
@@ -63,6 +75,8 @@ function linkOf(element: CanvasElement): string | null {
         class="absolute"
         :class="linkOf(element) && 'cursor-pointer'"
         :href="linkOf(element) ?? undefined"
+        :class="paginaDestino(element) !== null ? 'cursor-pointer' : ''"
+        @click="paginaDestino(element) !== null && emit('irAPagina', paginaDestino(element)!)"
         :target="linkOf(element) ? '_blank' : undefined"
         :rel="linkOf(element) ? 'noopener noreferrer' : undefined"
         :style="{

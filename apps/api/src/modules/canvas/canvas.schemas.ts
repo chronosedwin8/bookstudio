@@ -21,8 +21,10 @@ const linkUrl = z
   .max(2048)
   .trim()
   .refine(
-    (v) => v === '' || /^https?:\/\//i.test(v) || v.startsWith('/'),
-    'El enlace debe empezar por http:// o https://',
+    // "#pagina-3" es un marcador dentro del propio libro: al pulsarlo el lector
+    // salta a esa pagina en vez de abrir nada fuera.
+    (v) => v === '' || /^https?:\/\//i.test(v) || v.startsWith('/') || /^#pagina-\d{1,4}$/.test(v),
+    'El enlace debe empezar por http://, https:// o ser un salto a una pagina del libro',
   );
 
 export const textPropertiesSchema = z.object({
