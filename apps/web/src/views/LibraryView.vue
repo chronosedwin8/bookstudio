@@ -10,6 +10,7 @@ import ClavesEntregadas from '@/components/library/ClavesEntregadas.vue';
 import DistributeDialog from '@/components/library/DistributeDialog.vue';
 import GradeBookGrid from '@/components/library/GradeBookGrid.vue';
 import PhidiasImportDialog from '@/components/media/PhidiasImportDialog.vue';
+import QuizList from '@/components/quizzes/QuizList.vue';
 import { authApi, booksApi, librariesApi, phidiasApi, usersApi } from '@/services/api';
 import { errorMessage } from '@/services/http';
 import { useAuthStore } from '@/stores/auth';
@@ -77,10 +78,12 @@ async function copyJoinUrl(): Promise<void> {
  * La pestana viaja en la URL para que recargar no devuelva al principio y para poder
  * pasarle a un companero el enlace de la cuadricula de notas.
  */
-type Pestana = 'libros' | 'notas' | 'alumnado' | 'ajustes';
+type Pestana = 'libros' | 'examenes' | 'notas' | 'alumnado' | 'ajustes';
 
 const PESTANAS: Array<{ id: Pestana; label: string; icono: string; soloDocente: boolean }> = [
   { id: 'libros', label: 'Libros', icono: '📚', soloDocente: false },
+  // Visible tambien para el alumnado: ahi ve los examenes que le han enviado.
+  { id: 'examenes', label: 'Cuestionarios', icono: '📝', soloDocente: false },
   { id: 'notas', label: 'Valoraciones', icono: '🎯', soloDocente: true },
   { id: 'alumnado', label: 'Alumnado', icono: '👥', soloDocente: true },
   { id: 'ajustes', label: 'Ajustes', icono: '⚙️', soloDocente: true },
@@ -495,6 +498,12 @@ function formatDate(value: string | null): string {
         <AlertMessage :message="error" />
         <AlertMessage :message="notice" variant="success" />
       </div>
+
+      <!-- ================= Cuestionarios ================= -->
+      <!-- v-if y no v-show: la lista se pide al servidor solo si se entra aqui. -->
+      <section v-if="pestana === 'examenes'" class="mt-5">
+        <QuizList :library-id="libraryId" :is-manager="isManager" />
+      </section>
 
       <!-- ================= Libros ================= -->
       <section v-show="pestana === 'libros'" class="mt-5">

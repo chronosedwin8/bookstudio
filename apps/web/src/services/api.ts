@@ -1,6 +1,14 @@
 import { http } from './http';
 import type {
   AnswerResult,
+  Quiz,
+  QuizDetail,
+  QuizQuestion,
+  QuizQuestionInput,
+  QuizResultAnswer,
+  QuizResults,
+  QuizStatus,
+  QuizSubmitResult,
   BillingConfig,
   Book,
   BookActivity,
@@ -498,5 +506,67 @@ export const billingApi = {
   async allSubscriptions() {
     const { data } = await http.get<{ subscriptions: Subscription[] }>('/billing/subscriptions');
     return data.subscriptions;
+  },
+};
+
+export const quizzesApi = {
+  async list(libraryId?: string) {
+    const { data } = await http.get<{ quizzes: Quiz[] }>('/quizzes', { params: libraryId ? { libraryId } : {} });
+    return data.quizzes;
+  },
+  async get(id: string) {
+    const { data } = await http.get<{ quiz: QuizDetail }>(`/quizzes/${id}`);
+    return data.quiz;
+  },
+  async create(payload: { libraryId: string; title: string; description?: string }) {
+    const { data } = await http.post<{ quiz: Quiz }>('/quizzes', payload);
+    return data.quiz;
+  },
+  async update(
+    id: string,
+    payload: Partial<{
+      title: string;
+      description: string;
+      status: QuizStatus;
+      showSolutions: boolean;
+      allowRetry: boolean;
+      timeLimitMinutes: number | null;
+    }>,
+  ) {
+    const { data } = await http.patch<{ quiz: Quiz }>(`/quizzes/${id}`, payload);
+    return data.quiz;
+  },
+  async remove(id: string) {
+    await http.delete(`/quizzes/${id}`);
+  },
+  /** El examen se guarda entero: es como se edita en pantalla. */
+  async saveQuestions(id: string, questions: QuizQuestionInput[]) {
+    const { data } = await http.put<{ questions: QuizQuestion[] }>(`/quizzes/${id}/questions`, { questions });
+    return data.questions;
+  },
+  /** Sin lista concreta va a toda la clase. */
+  async assign(id: string, studentIds: string[] = []) {
+    const { data } = await http.post<{ assigned: number; total: number }>(`/quizzes/${id}/assign`, { studentIds });
+    return data;
+  },
+  async answer(id: string, answers: Array<{ questionId: string; answer: string[] }>, submit: boolean) {
+    const { data } = await http.post<QuizSubmitResult>(`/quizzes/${id}/answers`, { answers, submit });
+    return data;
+  },
+  async results(id: string) {
+    const { data } = await http.get<QuizResults>(`/quizzes/${id}/results`);
+    return data;
+  },
+  async review(
+    id: string,
+    questionId: string,
+    studentId: string,
+    payload: { score: number; correct?: boolean | null; teacherNote?: string },
+  ) {
+    const { data } = await http.patch<{ answer: QuizResultAnswer }>(
+      `/quizzes/${id}/answers/${questionId}/${studentId}`,
+      payload,
+    );
+    return data.answer;
   },
 };

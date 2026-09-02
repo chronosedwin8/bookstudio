@@ -33,8 +33,14 @@ export const shareSchema = z.object({
 export const shareTokenSchema = z.object({ token: z.string().uuid('Enlace no valido') });
 
 export const answerSchema = z.object({
-  /** Ids de las opciones elegidas; en las de ordenar, en el orden propuesto. */
-  answer: z.array(z.string().min(1).max(40)).min(1).max(8),
+  /**
+   * Ids de las opciones elegidas; en las de ordenar, en el orden propuesto.
+   *
+   * En las preguntas abiertas llega un unico elemento con el texto redactado, de
+   * ahi el limite alto: con el de 40 caracteres que valia para un id, cualquier
+   * respuesta escrita se rechazaba con un 400.
+   */
+  answer: z.array(z.string().min(1).max(4000)).min(1).max(8),
 });
 
 export const questionParamsSchema = z.object({

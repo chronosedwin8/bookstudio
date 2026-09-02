@@ -531,3 +531,95 @@ export interface BookDetail extends Book {
 export interface SharedBook extends BookDetail {
   authorName: string | null;
 }
+
+
+// --- Cuestionarios de examen ---
+
+export type QuizStatus = 'borrador' | 'enviado' | 'cerrado';
+
+export interface QuizQuestion {
+  id: string;
+  position: number;
+  kind: QuestionKind;
+  prompt: string;
+  promptImageUrl: string | null;
+  options: QuestionOption[];
+  /** Solo llega al profesorado: la respuesta que se espera en una abierta. */
+  expectedAnswer?: string;
+  points: number;
+}
+
+export interface Quiz {
+  id: string;
+  libraryId: string;
+  title: string;
+  description: string;
+  status: QuizStatus;
+  showSolutions: boolean;
+  allowRetry: boolean;
+  timeLimitMinutes: number | null;
+  authorId: string | null;
+  authorName?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  questionCount?: number;
+  totalPoints?: number;
+  assignedCount?: number;
+  submittedCount?: number;
+  submittedAt?: string | null;
+  myScore?: number | null;
+}
+
+export interface QuizAnswerState {
+  questionId: string;
+  answer: string[];
+  correct: boolean | null;
+  score: number | null;
+}
+
+export interface QuizDetail extends Quiz {
+  questions: QuizQuestion[];
+  canManage: boolean;
+  myAnswers?: QuizAnswerState[];
+  mySubmittedAt?: string | null;
+}
+
+export interface QuizResultAnswer extends QuizAnswerState {
+  teacherNote: string;
+  reviewedAt: string | null;
+}
+
+export interface QuizResultRow {
+  studentId: string;
+  studentName: string;
+  course: string | null;
+  submittedAt: string | null;
+  score: number;
+  pendingReview: number;
+  answers: QuizResultAnswer[];
+}
+
+export interface QuizResults {
+  quiz: Quiz;
+  questions: QuizQuestion[];
+  totalPoints: number;
+  rows: QuizResultRow[];
+  perQuestion: Array<{ questionId: string; answered: number; correct: number }>;
+}
+
+export interface QuizSubmitResult {
+  submitted: boolean;
+  autoScore: number;
+  pendingReview: number;
+  totalPoints: number;
+}
+
+/** Lo que se envia al guardar el examen; sin id, porque se reescribe entero. */
+export interface QuizQuestionInput {
+  kind: QuestionKind;
+  prompt: string;
+  promptImageUrl?: string | null;
+  options: QuestionOption[];
+  expectedAnswer: string;
+  points: number;
+}
