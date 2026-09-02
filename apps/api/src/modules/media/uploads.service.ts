@@ -97,6 +97,17 @@ function parseDataUrl(dataUrl: string): { mimeType: string; base64: string } {
 /** Guarda un data URL emitido por MediaRecorder o la webcam tras validar tipo y tamano. */
 export async function storeDataUrl(userId: string, dataUrl: string): Promise<StoredFile> {
   const { mimeType, base64 } = parseDataUrl(dataUrl);
+  return storeBuffer(userId, Buffer.from(base64, 'base64'), mimeType);
+}
+
+/**
+ * Guarda bytes ya en memoria, con las mismas comprobaciones.
+ *
+ * Existe para lo que no llega del navegador: una imagen que el servidor se
+ * descarga de otro sitio ya viene en binario, y convertirla a base64 solo para
+ * volver a decodificarla la hincharia un tercio sin ganar nada.
+ */
+export async function storeBuffer(userId: string, buffer: Buffer, mimeType: string): Promise<StoredFile> {
   const rule = ALLOWED[mimeType];
   if (!rule) {
     throw HttpError.badRequest(`Tipo de archivo no permitido: ${mimeType}`, {
@@ -104,7 +115,6 @@ export async function storeDataUrl(userId: string, dataUrl: string): Promise<Sto
     });
   }
 
-  const buffer = Buffer.from(base64, 'base64');
   if (!buffer.length) throw HttpError.badRequest('El archivo esta vacio');
   if (buffer.length > MAX_BYTES[rule.kind]) {
     throw HttpError.badRequest(

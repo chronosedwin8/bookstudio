@@ -28,4 +28,12 @@ export class HttpError extends Error {
   static conflict(message: string): HttpError {
     return new HttpError(409, message, 'CONFLICT');
   }
+
+  /**
+   * Un servicio de fuera fallo o no contesta. Se distingue del 500 para que en
+   * los registros se vea de un vistazo que el fallo no es nuestro.
+   */
+  static badGateway(message: string): HttpError {
+    return new HttpError(502, message, 'BAD_GATEWAY');
+  }
 }

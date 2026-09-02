@@ -42,6 +42,16 @@ const envSchema = z.object({
   /** Solo para almacenamientos compatibles que no son AWS (MinIO, R2). */
   S3_ENDPOINT: z.string().default(''),
 
+  // Imagenes generadas con Magnific. Sin clave, la funcion no aparece.
+  MAGNIFIC_API_KEY: z.string().default(''),
+  // Cada imagen cuesta creditos; por eso el alumnado no genera salvo que se abra.
+  // Nada de z.coerce.boolean(): convierte la cadena "false" en true, y el valor
+  // por defecto de esta variable es justo el que protege los creditos.
+  MAGNIFIC_ALLOW_STUDENTS: z
+    .string()
+    .default('false')
+    .transform((v) => ['1', 'true', 'si', 'yes'].includes(v.trim().toLowerCase())),
+
   // Entrada con la cuenta del colegio (Microsoft Entra ID). Vacio = apagada.
   ENTRA_TENANT_ID: z.string().default(''),
   ENTRA_CLIENT_ID: z.string().default(''),

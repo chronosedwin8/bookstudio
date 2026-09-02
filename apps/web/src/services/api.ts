@@ -1,6 +1,9 @@
 import { http } from './http';
 import type {
   AnswerResult,
+  MagnificAspect,
+  MagnificModel,
+  MagnificTask,
   Quiz,
   QuizDetail,
   QuizQuestion,
@@ -580,5 +583,25 @@ export const quizzesApi = {
       payload,
     );
     return data.answer;
+  },
+};
+
+export const magnificApi = {
+  async config() {
+    const { data } = await http.get<{ enabled: boolean; canGenerate: boolean }>('/magnific/config');
+    return data;
+  },
+  async generar(payload: {
+    prompt: string;
+    aspectRatio: MagnificAspect;
+    model: MagnificModel;
+    resolution: '1k' | '2k';
+  }) {
+    const { data } = await http.post<MagnificTask>('/magnific/images', payload);
+    return data;
+  },
+  async consultar(taskId: string) {
+    const { data } = await http.get<MagnificTask>(`/magnific/images/${taskId}`);
+    return data;
   },
 };

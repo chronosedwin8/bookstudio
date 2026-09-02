@@ -623,3 +623,26 @@ export interface QuizQuestionInput {
   expectedAnswer: string;
   points: number;
 }
+
+
+// --- Imagenes generadas con Magnific ---
+
+export type MagnificAspect =
+  | 'square_1_1'
+  | 'classic_4_3'
+  | 'traditional_3_4'
+  | 'widescreen_16_9'
+  | 'social_story_9_16'
+  | 'standard_3_2'
+  | 'portrait_2_3'
+  | 'social_post_4_5';
+
+export type MagnificModel = 'realism' | 'fluid' | 'zen' | 'flexible' | 'super_real';
+
+export interface MagnificTask {
+  taskId: string;
+  status: 'CREATED' | 'IN_PROGRESS' | 'COMPLETED' | 'FAILED';
+  /** Solo al terminar: la imagen ya copiada a nuestro almacenamiento. */
+  fileUrl?: string;
+  error?: string;
+}

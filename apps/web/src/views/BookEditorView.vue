@@ -17,10 +17,11 @@ import MediaSearchDialog from '@/components/media/MediaSearchDialog.vue';
 import ChartTypeDialog from '@/components/media/ChartTypeDialog.vue';
 import QuestionBlockDialog from '@/components/media/QuestionBlockDialog.vue';
 import SoundLibraryDialog from '@/components/media/SoundLibraryDialog.vue';
+import MagnificDialog from '@/components/media/MagnificDialog.vue';
 import RecorderDialog from '@/components/media/RecorderDialog.vue';
 import StickerDialog from '@/components/media/StickerDialog.vue';
 import TemplateDialog from '@/components/media/TemplateDialog.vue';
-import { booksApi, mediaApi } from '@/services/api';
+import { booksApi, magnificApi, mediaApi } from '@/services/api';
 import { errorMessage } from '@/services/http';
 import { useAuthStore } from '@/stores/auth';
 import { useEditorStore } from '@/stores/editor';
@@ -59,6 +60,7 @@ const dialog = ref<
   | 'photo'
   | 'screen'
   | 'clip'
+  | 'magnific'
   | 'sticker'
   | 'embed'
   | 'question'
@@ -185,6 +187,18 @@ async function onPickEmoji(char: string): Promise<void> {
 }
 const uploading = ref(false);
 
+/**
+ * Si se puede crear imagenes con IA. Lo decide el servidor: depende de que haya
+ * clave configurada y de quien seas, porque cada imagen gasta creditos.
+ */
+const puedeGenerarImagenes = ref(false);
+
+void magnificApi
+  .config()
+  .then((estado) => (puedeGenerarImagenes.value = estado.canGenerate))
+  // Sin respuesta se asume que no: mejor un boton de menos que uno que falla.
+  .catch(() => (puedeGenerarImagenes.value = false));
+
 const onionElements = computed<CanvasElement[]>(() => {
   if (!onionSkin.value || editor.currentPageIndex === 0) return [];
   return editor.book?.pages[editor.currentPageIndex - 1]?.elements ?? [];
@@ -205,6 +219,20 @@ async function addTextElement(): Promise<void> {
     color: preferences.textColor,
     backgroundColor: preferences.textBackground,
   });
+}
+
+/**
+ * Imagen recien generada. Llega ya guardada por el servidor, asi que solo hay
+ * que colocarla; no se sabe su proporcion de antemano, se usa la de la forma
+ * elegida por defecto y quien la inserta la ajusta arrastrando.
+ */
+async function onPickGenerada(payload: { fileUrl: string; altText: string }): Promise<void> {
+  dialog.value = 'none';
+  await editor.addElement(
+    'image',
+    { x: 15, y: 15, width: 45, height: 45, angle: 0 },
+    { fileUrl: payload.fileUrl, altText: payload.altText },
+  );
 }
 
 async function onPickImage(result: MediaResult, withAttribution: boolean): Promise<void> {
@@ -874,6 +902,14 @@ async function saveTitle(): Promise<void> {
             <button type="button" class="btn-secondary w-full justify-start" @click="dialog = 'gif'">
               🎞️ GIF animado
             </button>
+            <button
+              v-if="puedeGenerarImagenes"
+              type="button"
+              class="btn-secondary w-full justify-start"
+              @click="dialog = 'magnific'"
+            >
+              ✨ Crear imagen con IA
+            </button>
             <button type="button" class="btn-secondary w-full justify-start" @click="dialog = 'map'">
               🗺️ Mapa
             </button>
@@ -1237,6 +1273,7 @@ async function saveTitle(): Promise<void> {
       @pick="onPickImage"
     />
     <MapSearchDialog v-else-if="dialog === 'map'" @close="dialog = 'none'" @pick="onPickMap" />
+    <MagnificDialog v-else-if="dialog === 'magnific'" @close="dialog = 'none'" @pick="onPickGenerada" />
     <RecorderDialog
       v-else-if="
         dialog === 'audio' ||

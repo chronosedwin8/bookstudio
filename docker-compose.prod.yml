@@ -33,6 +33,11 @@
 #   ENTRA_REDIRECT_URI       por defecto {APP_URL}/api/auth/sso/callback
 #   ENTRA_ALLOWED_DOMAIN     dominio permitido; por defecto colegioaleman.edu.co
 #   ENTRA_DEFAULT_ROLE       rol de quien entra por primera vez (student|teacher)
+#
+# Imagenes generadas con IA (Magnific). Sin clave, el boton no aparece:
+#   MAGNIFIC_API_KEY         clave de la API; nunca sale del servidor
+#   MAGNIFIC_ALLOW_STUDENTS  "true" para que el alumnado tambien pueda generar.
+#                            Cada imagen gasta creditos, de ahi que venga apagado.
 
 services:
   db:
@@ -110,6 +115,10 @@ services:
       ENTRA_REDIRECT_URI: ${ENTRA_REDIRECT_URI:-}
       ENTRA_ALLOWED_DOMAIN: ${ENTRA_ALLOWED_DOMAIN:-colegioaleman.edu.co}
       ENTRA_DEFAULT_ROLE: ${ENTRA_DEFAULT_ROLE:-student}
+
+      # Imagenes generadas con IA. Vacio = el boton no aparece.
+      MAGNIFIC_API_KEY: ${MAGNIFIC_API_KEY:-}
+      MAGNIFIC_ALLOW_STUDENTS: ${MAGNIFIC_ALLOW_STUDENTS:-false}
     volumes:
       # Fotos, audios y videos subidos: sin este volumen se pierden al redesplegar.
       - storage:/app/apps/api/storage

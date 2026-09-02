@@ -16,6 +16,7 @@ import { publicRouter } from './modules/books/public.routes.js';
 import { librariesRouter } from './modules/libraries/libraries.routes.js';
 import { mediaRouter } from './modules/media/media.routes.js';
 import { phidiasRouter } from './modules/phidias/phidias.routes.js';
+import { magnificRouter } from './modules/magnific/magnific.routes.js';
 import { quizzesRouter } from './modules/quizzes/quizzes.routes.js';
 import { usersRouter } from './modules/users/users.routes.js';
 import { STORAGE_ROOT } from './modules/media/uploads.service.js';
@@ -91,6 +92,7 @@ export function createApp() {
   app.use('/api/users', usersRouter);
   app.use('/api/phidias', phidiasRouter);
   app.use('/api/quizzes', quizzesRouter);
+  app.use('/api/magnific', magnificRouter);
   // El webhook de Mercado Pago vive dentro y se salta requireAuth a proposito.
   app.use('/api/billing', billingRouter);
 
