@@ -50,7 +50,20 @@ const titleDraft = ref('');
 const tool = ref<'select' | 'draw' | 'fill'>('select');
 const onionSkin = ref(false);
 const dialog = ref<
-  'none' | 'image' | 'gif' | 'map' | 'audio' | 'video' | 'photo' | 'sticker' | 'embed' | 'question' | 'chart' | 'sound'
+  | 'none'
+  | 'image'
+  | 'gif'
+  | 'map'
+  | 'audio'
+  | 'video'
+  | 'photo'
+  | 'screen'
+  | 'clip'
+  | 'sticker'
+  | 'embed'
+  | 'question'
+  | 'chart'
+  | 'sound'
 >('none');
 const stickerTab = ref<'shapes' | 'icons' | 'emojis'>('shapes');
 
@@ -312,11 +325,11 @@ async function uploadAndInsert(dataUrl: string, durationSeconds: number, altText
 async function onSaveRecording(payload: { dataUrl: string; durationSeconds: number }): Promise<void> {
   const mode = dialog.value;
   dialog.value = 'none';
-  await uploadAndInsert(
-    payload.dataUrl,
-    payload.durationSeconds,
-    mode === 'photo' ? 'Foto tomada con la camara' : '',
-  );
+  const TEXTOS: Partial<Record<typeof mode, string>> = {
+    photo: 'Foto tomada con la camara',
+    clip: 'Recorte de pantalla',
+  };
+  await uploadAndInsert(payload.dataUrl, payload.durationSeconds, TEXTOS[mode] ?? '');
 }
 
 // --- Subida desde el equipo ---
@@ -912,6 +925,12 @@ async function saveTitle(): Promise<void> {
             <button type="button" class="btn-secondary w-full justify-start" @click="dialog = 'video'">
               🎬 Video
             </button>
+            <button type="button" class="btn-secondary w-full justify-start" @click="dialog = 'screen'">
+              🖥️ Pantalla
+            </button>
+            <button type="button" class="btn-secondary w-full justify-start" @click="dialog = 'clip'">
+              ✂️ Recorte de pantalla
+            </button>
           </details>
 
           <section>
@@ -1219,7 +1238,13 @@ async function saveTitle(): Promise<void> {
     />
     <MapSearchDialog v-else-if="dialog === 'map'" @close="dialog = 'none'" @pick="onPickMap" />
     <RecorderDialog
-      v-else-if="dialog === 'audio' || dialog === 'video' || dialog === 'photo'"
+      v-else-if="
+        dialog === 'audio' ||
+        dialog === 'video' ||
+        dialog === 'photo' ||
+        dialog === 'screen' ||
+        dialog === 'clip'
+      "
       :mode="dialog"
       @close="dialog = 'none'"
       @save="onSaveRecording"
