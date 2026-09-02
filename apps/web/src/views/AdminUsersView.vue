@@ -155,9 +155,10 @@ async function sincronizarCursos(): Promise<void> {
   notice.value = null;
   try {
     const r = await phidiasApi.syncGroups();
-    const partes = [`${r.actualizadas} cuentas actualizadas de ${r.total}`];
-    if (r.sinSeccion) partes.push(`${r.sinSeccion} ya no estan en ninguna seccion`);
-    notice.value = `Cursos al dia: ${partes.join(' · ')}`;
+    const partes = [`${r.actualizadas} cursos actualizados de ${r.total}`];
+    if (r.clavesPuestas) partes.push(`${r.clavesPuestas} claves puestas a su código`);
+    if (r.sinSeccion) partes.push(`${r.sinSeccion} ya no están en ninguna sección`);
+    notice.value = `Alumnado al día: ${partes.join(' · ')}`;
     await load();
   } catch (err) {
     error.value = errorMessage(err);
@@ -294,10 +295,10 @@ onMounted(async () => {
             type="button"
             class="btn-secondary"
             :disabled="sincronizando"
-            title="Rellena el curso (K10A, 11C...) de todo el alumnado de Phidias"
+            title="Pone al día el curso y deja como contraseña el código de cada alumno"
             @click="sincronizarCursos"
           >
-            {{ sincronizando ? 'Actualizando cursos...' : 'Actualizar cursos' }}
+            {{ sincronizando ? 'Actualizando...' : 'Actualizar alumnado de Phidias' }}
           </button>
           <button type="button" class="btn-secondary" :disabled="loadingSections" @click="loadSections">
             {{ loadingSections ? 'Consultando...' : sectionsLoaded ? 'Actualizar lista' : 'Ver grupos' }}

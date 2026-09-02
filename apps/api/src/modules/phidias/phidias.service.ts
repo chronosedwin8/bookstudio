@@ -197,6 +197,8 @@ export interface SincronizacionGrupos {
   total: number;
   /** A cuantas se les ha puesto o corregido el curso. */
   actualizadas: number;
+  /** A cuantas se les ha puesto su codigo como contrasena. */
+  clavesPuestas: number;
   /** Cuentas que ya no aparecen en ninguna seccion (bajas, cambios de centro). */
   sinSeccion: number;
 }
@@ -226,8 +228,26 @@ export async function syncGroups(): Promise<SincronizacionGrupos> {
     }
   }
 
-  const { rows } = await query<{ id: string; external_id: string | null; external_group: string | null }>(
-    "SELECT id, external_id, external_group FROM users WHERE external_source = 'phidias'",
+  // Id del alumno en Phidias -> su codigo, para poder reponer contrasenas.
+  const codigos = new Map<string, string>();
+  for (const level of levels) {
+    for (const course of level.courses ?? []) {
+      for (const section of course.sections ?? []) {
+        for (const student of section.students ?? []) {
+          codigos.set(String(student.id), codigoDe(student));
+        }
+      }
+    }
+  }
+
+  const { rows } = await query<{
+    id: string;
+    external_id: string | null;
+    external_group: string | null;
+    password_is_default: boolean;
+  }>(
+    `SELECT id, external_id, external_group, password_is_default
+     FROM users WHERE external_source = 'phidias'`,
   );
 
   // Se agrupan por seccion para actualizar de una vez todos los de cada curso.
@@ -253,7 +273,24 @@ export async function syncGroups(): Promise<SincronizacionGrupos> {
     actualizadas += rowCount ?? 0;
   }
 
-  return { total: rows.length, actualizadas, sinSeccion };
+  /**
+   * Contrasenas: las cuentas que aun tienen la clave puesta por el sistema pasan a
+   * tener su codigo de estudiante. A quien ya se puso la suya NO se le toca: seria
+   * quitarle el acceso sin avisar.
+   */
+  let clavesPuestas = 0;
+  for (const fila of rows) {
+    if (!fila.password_is_default) continue;
+    const codigo = fila.external_id ? codigos.get(fila.external_id) : undefined;
+    if (!codigo) continue;
+    await query('UPDATE users SET password_hash = $2 WHERE id = $1', [
+      fila.id,
+      await bcrypt.hash(codigo, 12),
+    ]);
+    clavesPuestas += 1;
+  }
+
+  return { total: rows.length, actualizadas, clavesPuestas, sinSeccion };
 }
 
 export interface CuentaCreada {
@@ -274,7 +311,7 @@ export async function ensureStudentAccounts(
   const students = (section.students ?? []).filter((s) => hasEmail(s) && pedidos.has(s.id));
   if (!students.length) return [];
 
-  const passwordHash = await bcrypt.hash(env.PHIDIAS_DEFAULT_PASSWORD, 12);
+  // La clave la marca cada alumno: es su propio codigo, no una comun para todos.
 
   return withTransaction(async (client) => {
     const cuentas: CuentaCreada[] = [];
@@ -293,7 +330,7 @@ export async function ensureStudentAccounts(
          RETURNING id, password_is_default, (xmax = 0) AS inserted`,
         [
           email,
-          passwordHash,
+          await bcrypt.hash(codigoDe(student), 12),
           fullNameOf(student).slice(0, 100),
           String(student.id),
           section.name.slice(0, 60),
@@ -306,7 +343,7 @@ export async function ensureStudentAccounts(
         fullName: fullNameOf(student),
         email,
         // Se dice la clave solo si sirve de algo: cuenta nueva, o vieja que nunca la cambio.
-        password: fila.inserted || fila.password_is_default ? env.PHIDIAS_DEFAULT_PASSWORD : null,
+        password: fila.inserted || fila.password_is_default ? codigoDe(student) : null,
         isNew: fila.inserted,
       });
 
@@ -331,6 +368,22 @@ export interface ImportResult {
 }
 
 /** Nombre presentable a partir de los campos sueltos de Phidias. */
+/**
+ * Contrasena inicial del alumnado: su codigo de estudiante.
+ *
+ * Lo pidio el centro y tiene sentido practico: es un numero que ya se saben y que
+ * llevan en el carnet, asi que no hay que repartir nada. A cambio es corto y
+ * adivinable, por eso la aplicacion les deja cambiarlo por uno propio.
+ *
+ * Phidias lo trae en `code`; si faltara, se toma del correo institucional, que es
+ * el mismo numero antes de la arroba (3401@colegioaleman.edu.co).
+ */
+export function codigoDe(student: PhidiasStudent): string {
+  if (student.code) return String(student.code);
+  const local = (student.email ?? '').split('@')[0]?.trim();
+  return local || String(student.id);
+}
+
 function fullNameOf(student: PhidiasStudent): string {
   const name = [student.firstname, student.lastname]
     .filter(Boolean)
@@ -369,7 +422,7 @@ export async function importSection(
   const students = (section.students ?? []).filter(hasEmail);
   const skipped = (section.students ?? []).length - students.length;
 
-  const passwordHash = await bcrypt.hash(env.PHIDIAS_DEFAULT_PASSWORD, 12);
+  // La clave la marca cada alumno: es su propio codigo, no una comun para todos.
 
   if (targetLibraryId) await assertManagesLibrary(targetLibraryId, ownerId);
 
@@ -416,7 +469,7 @@ export async function importSection(
          RETURNING id, (xmax = 0) AS inserted`,
         [
           email,
-          passwordHash,
+          await bcrypt.hash(codigoDe(student), 12),
           fullNameOf(student).slice(0, 100),
           String(student.id),
           section.name.slice(0, 60),

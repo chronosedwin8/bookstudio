@@ -250,7 +250,12 @@ function onRotateStart(event: PointerEvent): void {
     @pointerdown="onDragStart"
     @dblclick="onDoubleClick"
   >
-    <ElementRenderer :element="element" :editing-text="editingText" @update-text="finishTextEdit" />
+    <ElementRenderer
+      :element="element"
+      :editing-text="editingText"
+      :selected="selected"
+      @update-text="finishTextEdit"
+    />
 
     <span
       v-if="element.isLocked"

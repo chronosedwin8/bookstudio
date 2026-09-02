@@ -38,6 +38,21 @@ const shape = computed(() => props.element?.properties as unknown as ShapeProper
 const question = computed(() => props.element?.properties as unknown as QuestionProperties | undefined);
 const chart = computed(() => props.element?.properties as unknown as ChartProperties | undefined);
 
+/** Video y audio comparten fileUrl y duracion; el video anade portada y subtitulos. */
+const media = computed(
+  () =>
+    props.element?.properties as unknown as
+      | { fileUrl?: string; durationSeconds?: number; posterUrl?: string; captionsText?: string; hotspotColor?: string }
+      | undefined,
+);
+
+/** "1:23" a partir de los segundos que guarda el elemento. */
+const duracion = computed(() => {
+  const s = Math.round(media.value?.durationSeconds ?? 0);
+  if (!s) return null;
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+});
+
 function patchProperty(key: string, value: unknown): void {
   if (!props.element) return;
   emit('patch', { properties: { ...props.element.properties, [key]: value } });
@@ -251,6 +266,52 @@ const SOFT_BACKGROUNDS = ['transparent', '#F7F4EC', '#EDF2F0', '#FBF3E4', '#EFEA
       <section v-if="element.type === 'question' && question">
         <h3 class="label">Pregunta</h3>
         <QuestionInspector :question="question" @patch="emit('patch', { properties: $event })" />
+      </section>
+
+      <!-- Video -->
+      <section v-if="element.type === 'video' && media" class="space-y-3 border-t border-slate-100 pt-3">
+        <h3 class="label">Vídeo</h3>
+
+        <p class="text-xs text-slate-500">
+          <span v-if="duracion">Duración {{ duracion }}</span>
+          <span v-else>Duración desconocida</span>
+          · pulsa ▶ en la esquina para verlo sin salir del lienzo.
+        </p>
+
+        <div>
+          <label class="label" :for="`poster-${element.id}`">Imagen de portada (opcional)</label>
+          <input
+            :id="`poster-${element.id}`"
+            type="url"
+            class="input text-xs"
+            placeholder="https://..."
+            :value="media.posterUrl ?? ''"
+            @change="patchProperty('posterUrl', ($event.target as HTMLInputElement).value.trim() || undefined)"
+          />
+          <p class="mt-1 text-xs text-slate-500">Se ve antes de darle al play, y en las miniaturas.</p>
+        </div>
+
+        <div>
+          <label class="label" :for="`captions-${element.id}`">Subtítulos o transcripción</label>
+          <textarea
+            :id="`captions-${element.id}`"
+            class="input min-h-[5rem] resize-y text-xs"
+            placeholder="Lo que se dice en el vídeo, para quien no pueda oírlo."
+            :value="media.captionsText ?? ''"
+            @change="patchProperty('captionsText', ($event.target as HTMLTextAreaElement).value)"
+          ></textarea>
+          <p class="mt-1 text-xs text-slate-500">
+            Hace el libro utilizable por quien no oye, y por quien lo abre sin auriculares.
+          </p>
+        </div>
+
+        <a
+          v-if="media.fileUrl"
+          :href="media.fileUrl"
+          target="_blank"
+          rel="noopener"
+          class="inline-block text-xs font-semibold text-brand-600 hover:underline"
+        >Abrir el archivo en otra pestaña</a>
       </section>
 
       <!-- Formula matemática -->

@@ -25,6 +25,8 @@ const props = defineProps<{
   element: CanvasElement;
   /** Edicion in-situ; solo la activa el elemento seleccionado y editable. */
   editingText?: boolean;
+  /** El elemento esta seleccionado en el lienzo. */
+  selected?: boolean;
   /**
    * Miniatura estatica: sustituye mapas, videos y audios por marcadores ligeros.
    * Sin esto una rejilla de paginas crearia una instancia de Leaflet por mapa.
@@ -120,6 +122,21 @@ const attribution = computed(() => {
 
 const audioPlaying = ref(false);
 const audioRef = ref<HTMLAudioElement | null>(null);
+
+const videoPlaying = ref(false);
+const videoRef = ref<HTMLVideoElement | null>(null);
+
+function toggleVideo(): void {
+  const el = videoRef.value;
+  if (!el) return;
+  if (el.paused) {
+    void el.play();
+    videoPlaying.value = true;
+  } else {
+    el.pause();
+    videoPlaying.value = false;
+  }
+}
 
 function toggleAudio(): void {
   const el = audioRef.value;
@@ -321,9 +338,15 @@ const textLines = computed(() => {
   </div>
 
   <div v-else-if="element.type === 'audio'" class="relative h-full w-full">
+    <!--
+      Igual que el video: el boton ocupaba el elemento entero y se tragaba el
+      puntero, asi que el audio tampoco se podia mover. Solo responde al pulsar
+      cuando esta seleccionado; si no, el gesto es para arrastrarlo.
+    -->
     <button
       type="button"
       class="grid h-full w-full place-items-center rounded-full text-white shadow-lg transition hover:brightness-110"
+      :class="selected ? '' : 'pointer-events-none'"
       :style="{ backgroundColor: media.hotspotColor }"
       :aria-label="audioPlaying ? 'Pausar audio' : 'Reproducir audio'"
       @pointerdown.stop
@@ -344,15 +367,31 @@ const textLines = computed(() => {
     <span class="text-2xl text-white/80">▶</span>
   </div>
 
-  <video
-    v-else-if="element.type === 'video'"
-    :src="media.fileUrl"
-    :poster="media.posterUrl"
-    class="h-full w-full rounded bg-black object-cover"
-    controls
-    preload="metadata"
-    @pointerdown.stop
-  />
+  <!--
+    El video NO captura el puntero mientras se edita.
+    Con @pointerdown.stop se tragaba el evento antes de que la caja pudiera
+    arrastrarlo, y el video quedaba clavado donde cayera. Ahora la caja recibe
+    siempre el gesto y para reproducir hay un boton propio, pequeno y en una
+    esquina, que no estorba al arrastre.
+  -->
+  <div v-else-if="element.type === 'video'" class="relative h-full w-full">
+    <video
+      ref="videoRef"
+      :src="media.fileUrl"
+      :poster="media.posterUrl"
+      class="pointer-events-none h-full w-full rounded bg-black object-cover"
+      preload="metadata"
+      @ended="videoPlaying = false"
+    />
+    <button
+      v-if="selected"
+      type="button"
+      class="absolute bottom-1 left-1 grid h-8 w-8 place-items-center rounded-full bg-black/70 text-sm text-white shadow-lg hover:bg-black/90"
+      :aria-label="videoPlaying ? 'Pausar video' : 'Reproducir video'"
+      @pointerdown.stop
+      @click.stop="toggleVideo"
+    >{{ videoPlaying ? '⏸' : '▶' }}</button>
+  </div>
 
   <!-- Mapa OpenStreetMap -->
   <div
