@@ -58,7 +58,7 @@ function linkOf(element: CanvasElement): string | null {
 }
 
 /** Numero de pagina al que salta el elemento, si es un marcador interno. */
-export function paginaDestino(element: CanvasElement): number | null {
+function paginaDestino(element: CanvasElement): number | null {
   const url = String(element.properties.linkUrl ?? '').trim();
   const m = /^#pagina-(\d{1,4})$/.exec(url);
   return m ? Number(m[1]) : null;
@@ -73,9 +73,8 @@ export function paginaDestino(element: CanvasElement): number | null {
         v-for="element in sorted"
         :key="element.id"
         class="absolute"
-        :class="linkOf(element) && 'cursor-pointer'"
+        :class="linkOf(element) || paginaDestino(element) !== null ? 'cursor-pointer' : ''"
         :href="linkOf(element) ?? undefined"
-        :class="paginaDestino(element) !== null ? 'cursor-pointer' : ''"
         @click="paginaDestino(element) !== null && emit('irAPagina', paginaDestino(element)!)"
         :target="linkOf(element) ? '_blank' : undefined"
         :rel="linkOf(element) ? 'noopener noreferrer' : undefined"

@@ -11,7 +11,7 @@
     "dev:web": "npm run dev --workspace @bookstudio/web",
     "typecheck": "npm run typecheck --workspace @bookstudio/web && npm run typecheck --workspace @bookstudio/api",
     "test:unit": "npm run test:unit --workspace @bookstudio/api && npm run test:unit --workspace @bookstudio/web",
-    "verify": "npm run typecheck && npm run test:unit",
+    "verify": "npm run typecheck && npm run test:unit && npm run build:app --workspace @bookstudio/web",
     "migrate": "npm run migrate --workspace @bookstudio/api",
     "seed": "npm run seed --workspace @bookstudio/api",
     "red": "powershell -ExecutionPolicy Bypass -File ./scripts/red-local.ps1",
