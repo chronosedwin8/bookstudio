@@ -11,7 +11,7 @@
     "migrate": "tsx src/db/migrate.ts",
     "seed": "tsx src/db/seed.ts",
     "typecheck": "tsc --noEmit",
-    "test:unit": "tsx src/lib/rate-limit.check.mts && tsx src/config/csp.check.mts && tsx src/modules/billing/webhook-signature.check.mts"
+    "test:unit": "tsx src/lib/rate-limit.check.mts && tsx src/config/csp.check.mts && tsx src/modules/billing/webhook-signature.check.mts && tsx src/modules/canvas/questions.check.mts"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

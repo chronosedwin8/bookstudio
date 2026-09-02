@@ -203,14 +203,18 @@ export const questionOptionSchema = z.object({
   correct: z.boolean().default(false),
 });
 
-export const questionKind = z.enum(['single', 'multiple', 'order']);
+export const questionKind = z.enum(['single', 'multiple', 'order', 'open']);
 
 export const questionPropertiesSchema = z
   .object({
     kind: questionKind.default('single'),
     prompt: z.string().max(2000).default(''),
     promptImageUrl: z.string().max(2048).optional(),
-    options: z.array(questionOptionSchema).min(2, 'Una pregunta necesita al menos 2 opciones').max(8),
+    options: z.array(questionOptionSchema).max(8).default([]),
+    /** Solo en las abiertas: lo que se espera leer, para orientar al alumno. */
+    expectedAnswer: z.string().max(2000).default(''),
+    /** Alto del cuadro de respuesta, en lineas. */
+    answerLines: z.number().int().min(2).max(20).default(4),
     feedbackCorrect: z.string().max(300).default('Muy bien!'),
     feedbackWrong: z.string().max(300).default('Casi. Vuelve a intentarlo.'),
     accentColor: hexColor.default('#7C3AED'),
@@ -237,6 +241,15 @@ export const questionPropertiesSchema = z
         code: z.ZodIssueCode.custom,
         path: ['options'],
         message: 'Marca al menos una opción correcta',
+      });
+    }
+
+    // Las de opciones necesitan opciones; la abierta, en cambio, no lleva ninguna.
+    if (value.kind !== 'open' && value.options.length < 2) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['options'],
+        message: 'Una pregunta de opciones necesita al menos 2',
       });
     }
   });

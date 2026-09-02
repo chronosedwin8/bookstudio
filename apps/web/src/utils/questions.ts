@@ -112,6 +112,36 @@ export const QUESTION_BLOCKS: QuestionBlock[] = [
     },
   },
   {
+    id: 'open-short',
+    label: 'Pregunta abierta',
+    description: 'El alumno redacta su propia respuesta con sus palabras.',
+    size: { width: 52, height: 40 },
+    properties: {
+      ...BASE,
+      kind: 'open',
+      prompt: 'Escribe aqui la pregunta abierta',
+      accentColor: '#0F766E',
+      options: [],
+      expectedAnswer: '',
+      answerLines: 4,
+    },
+  },
+  {
+    id: 'open-essay',
+    label: 'Redaccion larga',
+    description: 'Espacio amplio para desarrollar un texto.',
+    size: { width: 58, height: 60 },
+    properties: {
+      ...BASE,
+      kind: 'open',
+      prompt: 'Desarrolla el tema en un parrafo',
+      accentColor: '#4338CA',
+      options: [],
+      expectedAnswer: '',
+      answerLines: 10,
+    },
+  },
+  {
     id: 'order-timeline',
     label: 'Linea del tiempo',
     description: 'Ordena hechos historicos de mas antiguo a mas reciente.',
@@ -135,6 +165,7 @@ export const QUESTION_KIND_LABELS: Record<QuestionKind, string> = {
   single: 'Respuesta unica',
   multiple: 'Varias respuestas',
   order: 'Ordenar',
+  open: 'Pregunta abierta',
 };
 
 /** Id disponible para una opcion nueva dentro de una pregunta. */

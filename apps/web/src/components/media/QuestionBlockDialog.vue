@@ -39,6 +39,8 @@ const emit = defineEmits<{
                   :feedback-wrong="block.properties.feedbackWrong"
                   :accent-color="block.properties.accentColor"
                   :allow-retry="block.properties.allowRetry"
+                  :expected-answer="block.properties.expectedAnswer"
+                  :answer-lines="block.properties.answerLines"
                   preview
                 />
               </div>

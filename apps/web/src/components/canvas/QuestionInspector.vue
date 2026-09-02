@@ -19,6 +19,7 @@ const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 const ACCEPT = 'image/png,image/jpeg,image/webp,image/gif';
 
 const options = computed(() => props.question.options ?? []);
+const esAbierta = computed(() => props.question.kind === 'open');
 
 function update(changes: Partial<QuestionProperties>): void {
   emit('patch', { ...props.question, ...changes });
@@ -65,6 +66,14 @@ function moveOption(index: number, step: number): void {
 /** Cambiar de tipo puede dejar la pregunta sin una solucion valida; se corrige aqui. */
 function setKind(kind: QuestionKind): void {
   let next = options.value;
+  // Al salir de una abierta no hay opciones que reaprovechar: se siembran dos,
+  // porque el servidor rechaza una pregunta de opciones que no las tenga.
+  if (kind !== 'open' && next.length < 2) {
+    next = [
+      { id: 'a', text: 'Primera opcion', correct: true },
+      { id: 'b', text: 'Segunda opcion', correct: false },
+    ];
+  }
   if (kind === 'single') {
     const first = next.findIndex((option) => option.correct);
     next = next.map((option, i) => ({ ...option, correct: i === (first >= 0 ? first : 0) }));
@@ -134,6 +143,9 @@ const ACCENTS = ['#7C3AED', '#0EA5E9', '#16A34A', '#EA580C', '#DB2777', '#334155
       <p v-if="question.kind === 'order'" class="mt-1 text-[11px] leading-tight text-slate-500">
         El orden de esta lista es la solucion. Al alumno le llegan barajadas.
       </p>
+      <p v-else-if="esAbierta" class="mt-1 text-[11px] leading-tight text-slate-500">
+        El alumno redacta su respuesta. No se corrige sola: queda guardada para que la leas tú.
+      </p>
     </div>
 
     <div>
@@ -157,7 +169,40 @@ const ACCENTS = ['#7C3AED', '#0EA5E9', '#16A34A', '#EA580C', '#DB2777', '#334155
       </div>
     </div>
 
-    <div>
+    <!-- Ajustes propios de la pregunta abierta -->
+    <template v-if="esAbierta">
+      <div>
+        <label class="label" for="question-expected">Indicación para el alumno (opcional)</label>
+        <input
+          id="question-expected"
+          type="text"
+          class="input"
+          placeholder="Ej: responde en tres o cuatro líneas"
+          :value="question.expectedAnswer ?? ''"
+          @change="update({ expectedAnswer: ($event.target as HTMLInputElement).value })"
+        />
+      </div>
+
+      <div>
+        <label class="label" for="question-lines">Alto del cuadro ({{ question.answerLines ?? 4 }} líneas)</label>
+        <input
+          id="question-lines"
+          type="range"
+          class="w-full"
+          min="2"
+          max="20"
+          :value="question.answerLines ?? 4"
+          @input="update({ answerLines: Number(($event.target as HTMLInputElement).value) })"
+        />
+      </div>
+
+      <div v-if="question.studentAnswer" class="rounded-lg border border-teal-200 bg-teal-50 p-2">
+        <p class="text-[11px] font-semibold uppercase tracking-wide text-teal-700">Respuesta del alumno</p>
+        <p class="mt-1 whitespace-pre-wrap text-sm leading-snug text-slate-700">{{ question.studentAnswer }}</p>
+      </div>
+    </template>
+
+    <div v-if="!esAbierta">
       <div class="mb-1 flex items-center justify-between">
         <label class="label mb-0">Opciones ({{ options.length }}/8)</label>
         <button
@@ -234,7 +279,7 @@ const ACCENTS = ['#7C3AED', '#0EA5E9', '#16A34A', '#EA580C', '#DB2777', '#334155
       </ul>
     </div>
 
-    <div>
+    <div v-if="!esAbierta">
       <label class="label" for="feedback-ok">Mensaje al acertar</label>
       <input
         id="feedback-ok"
@@ -245,7 +290,7 @@ const ACCENTS = ['#7C3AED', '#0EA5E9', '#16A34A', '#EA580C', '#DB2777', '#334155
       />
     </div>
 
-    <div>
+    <div v-if="!esAbierta">
       <label class="label" for="feedback-ko">Mensaje al fallar</label>
       <input
         id="feedback-ko"
@@ -272,7 +317,7 @@ const ACCENTS = ['#7C3AED', '#0EA5E9', '#16A34A', '#EA580C', '#DB2777', '#334155
       </div>
     </div>
 
-    <label class="flex items-center gap-2 text-sm text-slate-700">
+    <label v-if="!esAbierta" class="flex items-center gap-2 text-sm text-slate-700">
       <input
         type="checkbox"
         class="h-4 w-4 rounded"

@@ -277,6 +277,9 @@ const textLines = computed(() => {
     :feedback-wrong="question.feedbackWrong"
     :accent-color="question.accentColor"
     :allow-retry="question.allowRetry"
+    :expected-answer="question.expectedAnswer"
+    :answer-lines="question.answerLines"
+    :student-answer="question.studentAnswer"
     :preview="preview || !checkAnswer"
     :check="checkAnswer ? (answer) => checkAnswer!(element.id, answer) : undefined"
   />

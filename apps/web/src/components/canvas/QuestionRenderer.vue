@@ -17,23 +17,45 @@ const props = defineProps<{
   feedbackWrong: string;
   accentColor: string;
   allowRetry: boolean;
+  /** Abiertas: guia de lo que se espera y alto del cuadro de texto. */
+  expectedAnswer?: string;
+  answerLines?: number;
+  /** Abiertas: lo que el alumno ya habia dejado escrito en su ejemplar. */
+  studentAnswer?: string;
   /** Miniatura o edicion: se muestra sin poder responder. */
   preview?: boolean;
   /** Corrige la respuesta; la resuelve quien monta el componente. */
-  check?: (answer: string[]) => Promise<{ correct: boolean; solution: string[]; feedback: string }>;
+  check?: (
+    answer: string[],
+  ) => Promise<{ correct: boolean; solution: string[]; feedback: string; pendingReview?: boolean }>;
 }>();
 
 const selected = ref<string[]>([]);
 /** Orden propuesto en las preguntas de ordenar. */
 const arrangement = ref<QuestionOption[]>([]);
-const result = ref<{ correct: boolean; solution: string[]; feedback: string } | null>(null);
+const result = ref<{ correct: boolean; solution: string[]; feedback: string; pendingReview?: boolean } | null>(null);
+/** Texto que el alumno escribe en las preguntas abiertas. */
+const texto = ref('');
 const checking = ref(false);
 const error = ref<string | null>(null);
 const celebrating = ref(false);
 
 const isOrder = computed(() => props.kind === 'order');
+const isOpen = computed(() => props.kind === 'open');
 const answered = computed(() => result.value !== null);
-const locked = computed(() => answered.value && (result.value!.correct || !props.allowRetry));
+// La abierta nunca se bloquea: el alumno puede seguir puliendo su texto hasta
+// que el docente la lea, y cada envio reemplaza al anterior.
+const locked = computed(
+  () => !isOpen.value && answered.value && (result.value!.correct || !props.allowRetry),
+);
+
+watch(
+  () => props.studentAnswer,
+  (guardado) => {
+    texto.value = guardado ?? '';
+  },
+  { immediate: true },
+);
 
 watch(
   () => props.options,
@@ -67,11 +89,16 @@ function move(index: number, step: number): void {
   arrangement.value = copy;
 }
 
-const answer = computed(() =>
-  isOrder.value ? arrangement.value.map((option) => option.id) : selected.value,
-);
+const answer = computed(() => {
+  if (isOpen.value) return [texto.value];
+  return isOrder.value ? arrangement.value.map((option) => option.id) : selected.value;
+});
 
-const canSubmit = computed(() => !props.preview && !locked.value && (isOrder.value || selected.value.length > 0));
+const canSubmit = computed(() => {
+  if (props.preview || locked.value) return false;
+  if (isOpen.value) return texto.value.trim().length > 0;
+  return isOrder.value || selected.value.length > 0;
+});
 
 async function submit(): Promise<void> {
   if (!canSubmit.value || !props.check) return;
@@ -80,7 +107,7 @@ async function submit(): Promise<void> {
   try {
     const outcome = await props.check(answer.value);
     result.value = outcome;
-    if (outcome.correct) {
+    if (outcome.correct && !outcome.pendingReview) {
       celebrating.value = true;
       setTimeout(() => (celebrating.value = false), 2600);
     }
@@ -109,6 +136,7 @@ const KIND_HINTS: Record<QuestionKind, string> = {
   single: 'Elige una respuesta',
   multiple: 'Elige todas las que correspondan',
   order: 'Ordena las opciones',
+  open: 'Responde con tus palabras',
 };
 
 /** Estado visual de cada opcion una vez respondida. */
@@ -146,7 +174,22 @@ function optionState(id: string): 'correct' | 'wrong' | 'idle' {
 
     <!-- Opciones -->
     <div class="q-list min-h-0 flex-1 overflow-y-auto">
-      <template v-if="isOrder">
+      <!-- Abierta: un cuadro de redaccion en lugar de opciones -->
+      <template v-if="isOpen">
+        <p v-if="expectedAnswer" class="q-hint mb-1 italic text-slate-500">{{ expectedAnswer }}</p>
+        <textarea
+          v-model="texto"
+          class="q-answer w-full resize-none rounded border-2 border-slate-200 bg-white text-slate-700 outline-none focus:border-brand-400"
+          :rows="answerLines ?? 4"
+          :readonly="preview"
+          placeholder="Escribe aqui tu respuesta..."
+          @pointerdown.stop
+          @click.stop
+          @keydown.stop
+        />
+      </template>
+
+      <template v-else-if="isOrder">
         <div
           v-for="(option, index) in arrangement"
           :key="option.id"
@@ -217,9 +260,15 @@ function optionState(id: string): 'correct' | 'wrong' | 'idle' {
       <p
         v-if="result"
         class="q-feedback font-bold"
-        :class="result.correct ? 'text-emerald-600' : 'text-red-600'"
+        :class="
+          result.pendingReview
+            ? 'text-teal-700'
+            : result.correct
+              ? 'text-emerald-600'
+              : 'text-red-600'
+        "
       >
-        {{ result.correct ? '🎉 ' : '' }}{{ result.feedback }}
+        {{ result.pendingReview ? '✓ ' : result.correct ? '🎉 ' : '' }}{{ result.feedback }}
       </p>
 
       <button
@@ -229,7 +278,7 @@ function optionState(id: string): 'correct' | 'wrong' | 'idle' {
         :style="{ backgroundColor: accentColor }"
         :disabled="!canSubmit || checking"
         @click.stop="submit"
-      >{{ checking ? 'Comprobando...' : 'Comprobar' }}</button>
+      >{{ checking ? 'Guardando...' : isOpen ? 'Enviar respuesta' : 'Comprobar' }}</button>
 
       <button
         v-else-if="!result?.correct && allowRetry"
@@ -284,6 +333,12 @@ function optionState(id: string): 'correct' | 'wrong' | 'idle' {
 
 .q-prompt {
   font-size: clamp(10px, 4.6cqmin, 44px);
+}
+
+.q-answer {
+  padding: clamp(4px, 2cqmin, 16px);
+  font-size: clamp(9px, 3.4cqmin, 30px);
+  line-height: 1.45;
 }
 
 .q-list {

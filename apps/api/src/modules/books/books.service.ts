@@ -659,6 +659,11 @@ export interface AnswerResult {
   /** Que opciones eran correctas, para poder mostrar la solucion tras responder. */
   solution: string[];
   feedback: string;
+  /**
+   * Las preguntas abiertas no se corrigen solas: se guardan y las lee el docente.
+   * Sin esta marca, una respuesta perfecta se mostraria como fallada.
+   */
+  pendingReview?: boolean;
 }
 
 /** Compara dos listas de ids como conjuntos. */
@@ -672,6 +677,19 @@ function sameSet(a: string[], b: string[]): boolean {
 function gradeQuestion(properties: Record<string, unknown>, answer: string[]): AnswerResult {
   const kind = String(properties.kind ?? 'single');
   const options = Array.isArray(properties.options) ? (properties.options as StoredQuestionOption[]) : [];
+
+  // Abierta: no hay nada que comparar. Se acusa recibo y la revisa el docente.
+  if (kind === 'open') {
+    const texto = (answer[0] ?? '').trim();
+    return {
+      correct: false,
+      pendingReview: true,
+      solution: [],
+      feedback: texto
+        ? 'Respuesta guardada. La leerá tu profesor.'
+        : 'Escribe tu respuesta antes de enviarla.',
+    };
+  }
 
   // En las de ordenar la solucion es el orden guardado; en el resto, las marcadas.
   const solution =
@@ -713,7 +731,35 @@ export async function answerQuestion(
 ): Promise<AnswerResult> {
   // loadContext ya rechaza a quien no deberia ni ver el libro.
   await loadContext(bookId, userId);
-  return gradeQuestion(await findQuestion(bookId, elementId), answer);
+  const properties = await findQuestion(bookId, elementId);
+  const resultado = gradeQuestion(properties, answer);
+
+  /**
+   * La respuesta abierta se guarda en el propio elemento.
+   *
+   * Funciona porque al entregar material cada alumno recibe SU copia del libro: lo
+   * que escribe queda en su ejemplar y no lo ve nadie mas. Guardar solo si el libro
+   * es suyo evita que alguien escriba en el de un companero.
+   */
+  if (resultado.pendingReview && (answer[0] ?? '').trim()) {
+    const { rows } = await query<{ creator_id: string | null }>(
+      'SELECT creator_id FROM books WHERE id = $1',
+      [bookId],
+    );
+    if (rows[0]?.creator_id === userId) {
+      await query(
+        `UPDATE canvas_elements
+         SET properties = properties || $2::jsonb, updated_at = CURRENT_TIMESTAMP
+         WHERE id = $1`,
+        [
+          elementId,
+          JSON.stringify({ studentAnswer: answer[0].trim().slice(0, 4000), answeredAt: new Date().toISOString() }),
+        ],
+      );
+    }
+  }
+
+  return resultado;
 }
 
 /** Corrige una pregunta de un libro abierto por enlace compartido. */

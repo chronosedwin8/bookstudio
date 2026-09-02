@@ -229,7 +229,7 @@ export interface ChartProperties {
   accentColor: string;
 }
 
-export type QuestionKind = 'single' | 'multiple' | 'order';
+export type QuestionKind = 'single' | 'multiple' | 'order' | 'open';
 
 export interface QuestionOption {
   id: string;
@@ -248,12 +248,21 @@ export interface QuestionProperties {
   feedbackWrong: string;
   accentColor: string;
   allowRetry: boolean;
+  /** Solo en las abiertas: guia de lo que se espera responder. */
+  expectedAnswer?: string;
+  /** Solo en las abiertas: alto del cuadro de respuesta, en lineas. */
+  answerLines?: number;
+  /** Lo que escribio el alumno en su ejemplar; lo devuelve el servidor. */
+  studentAnswer?: string;
+  answeredAt?: string;
 }
 
 export interface AnswerResult {
   correct: boolean;
   solution: string[];
   feedback: string;
+  /** La abierta no se corrige sola: queda guardada a la espera del docente. */
+  pendingReview?: boolean;
 }
 
 export interface MediaResult {
