@@ -1,6 +1,12 @@
 import { http } from './http';
 import type {
+  AdminOrganization,
   AnswerResult,
+  Charge,
+  ChargeItem,
+  ClientOrganization,
+  ClientPortal,
+  TeamMember,
   MagnificAspect,
   MagnificModel,
   MagnificTask,
@@ -603,5 +609,129 @@ export const magnificApi = {
   async consultar(taskId: string) {
     const { data } = await http.get<MagnificTask>(`/magnific/images/${taskId}`);
     return data;
+  },
+};
+
+export const clientsApi = {
+  /** organizationId solo lo usa la administracion, para entrar en otro cliente. */
+  async portal(organizationId?: string) {
+    const { data } = await http.get<{ portal: ClientPortal }>('/clients/portal', {
+      params: organizationId ? { organizationId } : {},
+    });
+    return data.portal;
+  },
+  async updateBillingData(
+    payload: Partial<{
+      legalName: string;
+      taxId: string;
+      contactName: string;
+      contactEmail: string;
+      contactPhone: string;
+      address: string;
+      city: string;
+    }>,
+    organizationId?: string,
+  ) {
+    const { data } = await http.patch<{ organization: ClientOrganization }>('/clients/billing-data', payload, {
+      params: organizationId ? { organizationId } : {},
+    });
+    return data.organization;
+  },
+
+  async team(organizationId?: string) {
+    const { data } = await http.get<{ team: TeamMember[] }>('/clients/team', {
+      params: organizationId ? { organizationId } : {},
+    });
+    return data.team;
+  },
+  /** Devuelve la clave del docente nuevo; no se puede volver a consultar. */
+  async createTeacher(payload: { fullName: string; email: string }, organizationId?: string) {
+    const { data } = await http.post<{ member: TeamMember; password: string }>('/clients/team', payload, {
+      params: organizationId ? { organizationId } : {},
+    });
+    return data;
+  },
+  async updateTeacher(id: string, payload: { fullName?: string; isActive?: boolean }, organizationId?: string) {
+    const { data } = await http.patch<{ member: TeamMember }>(`/clients/team/${id}`, payload, {
+      params: organizationId ? { organizationId } : {},
+    });
+    return data.member;
+  },
+  async removeTeacher(id: string, organizationId?: string) {
+    await http.delete(`/clients/team/${id}`, { params: organizationId ? { organizationId } : {} });
+  },
+
+  async charge(id: string) {
+    const { data } = await http.get<{ charge: Charge }>(`/clients/charges/${id}`);
+    return data.charge;
+  },
+  async payCharge(
+    id: string,
+    payload: {
+      token?: string;
+      paymentMethodId: string;
+      installments: number;
+      payerEmail: string;
+      payerDocType?: string;
+      payerDocNumber?: string;
+    },
+  ) {
+    const { data } = await http.post<{
+      charge: Charge;
+      payment: { status: string; statusDetail: string; invoiceNumber: number | null };
+    }>(`/clients/charges/${id}/pay`, payload, { timeout: 40_000 });
+    return data;
+  },
+
+  // --- Administracion de BookStudio ---
+  async organizations() {
+    const { data } = await http.get<{ organizations: AdminOrganization[] }>('/clients/organizations');
+    return data.organizations;
+  },
+  async createOrganization(payload: {
+    name: string;
+    legalName?: string;
+    taxId?: string;
+    contactName?: string;
+    contactEmail?: string;
+    contactPhone?: string;
+    address?: string;
+    city?: string;
+    notes?: string;
+  }) {
+    const { data } = await http.post<{ organization: ClientOrganization }>('/clients/organizations', payload);
+    return data.organization;
+  },
+  async linkOwner(organizationId: string, email: string) {
+    const { data } = await http.post<{ organization: ClientOrganization }>(
+      `/clients/organizations/${organizationId}/owner`,
+      { email },
+    );
+    return data.organization;
+  },
+  async chargesOf(organizationId: string) {
+    const { data } = await http.get<{ charges: Charge[] }>(`/clients/organizations/${organizationId}/charges`);
+    return data.charges;
+  },
+  async createCharge(
+    organizationId: string,
+    payload: {
+      concept: string;
+      items: ChargeItem[];
+      dueDate?: string | null;
+      subscriptionId?: string | null;
+      notes?: string;
+      issue?: boolean;
+    },
+  ) {
+    const { data } = await http.post<{ charge: Charge }>(
+      `/clients/organizations/${organizationId}/charges`,
+      payload,
+    );
+    return data.charge;
+  },
+  async updateCharge(id: string, payload: { status?: 'emitida' | 'anulada'; notes?: string; dueDate?: string | null }) {
+    const { data } = await http.patch<{ charge: Charge }>(`/clients/charges/${id}`, payload);
+    return data.charge;
   },
 };

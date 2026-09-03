@@ -1,12 +1,36 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import CambiarClaveDialog from '@/components/CambiarClaveDialog.vue';
+import { clientsApi } from '@/services/api';
 import { useAuthStore } from '@/stores/auth';
 
 const auth = useAuthStore();
 const router = useRouter();
 const cambiarClave = ref(false);
+
+/**
+ * Si esta persona tiene cuenta de cliente, para pintar "Mi cuenta".
+ *
+ * Se pregunta una sola vez al iniciar sesion. Un enlace que lleva a una pantalla
+ * vacia es peor que no tener enlace, y el alumnado no tiene nada que hacer ahi.
+ */
+const esCliente = ref(false);
+
+watch(
+  () => auth.user?.id,
+  async (id) => {
+    esCliente.value = false;
+    if (!id || auth.user?.role === 'student') return;
+    try {
+      await clientsApi.portal();
+      esCliente.value = true;
+    } catch {
+      // Un 404 aqui es lo normal: la mayoria de docentes no paga nada.
+    }
+  },
+  { immediate: true },
+);
 
 function handleLogout(): void {
   auth.logout();
@@ -30,9 +54,25 @@ function handleLogout(): void {
         <div class="flex items-center gap-3">
           <RouterLink
             v-if="auth.user?.role === 'admin'"
+            :to="{ name: 'admin-clients' }"
+            class="text-sm text-slate-600 hover:text-brand-700"
+          >Clientes</RouterLink>
+
+          <RouterLink
+            v-if="auth.user?.role === 'admin'"
             :to="{ name: 'admin-users' }"
             class="text-sm text-slate-600 hover:text-brand-700"
           >Usuarios</RouterLink>
+
+          <!--
+            Solo a quien tiene cuenta de cliente. Se consulta una vez al entrar: un
+            enlace que lleva a una pantalla vacia es peor que no tener enlace.
+          -->
+          <RouterLink
+            v-if="esCliente"
+            :to="{ name: 'client-portal' }"
+            class="text-sm text-slate-600 hover:text-brand-700"
+          >Mi cuenta</RouterLink>
 
           <!-- Cambiar la contrasena: al alcance de todos, tambien del alumnado -->
           <button

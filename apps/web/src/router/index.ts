@@ -43,6 +43,19 @@ const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: true },
   },
   {
+    // El portal del cliente: lo abre su titular, y administracion con ?cliente=id
+    path: '/clientes/portal',
+    name: 'client-portal',
+    component: () => import('@/views/ClientPortalView.vue'),
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/admin/clientes',
+    name: 'admin-clients',
+    component: () => import('@/views/AdminClientsView.vue'),
+    meta: { requiresAuth: true, requiresAdmin: true },
+  },
+  {
     path: '/admin/usuarios',
     name: 'admin-users',
     component: () => import('@/views/AdminUsersView.vue'),

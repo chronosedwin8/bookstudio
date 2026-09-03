@@ -646,3 +646,113 @@ export interface MagnificTask {
   fileUrl?: string;
   error?: string;
 }
+
+
+// --- Gestion de clientes ---
+
+export interface ClientOrganization {
+  id: string;
+  name: string;
+  legalName: string | null;
+  taxId: string | null;
+  ownerId: string | null;
+  ownerName?: string | null;
+  ownerEmail?: string | null;
+  contactName: string | null;
+  contactEmail: string | null;
+  contactPhone: string | null;
+  address: string | null;
+  city: string | null;
+  notes: string;
+  createdAt: string;
+}
+
+export interface ChargeItem {
+  description: string;
+  quantity: number;
+  unitCop: number;
+}
+
+export type ChargeStatus = 'borrador' | 'emitida' | 'pagada' | 'anulada';
+
+export interface Charge {
+  id: string;
+  number: number;
+  organizationId: string;
+  organizationName?: string;
+  subscriptionId: string | null;
+  concept: string;
+  items: ChargeItem[];
+  amountCop: number;
+  status: ChargeStatus;
+  dueDate: string | null;
+  issuedAt: string | null;
+  paidAt: string | null;
+  notes: string;
+  createdAt: string;
+  /** Dias que faltan para el vencimiento; negativo si ya vencio. */
+  daysLeft?: number | null;
+}
+
+export interface ClientUsage {
+  teachers: number;
+  maxTeachers: number | null;
+  students: number;
+  maxStudents: number | null;
+}
+
+export interface PortalSubscription {
+  id: string;
+  plan: string;
+  planName: string;
+  status: string;
+  amountCop: number;
+  autoRenew: boolean;
+  startsAt: string | null;
+  expiresAt: string | null;
+  daysLeft: number | null;
+}
+
+export interface PortalPayment {
+  id: string;
+  invoiceNumber: number;
+  amountCop: number;
+  status: string;
+  statusDetail: string | null;
+  paymentMethod: string | null;
+  installments: number | null;
+  paidAt: string | null;
+  createdAt: string;
+  chargeNumber: number | null;
+  concept: string | null;
+}
+
+export interface ClientPortal {
+  organization: ClientOrganization;
+  subscriptions: PortalSubscription[];
+  usage: ClientUsage;
+  charges: Charge[];
+  payments: PortalPayment[];
+  pendingCop: number;
+  paidCop: number;
+}
+
+export interface TeamMember {
+  id: string;
+  fullName: string;
+  email: string;
+  isActive: boolean;
+  passwordIsDefault: boolean;
+  libraries: number;
+  createdAt: string;
+}
+
+export interface AdminOrganization extends ClientOrganization {
+  teachers: number;
+  students: number;
+  plan: string | null;
+  planStatus: string | null;
+  expiresAt: string | null;
+  pendingCharges: number;
+  pendingCop: number;
+}
