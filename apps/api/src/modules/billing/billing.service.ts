@@ -433,8 +433,8 @@ export async function handlePaymentNotification(paymentId: string): Promise<void
 
   await withTransaction(async (client) => {
     // Si el pago ya existe se actualiza; si es una renovacion automatica, se crea.
-    const existente = await client.query<{ id: string; subscription_id: string | null }>(
-      'SELECT id, subscription_id FROM payments WHERE mp_payment_id = $1',
+    const existente = await client.query<{ id: string; subscription_id: string | null; charge_id: string | null }>(
+      'SELECT id, subscription_id, charge_id FROM payments WHERE mp_payment_id = $1',
       [String(payment.id)],
     );
 
@@ -443,6 +443,20 @@ export async function handlePaymentNotification(paymentId: string): Promise<void
         `UPDATE payments SET status = $2, status_detail = $3, paid_at = $4 WHERE id = $1`,
         [existente.rows[0].id, payment.status, payment.status_detail, payment.date_approved ?? null],
       );
+
+      /*
+       * Una cuenta de cobro pagada por PSE o Efecty se aprueba minutos u horas
+       * despues. Sin esto se quedaria como pendiente para siempre y el cliente
+       * veria una deuda que ya pago.
+       */
+      const chargeId = existente.rows[0].charge_id;
+      if (chargeId && aprobado) {
+        await client.query(
+          `UPDATE charges SET status = 'pagada', paid_at = COALESCE(paid_at, NOW())
+           WHERE id = $1 AND status <> 'anulada'`,
+          [chargeId],
+        );
+      }
 
       const subscriptionId = existente.rows[0].subscription_id;
       if (subscriptionId && aprobado) {
