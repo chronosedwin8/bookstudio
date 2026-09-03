@@ -755,6 +755,8 @@ export interface TeamMember {
   id: string;
   fullName: string;
   email: string;
+  /** Un admin de la plataforma puede estar en el equipo sin ocupar cupo. */
+  role: 'teacher' | 'admin';
   isActive: boolean;
   passwordIsDefault: boolean;
   libraries: number;

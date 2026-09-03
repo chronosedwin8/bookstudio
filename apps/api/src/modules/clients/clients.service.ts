@@ -280,6 +280,8 @@ export async function getPortal(userId: string, role: string, organizationId?: s
   const vigente = suscripciones.find((s) => s.status === 'activa') ?? suscripciones[0];
 
   const { rows: equipo } = await query<{ total: string }>(
+    // Solo cuentan los docentes: la administracion de la plataforma no ocupa una
+    // plaza que el cliente haya pagado.
     `SELECT COUNT(*) AS total FROM users
      WHERE organization_id = $1 AND role = 'teacher' AND is_active`,
     [org.id],
@@ -410,6 +412,7 @@ export interface TeamMember {
   id: string;
   fullName: string;
   email: string;
+  role: 'teacher' | 'admin';
   isActive: boolean;
   passwordIsDefault: boolean;
   libraries: number;
@@ -423,16 +426,17 @@ export async function listTeam(userId: string, role: string, organizationId?: st
     id: string;
     full_name: string;
     email: string;
+    role: 'teacher' | 'admin';
     is_active: boolean;
     password_is_default: boolean;
     libraries: string;
     created_at: Date;
   }>(
-    `SELECT u.id, u.full_name, u.email, u.is_active, u.password_is_default,
+    `SELECT u.id, u.full_name, u.email, u.role, u.is_active, u.password_is_default,
             (SELECT COUNT(*) FROM libraries l WHERE l.owner_id = u.id) AS libraries,
             u.created_at
      FROM users u
-     WHERE u.organization_id = $1 AND u.role = 'teacher'
+     WHERE u.organization_id = $1 AND u.role IN ('teacher', 'admin')
      ORDER BY u.is_active DESC, u.full_name`,
     [org.id],
   );
@@ -441,6 +445,7 @@ export async function listTeam(userId: string, role: string, organizationId?: st
     id: r.id,
     fullName: r.full_name,
     email: r.email,
+    role: r.role,
     isActive: r.is_active,
     passwordIsDefault: r.password_is_default,
     libraries: Number(r.libraries),
@@ -505,6 +510,7 @@ export async function createTeacher(
       id: rows[0].id,
       fullName: rows[0].full_name,
       email: rows[0].email,
+      role: 'teacher',
       isActive: true,
       passwordIsDefault: true,
       libraries: 0,
@@ -517,7 +523,7 @@ export async function createTeacher(
 /** Comprueba que esa cuenta es del equipo de este cliente antes de tocarla. */
 async function docenteDelCliente(orgId: string, teacherId: string): Promise<void> {
   const { rows } = await query<{ id: string }>(
-    `SELECT id FROM users WHERE id = $1 AND organization_id = $2 AND role = 'teacher'`,
+    `SELECT id FROM users WHERE id = $1 AND organization_id = $2 AND role IN ('teacher', 'admin')`,
     [teacherId, orgId],
   );
   if (!rows[0]) throw HttpError.notFound('Esa cuenta no pertenece a este cliente');
@@ -1010,7 +1016,9 @@ export async function linkTeacher(organizationId: string, email: string): Promis
 
   const equipo = await listTeam('', 'admin', organizationId);
   const miembro = equipo.find((m) => m.id === persona[0].id);
-  if (!miembro) throw HttpError.badRequest('La cuenta no quedo en el equipo');
+  // No deberia ocurrir: el UPDATE ya se hizo. Si pasa, decir la verdad, no que
+  // "no quedo en el equipo" cuando en realidad si quedo.
+  if (!miembro) throw HttpError.badRequest('La cuenta quedo vinculada pero no se pudo leer de vuelta');
   return miembro;
 }
 

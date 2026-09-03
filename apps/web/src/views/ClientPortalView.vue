@@ -500,6 +500,11 @@ function alPagar(cobro: Charge): void {
                   v-if="m.id === portal.organization.ownerId"
                   class="ml-1 rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-semibold text-slate-600"
                 >Titular</span>
+                <span
+                  v-if="m.role === 'admin'"
+                  class="ml-1 rounded bg-brand-50 px-1.5 py-0.5 text-[11px] font-semibold text-brand-700"
+                  title="Las cuentas de administración no ocupan cupo del plan"
+                >No ocupa cupo</span>
               </p>
               <p class="truncate text-xs text-slate-500">
                 {{ m.email }} · {{ m.libraries }} biblioteca(s)
