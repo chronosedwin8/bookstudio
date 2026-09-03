@@ -137,6 +137,17 @@ clientsRouter.post(
   }),
 );
 
+/** Mete en el equipo una cuenta que ya existe, para clientes que ya usaban esto. */
+clientsRouter.post(
+  '/organizations/:id/team/link',
+  requireRole('admin'),
+  validate(orgParamsSchema, 'params'),
+  validate(linkOwnerSchema),
+  asyncHandler(async (req, res) => {
+    res.json({ member: await service.linkTeacher(req.params.id, req.body.email) });
+  }),
+);
+
 clientsRouter.delete(
   '/organizations/:id',
   requireRole('admin'),

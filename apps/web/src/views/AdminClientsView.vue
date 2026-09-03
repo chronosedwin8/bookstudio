@@ -108,6 +108,23 @@ async function asignarTitular(): Promise<void> {
   }
 }
 
+// --- Meter en el equipo una cuenta que ya existe ---
+
+const correoVincular = ref('');
+
+async function vincularCuenta(): Promise<void> {
+  if (!abierto.value) return;
+  error.value = null;
+  try {
+    const m = await clientsApi.linkTeacher(abierto.value.id, correoVincular.value.trim());
+    aviso.value = `${m.fullName} entra en el equipo de este cliente.`;
+    correoVincular.value = '';
+    await cargar();
+  } catch (err) {
+    error.value = errorMessage(err);
+  }
+}
+
 // --- Borrar un cliente ---
 
 const borrando = ref<AdminOrganization | null>(null);
@@ -425,6 +442,24 @@ async function cambiarEstadoCuenta(cobro: Charge, status: 'emitida' | 'anulada')
               </div>
               <button type="submit" class="btn-secondary" :disabled="!correoTitular.includes('@')">
                 {{ abierto.ownerEmail ? 'Cambiar titular' : 'Asignar titular' }}
+              </button>
+            </form>
+          </section>
+
+          <!-- Equipo que ya existia -->
+          <section>
+            <h3 class="label">Meter una cuenta existente en su equipo</h3>
+            <p class="mb-2 text-xs text-slate-500">
+              Para colegios que ya usaban la plataforma antes de tener ficha de cliente. El alumnado
+              no va aquí: se añade a las bibliotecas.
+            </p>
+            <form class="flex flex-wrap items-end gap-2" @submit.prevent="vincularCuenta">
+              <div class="min-w-[14rem] flex-1">
+                <label class="label" for="vincular">Correo del docente</label>
+                <input id="vincular" v-model.trim="correoVincular" type="email" class="input" maxlength="255" />
+              </div>
+              <button type="submit" class="btn-secondary" :disabled="!correoVincular.includes('@')">
+                Añadir al equipo
               </button>
             </form>
           </section>

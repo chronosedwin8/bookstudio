@@ -712,6 +712,14 @@ export const clientsApi = {
     const { data } = await http.post<{ organization: ClientOrganization }>('/clients/organizations', payload);
     return data.organization;
   },
+  /** Mete en el equipo una cuenta que ya existe. Solo administracion. */
+  async linkTeacher(organizationId: string, email: string) {
+    const { data } = await http.post<{ member: TeamMember }>(
+      `/clients/organizations/${organizationId}/team/link`,
+      { email },
+    );
+    return data.member;
+  },
   /** Borra un cliente. Se rechaza si tiene pagos: el rastro del dinero se conserva. */
   async deleteOrganization(organizationId: string) {
     const { data } = await http.delete<{ chargesDeleted: number }>(

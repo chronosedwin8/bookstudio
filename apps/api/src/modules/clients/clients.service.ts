@@ -980,6 +980,41 @@ export async function grantPlan(
 }
 
 /**
+ * Mete en el equipo de un cliente una cuenta que ya existe.
+ *
+ * Hace falta para los colegios que ya usaban la plataforma antes de tener ficha
+ * de cliente: sin esto, su claustro nunca apareceria en el portal y el consumo
+ * saldria siempre en cero.
+ *
+ * Solo lo hace la administracion de BookStudio. Si pudiera hacerlo el propio
+ * cliente, bastaria con escribir el correo de un docente cualquiera para
+ * quedarselo dentro de su organizacion.
+ */
+export async function linkTeacher(organizationId: string, email: string): Promise<TeamMember> {
+  const { rows: org } = await query<{ id: string }>('SELECT id FROM organizations WHERE id = $1', [organizationId]);
+  if (!org[0]) throw HttpError.notFound('Cliente no encontrado');
+
+  const { rows: persona } = await query<{ id: string; role: string; organization_id: string | null }>(
+    'SELECT id, role, organization_id FROM users WHERE email = $1 AND is_active',
+    [email.toLowerCase()],
+  );
+  if (!persona[0]) throw HttpError.notFound('No hay ninguna cuenta activa con ese correo');
+  if (persona[0].role === 'student') {
+    throw HttpError.badRequest('El alumnado no ocupa cupo de docente: se anade a las bibliotecas, no al equipo');
+  }
+  if (persona[0].organization_id && persona[0].organization_id !== organizationId) {
+    throw HttpError.conflict('Esa cuenta ya pertenece a otro cliente');
+  }
+
+  await query('UPDATE users SET organization_id = $2 WHERE id = $1', [persona[0].id, organizationId]);
+
+  const equipo = await listTeam('', 'admin', organizationId);
+  const miembro = equipo.find((m) => m.id === persona[0].id);
+  if (!miembro) throw HttpError.badRequest('La cuenta no quedo en el equipo');
+  return miembro;
+}
+
+/**
  * Borra un cliente.
  *
  * Faltaba, y sin esto un cliente creado por error era para siempre. Se lleva por
