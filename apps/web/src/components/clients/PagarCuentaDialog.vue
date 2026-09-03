@@ -137,7 +137,8 @@ const enTramite = computed(() =>
 
           <p class="text-xs leading-relaxed text-slate-500">
             El cobro lo procesa Mercado Pago. En el extracto aparecerá como <strong>BookStudio</strong>.
-            Los datos de la tarjeta no pasan por nuestros servidores.
+            Los datos de la tarjeta no pasan por nuestros servidores. El servicio se presta como
+            comercio internacional y no está sujeto a la facturación electrónica de Colombia.
           </p>
         </template>
       </div>

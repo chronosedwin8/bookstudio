@@ -20,6 +20,17 @@ const d = CSP_DIRECTIVES as Record<string, string[]>;
 // --- El cobro tiene que poder cargarse ---
 check('el SDK de pago puede cargarse', d.scriptSrc.includes('https://sdk.mercadopago.com'));
 check('el SDK puede llamar a su API', d.connectSrc.includes('https://api.mercadopago.com'));
+// Lo que fallaba el 3 de septiembre de 2026: el formulario cargaba el SDK pero se
+// quedaba en blanco porque no podia pedir los medios de pago ni sus estilos.
+check('el formulario puede pedir los medios de pago', d.connectSrc.includes('https://api.mercadolibre.com'));
+check(
+  'y cargar sus estilos',
+  d.styleSrc.some((o) => o.includes('mlstatic')),
+);
+check(
+  'y sus tipografias',
+  d.fontSrc.some((o) => o.includes('mlstatic')),
+);
 check(
   'los iframes del cobro estan permitidos',
   d.frameSrc.includes('https:') || d.frameSrc.some((o) => o.includes('mercadopago')),

@@ -5,9 +5,9 @@
 -- habia forma de saber que docentes pertenecen a ese cliente ni de cobrarle nada que
 -- no fuera la contratacion inicial.
 --
--- Sobre el nombre: esto es una CUENTA DE COBRO interna, no una factura electronica
--- de venta. No lleva CUFE, ni resolucion de la DIAN, ni numeracion fiscal, y el
--- documento lo dice en su cara. La factura fiscal se emite aparte.
+-- Sobre el nombre: esto es una CUENTA DE COBRO, no una factura fiscal colombiana.
+-- El servicio se presta como comercio internacional y no esta sujeto a la
+-- facturacion electronica de Colombia; el documento lo dice en su cara.
 
 CREATE TABLE IF NOT EXISTS organizations (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),

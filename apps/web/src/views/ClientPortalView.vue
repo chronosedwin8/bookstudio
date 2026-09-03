@@ -441,8 +441,9 @@ function alPagar(cobro: Charge): void {
         </ul>
 
         <p class="mt-4 text-xs leading-relaxed text-slate-400">
-          Las cuentas de cobro son documentos internos de BookStudio para gestionar el pago. No son
-          facturas electrónicas de venta DIAN; la factura fiscal se envía aparte.
+          BookStudio presta el servicio como comercio internacional y no está sujeto a la
+          facturación electrónica de Colombia. Estas cuentas de cobro son el documento con el que
+          se gestiona el pago.
         </p>
       </section>
 

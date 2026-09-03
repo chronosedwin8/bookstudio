@@ -12,17 +12,29 @@ export const CSP_DIRECTIVES = {
   objectSrc: ["'none'"],
   formAction: ["'self'"],
   frameAncestors: ["'self'"],
-  styleSrc: ["'self'", "'unsafe-inline'"],
-  fontSrc: ["'self'", 'data:'],
+  // El formulario de pago trae sus propios estilos y tipografias de mlstatic.
+  styleSrc: ["'self'", "'unsafe-inline'", 'https://*.mlstatic.com'],
+  fontSrc: ["'self'", 'data:', 'https://*.mlstatic.com'],
   imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
   mediaSrc: ["'self'", 'data:', 'blob:', 'https:'],
   workerSrc: ["'self'", 'blob:'],
   // El cobro lo monta el SDK de Mercado Pago desde sus propios dominios.
-  scriptSrc: ["'self'", 'https://sdk.mercadopago.com', 'https://*.mercadopago.com', 'https://*.mlstatic.com'],
+  scriptSrc: [
+    "'self'",
+    'https://sdk.mercadopago.com',
+    'https://*.mercadopago.com',
+    'https://*.mlstatic.com',
+  ],
   connectSrc: [
     "'self'",
     'https://api.mercadopago.com',
     'https://*.mercadopago.com',
+    // Los bricks piden los medios de pago a la API de Mercado Libre, no a la de
+    // Mercado Pago. Sin esta linea el formulario se queda cargando para siempre y
+    // no da ningun error: es exactamente el fallo que aparecio al pagar una
+    // cuenta de cobro el 3 de septiembre de 2026.
+    'https://api.mercadolibre.com',
+    'https://*.mercadolibre.com',
     'https://*.mlstatic.com',
     'https://tile.openstreetmap.org',
   ],

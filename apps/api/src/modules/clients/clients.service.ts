@@ -24,9 +24,10 @@ import type {
  * organizacion y es la unica que ve el portal, junto con la administracion de
  * BookStudio.
  *
- * Lo que aqui se llama cuenta de cobro NO es una factura electronica de venta: no
- * lleva CUFE ni numeracion de la DIAN. Es un documento de cobro interno, pagable
- * con Mercado Pago, y el propio documento lo dice.
+ * Lo que aqui se llama cuenta de cobro no es una factura fiscal colombiana: el
+ * servicio se presta como comercio internacional y no esta sujeto a la
+ * facturacion electronica de Colombia. Es el documento con el que se gestiona el
+ * pago, y el propio documento lo dice para que nadie lo confunda.
  */
 
 const SALT_ROUNDS = 12;
