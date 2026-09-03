@@ -22,6 +22,8 @@
 #
 # Opcionales:
 #   APP_URL                  dominio publico; por defecto https://bookstudio.uk
+#   BOOKSTUDIO_IMAGE         imagen a desplegar; por defecto la etiqueta latest.
+#                            Conviene fijar la del commit: ghcr.io/...:abc1234
 #   PHIDIAS_TOKEN            sin el, la importacion de grupos se desactiva
 #   PHIDIAS_DEFAULT_PASSWORD contrasena inicial del alumnado importado
 #
@@ -56,9 +58,14 @@ services:
       retries: 10
 
   app:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    # La imagen se construye en GitHub Actions y aqui solo se descarga.
+    #
+    # Antes se compilaba en el servidor y el despliegue se colgaba sin dar ningun
+    # error cuando la memoria no llegaba. Se pone la etiqueta del commit en
+    # BOOKSTUDIO_IMAGE al desplegar: con "latest" a secas, Docker puede quedarse
+    # con la copia que ya tenia y dar por desplegado algo viejo.
+    image: ${BOOKSTUDIO_IMAGE:-ghcr.io/chronosedwin8/bookstudio:latest}
+    pull_policy: always
     restart: unless-stopped
     environment:
       NODE_ENV: production
