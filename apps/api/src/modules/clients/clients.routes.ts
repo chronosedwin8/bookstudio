@@ -137,6 +137,15 @@ clientsRouter.post(
   }),
 );
 
+clientsRouter.delete(
+  '/organizations/:id',
+  requireRole('admin'),
+  validate(orgParamsSchema, 'params'),
+  asyncHandler(async (req, res) => {
+    res.json(await service.deleteOrganization(req.params.id));
+  }),
+);
+
 clientsRouter.post(
   '/organizations/:id/owner',
   requireRole('admin'),

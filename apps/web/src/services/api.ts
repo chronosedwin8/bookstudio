@@ -712,6 +712,13 @@ export const clientsApi = {
     const { data } = await http.post<{ organization: ClientOrganization }>('/clients/organizations', payload);
     return data.organization;
   },
+  /** Borra un cliente. Se rechaza si tiene pagos: el rastro del dinero se conserva. */
+  async deleteOrganization(organizationId: string) {
+    const { data } = await http.delete<{ chargesDeleted: number }>(
+      `/clients/organizations/${organizationId}`,
+    );
+    return data;
+  },
   async linkOwner(organizationId: string, email: string) {
     const { data } = await http.post<{ organization: ClientOrganization }>(
       `/clients/organizations/${organizationId}/owner`,

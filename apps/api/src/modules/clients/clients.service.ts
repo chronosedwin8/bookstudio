@@ -979,6 +979,47 @@ export async function grantPlan(
   return { subscription, charge };
 }
 
+/**
+ * Borra un cliente.
+ *
+ * Faltaba, y sin esto un cliente creado por error era para siempre. Se lleva por
+ * delante sus cuentas de cobro, pero NO si alguna vez se le cobro dinero: el
+ * rastro de un pago no se destruye por limpiar la lista. En ese caso, lo que
+ * corresponde es dejar de usarlo, no borrarlo.
+ *
+ * Las cuentas de sus docentes no se tocan: quedan sueltas, sin cliente, con todo
+ * su contenido. Borrar personas es otra cosa y vive en el panel de usuarios.
+ */
+export async function deleteOrganization(organizationId: string): Promise<{ chargesDeleted: number }> {
+  const { rows: org } = await query<{ id: string }>('SELECT id FROM organizations WHERE id = $1', [organizationId]);
+  if (!org[0]) throw HttpError.notFound('Cliente no encontrado');
+
+  const { rows: pagos } = await query<{ total: string }>(
+    `SELECT COUNT(*) AS total
+     FROM payments p
+     LEFT JOIN charges c ON c.id = p.charge_id
+     WHERE c.organization_id = $1
+        OR p.owner_id = (SELECT owner_id FROM organizations WHERE id = $1)`,
+    [organizationId],
+  );
+  if (Number(pagos[0].total) > 0) {
+    throw HttpError.badRequest(
+      'Este cliente tiene pagos registrados y no se puede borrar. El rastro del dinero se conserva.',
+    );
+  }
+
+  const { rows: cobros } = await query<{ total: string }>(
+    'SELECT COUNT(*) AS total FROM charges WHERE organization_id = $1',
+    [organizationId],
+  );
+
+  // Los docentes se quedan sin cliente, pero con su cuenta y su contenido.
+  await query('UPDATE users SET organization_id = NULL WHERE organization_id = $1', [organizationId]);
+  await query('DELETE FROM organizations WHERE id = $1', [organizationId]);
+
+  return { chargesDeleted: Number(cobros[0].total) };
+}
+
 export async function listCharges(organizationId: string): Promise<Charge[]> {
   const { rows } = await query<ChargeRow>(
     `SELECT ${CHARGE_COLUMNS} FROM charges c WHERE c.organization_id = $1 ORDER BY c.created_at DESC`,

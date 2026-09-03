@@ -108,6 +108,24 @@ async function asignarTitular(): Promise<void> {
   }
 }
 
+// --- Borrar un cliente ---
+
+const borrando = ref<AdminOrganization | null>(null);
+
+async function borrarCliente(): Promise<void> {
+  if (!borrando.value) return;
+  error.value = null;
+  try {
+    const r = await clientsApi.deleteOrganization(borrando.value.id);
+    aviso.value = `Cliente borrado${r.chargesDeleted ? ` junto a ${r.chargesDeleted} cuenta(s) de cobro` : ''}.`;
+    borrando.value = null;
+    abierto.value = null;
+    await cargar();
+  } catch (err) {
+    error.value = errorMessage(err);
+  }
+}
+
 // --- Licencia otorgada ---
 
 /**
@@ -343,6 +361,26 @@ async function cambiarEstadoCuenta(cobro: Charge, status: 'emitida' | 'anulada')
       </table>
     </div>
 
+    <!-- Confirmacion de borrado -->
+    <div
+      v-if="borrando"
+      class="fixed inset-0 z-[9500] grid place-items-center bg-slate-900/60 p-4"
+      @click.self="borrando = null"
+    >
+      <div class="card w-full max-w-md p-5">
+        <h2 class="font-bold text-slate-900">¿Borrar «{{ borrando.name }}»?</h2>
+        <p class="mt-2 text-sm text-slate-600">
+          Se borran sus cuentas de cobro. Las cuentas de sus docentes <strong>no se tocan</strong>:
+          quedan sueltas, sin cliente, con todo su contenido. Si alguna vez se le cobró dinero, el
+          borrado se rechaza para no destruir el rastro del pago.
+        </p>
+        <div class="mt-4 flex justify-end gap-2">
+          <button type="button" class="btn-secondary" @click="borrando = null">Cancelar</button>
+          <button type="button" class="btn-danger" @click="borrarCliente">Borrar cliente</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Panel del cliente -->
     <div
       v-if="abierto"
@@ -363,6 +401,9 @@ async function cambiarEstadoCuenta(cobro: Charge, status: 'emitida' | 'anulada')
               :to="{ name: 'client-portal', query: { cliente: abierto.id } }"
               class="btn-secondary text-sm"
             >Ver su portal</RouterLink>
+            <button type="button" class="btn-secondary text-sm text-red-600" @click="borrando = abierto">
+              Borrar
+            </button>
             <button type="button" class="btn-secondary" @click="abierto = null">Cerrar</button>
           </div>
         </header>

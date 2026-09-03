@@ -235,8 +235,20 @@ Check 'su plan' ($mio.plan -eq 'Escuela') "$($mio.plan)"
 Check 'sus docentes activos' ($mio.teachers -eq 4) "$($mio.teachers)"
 Check 'y lo que tiene pendiente' ($mio.pendingCop -eq 2000000) "$($mio.pendingCop)"
 
-Write-Host "`n== 14. Limpieza ==" -ForegroundColor Cyan
-Sql "DELETE FROM organizations WHERE id='$($org.id)'"
+Write-Host "`n== 14. Borrar un cliente ==" -ForegroundColor Cyan
+
+Check 'un docente no borra clientes' ((Codigo DELETE "/clients/organizations/$($org.id)" $null $tokenCliente) -eq 403)
+
+$borrable = (Llamar POST '/clients/organizations' @{ name = "Creado por error $sufijo" } $tokenAdmin).organization
+Llamar POST "/clients/organizations/$($borrable.id)/charges" @{
+  concept = 'Cobro que se ira con el cliente'; items = @(@{ description = 'X'; unitCop = 50000 }); issue = $true
+} $tokenAdmin | Out-Null
+$borrado = Llamar DELETE "/clients/organizations/$($borrable.id)" $null $tokenAdmin
+Check 'se borra un cliente creado por error' ($borrado.chargesDeleted -eq 1) "$($borrado.chargesDeleted)"
+Check 'y deja de existir' ((Codigo GET "/clients/portal?organizationId=$($borrable.id)" $null $tokenAdmin) -eq 404)
+
+Write-Host "`n== 15. Limpieza ==" -ForegroundColor Cyan
+Llamar DELETE "/clients/organizations/$($org.id)" $null $tokenAdmin | Out-Null
 Sql "DELETE FROM users WHERE email LIKE '%-$sufijo@test.local'"
 Check 'los datos de prueba se borran' ((Codigo GET "/clients/portal?organizationId=$($org.id)" $null $tokenAdmin) -in @(401, 404))
 
