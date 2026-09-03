@@ -39,7 +39,16 @@ export interface Library {
   commentsEnabled: boolean;
   /** Si esta apagado, cada alumno solo ve lo suyo y lo que reparte el docente. */
   studentsSeePeers: boolean;
+  /** Herramientas del editor vetadas al alumnado. Vacio = todas disponibles. */
+  disabledTools: ElementType[];
   createdAt: string;
+}
+
+/** Herramienta del editor que se puede vetar al alumnado de una biblioteca. */
+export interface EditorTool {
+  id: ElementType;
+  label: string;
+  hint: string;
 }
 
 export interface ClassViewBook {
@@ -525,6 +534,11 @@ export interface CoverPage {
 export interface BookDetail extends Book {
   pages: Page[];
   permissions: BookPermissions;
+  /**
+   * Herramientas que el editor esconde a quien abre el libro. Llega vacia para el
+   * profesorado: la limitacion es para el alumnado.
+   */
+  disabledTools: ElementType[];
 }
 
 /** Libro abierto mediante enlace compartido: siempre de solo lectura. */

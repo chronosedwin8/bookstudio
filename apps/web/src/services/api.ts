@@ -1,11 +1,13 @@
 import { http } from './http';
 import type {
   AdminOrganization,
+  EditorTool,
   AnswerResult,
   Charge,
   ChargeItem,
   ClientOrganization,
   ClientPortal,
+  PortalSubscription,
   TeamMember,
   MagnificAspect,
   MagnificModel,
@@ -108,9 +110,17 @@ export const ssoApi = {
 };
 
 export const librariesApi = {
-  async list() {
-    const { data } = await http.get<{ libraries: Library[] }>('/libraries');
+  /** verTodo: interruptor de la administracion para ver las de todo el colegio. */
+  async list(verTodo = false) {
+    const { data } = await http.get<{ libraries: Library[] }>('/libraries', {
+      params: verTodo ? { all: 'true' } : {},
+    });
     return data.libraries;
+  },
+  /** Catalogo de herramientas del editor que se pueden vetar al alumnado. */
+  async tools() {
+    const { data } = await http.get<{ tools: EditorTool[] }>('/libraries/tools');
+    return data.tools;
   },
   async get(id: string) {
     const { data } = await http.get<{ library: Library }>(`/libraries/${id}`);
@@ -712,6 +722,26 @@ export const clientsApi = {
   async chargesOf(organizationId: string) {
     const { data } = await http.get<{ charges: Charge[] }>(`/clients/organizations/${organizationId}/charges`);
     return data.charges;
+  },
+  /** Otorga una licencia sin pasar por caja y, si se pide, emite su cobro. */
+  async grantPlan(
+    organizationId: string,
+    payload: {
+      plan: 'individual' | 'escuela' | 'institucional';
+      maxTeachers?: number | null;
+      maxStudents?: number | null;
+      months?: number;
+      amountCop?: number;
+      issueCharge?: boolean;
+      dueDays?: number;
+      notes?: string;
+    },
+  ) {
+    const { data } = await http.post<{ subscription: PortalSubscription; charge: Charge | null }>(
+      `/clients/organizations/${organizationId}/plan`,
+      payload,
+    );
+    return data;
   },
   async createCharge(
     organizationId: string,

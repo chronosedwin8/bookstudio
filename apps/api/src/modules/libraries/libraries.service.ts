@@ -1,5 +1,7 @@
 import { query, withTransaction } from '../../db/pool.js';
 import { HttpError } from '../../lib/http-error.js';
+import type { ElementType } from '../canvas/canvas.schemas.js';
+import { sanitizeTools } from '../canvas/tools.js';
 import { generateInviteCode } from '../../lib/invite-code.js';
 import {
   ensureStudentAccounts,
@@ -25,6 +27,8 @@ export interface Library {
   studentPublishable: boolean;
   commentsEnabled: boolean;
   studentsSeePeers: boolean;
+  /** Herramientas del editor vetadas al alumnado. Vacio = todas disponibles. */
+  disabledTools: ElementType[];
   createdAt: string;
 }
 
@@ -38,6 +42,7 @@ interface LibraryRow {
   student_publishable: boolean;
   comments_enabled: boolean;
   students_see_peers: boolean;
+  disabled_tools: ElementType[] | null;
   created_at: Date;
 }
 
@@ -52,12 +57,14 @@ function toLibrary(row: LibraryRow): Library {
     studentPublishable: row.student_publishable,
     commentsEnabled: row.comments_enabled,
     studentsSeePeers: row.students_see_peers,
+    disabledTools: sanitizeTools(row.disabled_tools),
     createdAt: row.created_at.toISOString(),
   };
 }
 
 const LIBRARY_COLUMNS = `id, name, code_invite, owner_id, student_book_limit,
-  student_editable, student_publishable, comments_enabled, students_see_peers, created_at`;
+  student_editable, student_publishable, comments_enabled, students_see_peers,
+  disabled_tools, created_at`;
 
 /** Reintenta ante colision del indice unico de code_invite. */
 export async function createLibrary(ownerId: string, input: CreateLibraryInput): Promise<Library> {
@@ -90,29 +97,51 @@ export async function createLibrary(ownerId: string, input: CreateLibraryInput):
   throw HttpError.conflict('No se pudo generar un codigo de invitacion unico, reintenta');
 }
 
-export async function listLibrariesForUser(userId: string): Promise<Library[]> {
+/**
+ * Las bibliotecas de alguien.
+ *
+ * `verTodo` es el interruptor de la administracion para ver las de todo el
+ * colegio. Va apagado por omision a proposito: quien administra tambien usa la
+ * plataforma para lo suyo, y encontrarse cada dia con las cuatrocientas
+ * bibliotecas del centro convierte su propio panel en algo inservible.
+ */
+export async function listLibrariesForUser(userId: string, verTodo = false): Promise<Library[]> {
   const { rows } = await query<LibraryRow>(
     `SELECT DISTINCT ${LIBRARY_COLUMNS.split(',').map((c) => `l.${c.trim()}`).join(', ')}
      FROM libraries l
      LEFT JOIN library_teachers lt ON lt.library_id = l.id
      LEFT JOIN library_students ls ON ls.library_id = l.id
-     WHERE l.owner_id = $1 OR lt.teacher_id = $1 OR ls.student_id = $1
+     WHERE ($2 AND EXISTS (SELECT 1 FROM users adm WHERE adm.id = $1 AND adm.role = 'admin'))
+        OR l.owner_id = $1 OR lt.teacher_id = $1 OR ls.student_id = $1
      ORDER BY l.created_at DESC`,
-    [userId],
+    [userId, verTodo],
   );
   return rows.map(toLibrary);
 }
 
 export type LibraryAccess = 'owner' | 'teacher' | 'student';
 
+/**
+ * Que puede hacer alguien en una biblioteca.
+ *
+ * Es el punto por el que pasa casi todo el control de acceso del producto, y por
+ * eso la administracion de la plataforma se resuelve aqui y no repartida por
+ * veinte sitios: quien tiene rol `admin` entra en cualquier biblioteca como si
+ * fuera suya, para poder arreglar lo que haga falta sin pedirle la contrasena a
+ * nadie. Es mucho poder concentrado en una cuenta, y se acepta a cambio de poder
+ * dar soporte de verdad.
+ */
 export async function getAccess(libraryId: string, userId: string): Promise<LibraryAccess> {
   const { rows } = await query<{ access: LibraryAccess | null }>(
     `SELECT CASE
+        -- La administracion primero: manda sobre la pertenencia real.
+        WHEN u.role = 'admin' THEN 'owner'
         WHEN l.owner_id = $2 THEN 'owner'
         WHEN lt.teacher_id IS NOT NULL THEN 'teacher'
         WHEN ls.student_id IS NOT NULL THEN 'student'
       END AS access
      FROM libraries l
+     LEFT JOIN users u ON u.id = $2
      LEFT JOIN library_teachers lt ON lt.library_id = l.id AND lt.teacher_id = $2
      LEFT JOIN library_students ls ON ls.library_id = l.id AND ls.student_id = $2
      WHERE l.id = $1`,
@@ -142,6 +171,7 @@ const UPDATABLE: Record<keyof UpdateLibraryInput, string> = {
   studentPublishable: 'student_publishable',
   commentsEnabled: 'comments_enabled',
   studentsSeePeers: 'students_see_peers',
+  disabledTools: 'disabled_tools',
 };
 
 export async function updateLibrary(
@@ -156,8 +186,10 @@ export async function updateLibrary(
   for (const [key, column] of Object.entries(UPDATABLE) as [keyof UpdateLibraryInput, string][]) {
     const value = input[key];
     if (value === undefined) continue;
-    values.push(value);
-    sets.push(`${column} = $${values.length}`);
+    // La lista de herramientas viaja a una columna jsonb: pg mandaria un array de
+    // Postgres, no JSON, y la actualizacion fallaria.
+    values.push(key === 'disabledTools' ? JSON.stringify(value) : value);
+    sets.push(`${column} = $${values.length}${key === 'disabledTools' ? '::jsonb' : ''}`);
   }
 
   if (!sets.length) throw HttpError.badRequest('No hay campos para actualizar');

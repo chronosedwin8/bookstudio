@@ -92,6 +92,33 @@ export const payChargeSchema = z.object({
   payerDocNumber: z.string().max(30).optional(),
 });
 
+/**
+ * Licencia otorgada por la administracion, sin cobro.
+ *
+ * Hace falta para los clientes que no pasan por la pagina de contratar: acuerdos
+ * firmados fuera, cortesias, pruebas piloto. Los cupos vacios significan
+ * ilimitado, que es lo que se acordo para el Colegio Aleman.
+ */
+export const grantPlanSchema = z.object({
+  plan: z.enum(['individual', 'escuela', 'institucional']),
+  /** Vacio = sin limite. */
+  maxTeachers: z.number().int().min(1).max(100000).nullish(),
+  maxStudents: z.number().int().min(1).max(1000000).nullish(),
+  /** Meses de vigencia desde hoy. */
+  months: z.number().int().min(1).max(120).default(12),
+  /** Lo que se factura por ella; 0 en una cortesia. */
+  amountCop: z.number().int().min(0).max(2000000000).default(0),
+  /**
+   * Emitir ademas la cuenta de cobro por ese importe. Es el caso habitual: se
+   * acuerda la licencia y se cobra. Con importe cero no se emite nada, porque una
+   * cuenta de cobro de cero pesos no significa nada.
+   */
+  issueCharge: z.boolean().default(false),
+  /** Dias que tiene el cliente para pagarla. */
+  dueDays: z.number().int().min(1).max(365).default(30),
+  notes: z.string().max(500).default(''),
+});
+
 export const orgParamsSchema = z.object({ id: z.string().uuid('Cliente no valido') });
 export const chargeParamsSchema = z.object({ id: z.string().uuid('Cuenta de cobro no valida') });
 export const teacherParamsSchema = z.object({ id: z.string().uuid('Cuenta no valida') });
@@ -104,4 +131,5 @@ export type UpdateChargeInput = z.infer<typeof updateChargeSchema>;
 export type CreateTeacherInput = z.infer<typeof createTeacherSchema>;
 export type UpdateTeacherInput = z.infer<typeof updateTeacherSchema>;
 export type PayChargeInput = z.infer<typeof payChargeSchema>;
+export type GrantPlanInput = z.infer<typeof grantPlanSchema>;
 export type ChargeItem = z.infer<typeof chargeItemSchema>;

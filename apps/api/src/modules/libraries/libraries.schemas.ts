@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { elementType } from '../canvas/canvas.schemas.js';
+
 export const createLibrarySchema = z.object({
   name: z.string().min(2).max(100).trim(),
   studentBookLimit: z.number().int().min(1).max(500).default(40),
@@ -7,6 +9,11 @@ export const createLibrarySchema = z.object({
   studentPublishable: z.boolean().default(false),
   commentsEnabled: z.boolean().default(true),
   studentsSeePeers: z.boolean().default(true),
+  /**
+   * Herramientas del editor vetadas al alumnado. Vacio = todas disponibles, que
+   * es como nace cualquier biblioteca.
+   */
+  disabledTools: z.array(elementType).max(20).default([]),
 });
 
 export const updateLibrarySchema = createLibrarySchema.partial();

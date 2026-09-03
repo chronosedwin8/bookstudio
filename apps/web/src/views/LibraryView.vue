@@ -15,6 +15,8 @@ import { authApi, booksApi, librariesApi, phidiasApi, usersApi } from '@/service
 import { errorMessage } from '@/services/http';
 import { useAuthStore } from '@/stores/auth';
 import type {
+  EditorTool,
+  ElementType,
   AddStudentsResult,
   Book,
   ClaveEntregada,
@@ -433,6 +435,42 @@ async function toggleSetting(key: Ajuste): Promise<void> {
     error.value = errorMessage(err);
   }
 }
+
+/**
+ * Herramientas del editor que puede usar el alumnado.
+ *
+ * El catalogo lo da el servidor para que la pantalla y la comprobacion al
+ * insertar hablen de la misma lista. Se guarda lo vetado, no lo permitido: asi
+ * una herramienta nueva aparece habilitada sin tocar las bibliotecas de nadie.
+ */
+const herramientas = ref<EditorTool[]>([]);
+const guardandoHerramientas = ref(false);
+
+void librariesApi
+  .tools()
+  .then((lista) => (herramientas.value = lista))
+  .catch(() => (herramientas.value = []));
+
+function herramientaActiva(id: ElementType): boolean {
+  return !(library.value?.disabledTools ?? []).includes(id);
+}
+
+async function alternarHerramienta(id: ElementType): Promise<void> {
+  if (!library.value || guardandoHerramientas.value) return;
+  const vetadas = library.value.disabledTools ?? [];
+  const siguiente = vetadas.includes(id) ? vetadas.filter((x) => x !== id) : [...vetadas, id];
+
+  guardandoHerramientas.value = true;
+  try {
+    library.value = await librariesApi.update(libraryId.value, { disabledTools: siguiente });
+  } catch (err) {
+    error.value = errorMessage(err);
+  } finally {
+    guardandoHerramientas.value = false;
+  }
+}
+
+const vetadasCuenta = computed(() => library.value?.disabledTools?.length ?? 0);
 
 function formatDate(value: string | null): string {
   return value ? new Date(value).toLocaleDateString('es', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
@@ -933,6 +971,39 @@ function formatDate(value: string | null): string {
                 <span class="block text-xs text-slate-500">
                   Si lo apagas, cada alumno solo verá sus libros, los que entregues tú y los colaborativos.
                 </span>
+              </span>
+            </label>
+          </div>
+        </div>
+
+        <div class="card p-5 lg:col-span-2">
+          <h2 class="mb-1 font-bold text-slate-800">Herramientas del editor</h2>
+          <p class="mb-4 text-xs text-slate-500">
+            Lo que el alumnado puede insertar en sus libros. Todas vienen activadas; apaga las que
+            no quieras en esta clase.
+            <span v-if="vetadasCuenta" class="font-semibold text-amber-700">
+              {{ vetadasCuenta }} apagada(s).
+            </span>
+            A ti no te afecta: tú sigues teniéndolas todas.
+          </p>
+
+          <div class="grid gap-2 sm:grid-cols-2">
+            <label
+              v-for="tool in herramientas"
+              :key="tool.id"
+              class="flex items-start gap-2 rounded-lg border p-2.5 text-sm transition"
+              :class="herramientaActiva(tool.id) ? 'border-slate-200' : 'border-amber-300 bg-amber-50'"
+            >
+              <input
+                type="checkbox"
+                class="mt-0.5 h-4 w-4 rounded"
+                :checked="herramientaActiva(tool.id)"
+                :disabled="guardandoHerramientas"
+                @change="alternarHerramienta(tool.id)"
+              />
+              <span class="min-w-0">
+                <span class="font-semibold text-slate-800">{{ tool.label }}</span>
+                <span class="block text-xs leading-tight text-slate-500">{{ tool.hint }}</span>
               </span>
             </label>
           </div>

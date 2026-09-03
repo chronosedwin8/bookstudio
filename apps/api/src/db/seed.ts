@@ -17,6 +17,8 @@ async function run(): Promise<void> {
     name: 'Lengua 4B',
     studentBookLimit: 40,
     studentsSeePeers: true,
+    // La biblioteca de ejemplo nace con todas las herramientas disponibles.
+    disabledTools: [],
     studentEditable: true,
     studentPublishable: false,
     commentsEnabled: true,

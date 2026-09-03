@@ -108,6 +108,51 @@ async function asignarTitular(): Promise<void> {
   }
 }
 
+// --- Licencia otorgada ---
+
+/**
+ * Licencia acordada fuera de la plataforma. Los cupos vacios son ilimitados, y
+ * con "cobrarla" se emite ademas su cuenta de cobro por el mismo importe, que es
+ * el caso normal: se acuerda la licencia y se cobra.
+ */
+const licencia = ref({
+  plan: 'institucional' as 'individual' | 'escuela' | 'institucional',
+  months: 12,
+  amountCop: 0,
+  maxTeachers: '' as number | '',
+  maxStudents: '' as number | '',
+  issueCharge: true,
+  dueDays: 30,
+});
+const otorgando = ref(false);
+
+async function otorgarLicencia(): Promise<void> {
+  if (!abierto.value || otorgando.value) return;
+  otorgando.value = true;
+  error.value = null;
+  try {
+    const resultado = await clientsApi.grantPlan(abierto.value.id, {
+      plan: licencia.value.plan,
+      months: licencia.value.months,
+      amountCop: licencia.value.amountCop,
+      // Vacio = sin limite, que es como se guarda en la licencia.
+      maxTeachers: licencia.value.maxTeachers === '' ? null : Number(licencia.value.maxTeachers),
+      maxStudents: licencia.value.maxStudents === '' ? null : Number(licencia.value.maxStudents),
+      issueCharge: licencia.value.issueCharge,
+      dueDays: licencia.value.dueDays,
+    });
+    aviso.value = resultado.charge
+      ? `Licencia otorgada y cuenta de cobro ${resultado.charge.number} emitida por ${cop.format(resultado.charge.amountCop)}.`
+      : 'Licencia otorgada.';
+    await abrir(abierto.value);
+    await cargar();
+  } catch (err) {
+    error.value = errorMessage(err);
+  } finally {
+    otorgando.value = false;
+  }
+}
+
 // --- Emitir una cuenta de cobro ---
 
 const nuevaCuenta = ref<{ concept: string; dueDate: string; notes: string; items: ChargeItem[] }>({
@@ -341,6 +386,82 @@ async function cambiarEstadoCuenta(cobro: Charge, status: 'emitida' | 'anulada')
                 {{ abierto.ownerEmail ? 'Cambiar titular' : 'Asignar titular' }}
               </button>
             </form>
+          </section>
+
+          <!-- Licencia -->
+          <section class="rounded-lg border border-slate-200 p-4">
+            <h3 class="label">Otorgar licencia</h3>
+            <p class="mb-3 text-xs text-slate-500">
+              Para acuerdos cerrados fuera de la plataforma. Sustituye a la licencia vigente del
+              cliente; deja los cupos vacíos para que sean ilimitados.
+            </p>
+
+            <div class="grid gap-3 sm:grid-cols-2">
+              <div>
+                <label class="label" for="lic-plan">Plan</label>
+                <select id="lic-plan" v-model="licencia.plan" class="input">
+                  <option value="individual">Individual</option>
+                  <option value="escuela">Escuela</option>
+                  <option value="institucional">Institucional y empresas</option>
+                </select>
+              </div>
+              <div>
+                <label class="label" for="lic-meses">Meses de vigencia</label>
+                <input id="lic-meses" v-model.number="licencia.months" type="number" class="input" min="1" max="120" />
+              </div>
+              <div>
+                <label class="label" for="lic-doc">Cupo de docentes</label>
+                <input
+                  id="lic-doc"
+                  v-model="licencia.maxTeachers"
+                  type="number"
+                  class="input"
+                  min="1"
+                  placeholder="Vacío = ilimitado"
+                />
+              </div>
+              <div>
+                <label class="label" for="lic-alu">Cupo de estudiantes</label>
+                <input
+                  id="lic-alu"
+                  v-model="licencia.maxStudents"
+                  type="number"
+                  class="input"
+                  min="1"
+                  placeholder="Vacío = ilimitado"
+                />
+              </div>
+              <div>
+                <label class="label" for="lic-importe">Importe acordado (COP)</label>
+                <input
+                  id="lic-importe"
+                  v-model.number="licencia.amountCop"
+                  type="number"
+                  class="input"
+                  min="0"
+                  step="100000"
+                />
+              </div>
+              <div>
+                <label class="label" for="lic-dias">Días para pagar</label>
+                <input id="lic-dias" v-model.number="licencia.dueDays" type="number" class="input" min="1" max="365" />
+              </div>
+            </div>
+
+            <label class="mt-3 flex items-start gap-2 text-sm text-slate-700">
+              <input v-model="licencia.issueCharge" type="checkbox" class="mt-0.5 h-4 w-4 rounded" />
+              <span>
+                Emitir también su cuenta de cobro
+                <span class="block text-xs text-slate-500">
+                  Con importe cero no se emite nada: una cuenta de cobro de cero pesos no significa
+                  nada.
+                </span>
+              </span>
+            </label>
+
+            <button type="button" class="btn-primary mt-3" :disabled="otorgando" @click="otorgarLicencia">
+              {{ otorgando ? 'Otorgando...' : 'Otorgar licencia' }}
+            </button>
           </section>
 
           <!-- Nueva cuenta de cobro -->

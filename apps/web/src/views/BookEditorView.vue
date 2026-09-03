@@ -193,6 +193,17 @@ const uploading = ref(false);
  */
 const puedeGenerarImagenes = ref(false);
 
+/**
+ * Herramientas vetadas por la biblioteca.
+ *
+ * El servidor las manda solo a quien esta limitado (el alumnado); al profesorado
+ * le llega la lista vacia. Aqui solo se esconden los botones: quien de verdad
+ * rechaza la insercion es el servidor, porque un menu oculto se salta con la
+ * consola del navegador abierta.
+ */
+const puedeUsar = (herramienta: ElementType): boolean =>
+  !(editor.book?.disabledTools ?? []).includes(herramienta);
+
 void magnificApi
   .config()
   .then((estado) => (puedeGenerarImagenes.value = estado.canGenerate))
@@ -884,7 +895,7 @@ async function saveTitle(): Promise<void> {
       <div class="flex min-h-0 flex-1">
         <!-- Herramientas -->
         <aside v-if="editor.canEdit" class="flex w-52 shrink-0 flex-col gap-4 overflow-y-auto border-r border-slate-200 bg-white p-3">
-          <DrawingToolbar v-model:tool="tool" v-model:onion-skin="onionSkin" />
+          <DrawingToolbar v-if="puedeUsar('drawing')" v-model:tool="tool" v-model:onion-skin="onionSkin" />
 
           <label v-if="tool === 'draw'" class="flex items-center gap-2 text-xs text-slate-600">
             <input v-model="autoShape" type="checkbox" class="h-3.5 w-3.5 rounded" />
@@ -893,36 +904,36 @@ async function saveTitle(): Promise<void> {
 
           <section class="space-y-1.5">
             <h3 class="label">Insertar</h3>
-            <button type="button" class="btn-secondary w-full justify-start" @click="addTextElement">
+            <button v-if="puedeUsar('text')" type="button" class="btn-secondary w-full justify-start" @click="addTextElement">
               <span class="text-base">T</span> Texto
             </button>
-            <button type="button" class="btn-secondary w-full justify-start" @click="dialog = 'image'">
+            <button v-if="puedeUsar('image')" type="button" class="btn-secondary w-full justify-start" @click="dialog = 'image'">
               🖼️ Imagen libre
             </button>
-            <button type="button" class="btn-secondary w-full justify-start" @click="dialog = 'gif'">
+            <button v-if="puedeUsar('image')" type="button" class="btn-secondary w-full justify-start" @click="dialog = 'gif'">
               🎞️ GIF animado
             </button>
             <button
-              v-if="puedeGenerarImagenes"
+              v-if="puedeGenerarImagenes && puedeUsar('image')"
               type="button"
               class="btn-secondary w-full justify-start"
               @click="dialog = 'magnific'"
             >
               ✨ Crear imagen con IA
             </button>
-            <button type="button" class="btn-secondary w-full justify-start" @click="dialog = 'map'">
+            <button v-if="puedeUsar('map')" type="button" class="btn-secondary w-full justify-start" @click="dialog = 'map'">
               🗺️ Mapa
             </button>
-            <button type="button" class="btn-secondary w-full justify-start" @click="dialog = 'embed'">
+            <button v-if="puedeUsar('embed')" type="button" class="btn-secondary w-full justify-start" @click="dialog = 'embed'">
               ⧉ Incrustar
             </button>
-            <button type="button" class="btn-secondary w-full justify-start" @click="dialog = 'question'">
+            <button v-if="puedeUsar('question')" type="button" class="btn-secondary w-full justify-start" @click="dialog = 'question'">
               ❓ Pregunta
             </button>
-            <button type="button" class="btn-secondary w-full justify-start" @click="dialog = 'chart'">
+            <button v-if="puedeUsar('chart')" type="button" class="btn-secondary w-full justify-start" @click="dialog = 'chart'">
               📊 Gráfica
             </button>
-            <button type="button" class="btn-secondary w-full justify-start" @click="addMathElement">
+            <button v-if="puedeUsar('math')" type="button" class="btn-secondary w-full justify-start" @click="addMathElement">
               ∑ Formula
             </button>
           </section>
@@ -949,29 +960,29 @@ async function saveTitle(): Promise<void> {
 
           <details class="space-y-1.5">
             <summary class="section-toggle">Grabar</summary>
-            <button type="button" class="btn-secondary w-full justify-start" @click="dialog = 'audio'">
+            <button v-if="puedeUsar('audio')" type="button" class="btn-secondary w-full justify-start" @click="dialog = 'audio'">
               🎤 Voz
             </button>
-            <button type="button" class="btn-secondary w-full justify-start" @click="dialog = 'sound'">
+            <button v-if="puedeUsar('audio')" type="button" class="btn-secondary w-full justify-start" @click="dialog = 'sound'">
               🔊 Biblioteca de sonidos
             </button>
-            <button type="button" class="btn-secondary w-full justify-start" @click="dialog = 'photo'">
+            <button v-if="puedeUsar('image')" type="button" class="btn-secondary w-full justify-start" @click="dialog = 'photo'">
               📷 Foto
             </button>
-            <button type="button" class="btn-secondary w-full justify-start" @click="dialog = 'video'">
+            <button v-if="puedeUsar('video')" type="button" class="btn-secondary w-full justify-start" @click="dialog = 'video'">
               🎬 Video
             </button>
-            <button type="button" class="btn-secondary w-full justify-start" @click="dialog = 'screen'">
+            <button v-if="puedeUsar('video')" type="button" class="btn-secondary w-full justify-start" @click="dialog = 'screen'">
               🖥️ Pantalla
             </button>
-            <button type="button" class="btn-secondary w-full justify-start" @click="dialog = 'clip'">
+            <button v-if="puedeUsar('image')" type="button" class="btn-secondary w-full justify-start" @click="dialog = 'clip'">
               ✂️ Recorte de pantalla
             </button>
           </details>
 
-          <section>
+          <section v-if="puedeUsar('shape') || puedeUsar('icon')">
             <h3 class="label">Formas</h3>
-            <div class="grid grid-cols-3 gap-1.5">
+            <div v-if="puedeUsar('shape')" class="grid grid-cols-3 gap-1.5">
               <button
                 v-for="name in QUICK_SHAPES"
                 :key="name"
@@ -984,13 +995,28 @@ async function saveTitle(): Promise<void> {
                 <ShapeRenderer :shape="name" fill-color="#93C5FD" stroke-color="#1D4ED8" :stroke-width="2" />
               </button>
             </div>
-            <button type="button" class="btn-secondary mt-1.5 w-full justify-start" @click="openStickers('shapes')">
+            <button
+              v-if="puedeUsar('shape')"
+              type="button"
+              class="btn-secondary mt-1.5 w-full justify-start"
+              @click="openStickers('shapes')"
+            >
               ⬡ Más formas
             </button>
-            <button type="button" class="btn-secondary w-full justify-start" @click="openStickers('icons')">
+            <button
+              v-if="puedeUsar('icon')"
+              type="button"
+              class="btn-secondary w-full justify-start"
+              @click="openStickers('icons')"
+            >
               ✦ Iconos
             </button>
-            <button type="button" class="btn-secondary w-full justify-start" @click="openStickers('emojis')">
+            <button
+              v-if="puedeUsar('icon')"
+              type="button"
+              class="btn-secondary w-full justify-start"
+              @click="openStickers('emojis')"
+            >
               😀 Emojis
             </button>
           </section>

@@ -9,11 +9,17 @@ export const useLibrariesStore = defineStore('libraries', () => {
   const loading = ref(false);
   const error = ref<string | null>(null);
 
+  /**
+   * Interruptor de la administracion para ver las bibliotecas de todo el colegio.
+   * Apagado por omision: quien administra tambien usa la plataforma para lo suyo.
+   */
+  const verTodo = ref(false);
+
   async function fetchAll(): Promise<void> {
     loading.value = true;
     error.value = null;
     try {
-      items.value = await librariesApi.list();
+      items.value = await librariesApi.list(verTodo.value);
     } catch (err) {
       error.value = errorMessage(err);
     } finally {
@@ -44,5 +50,10 @@ export const useLibrariesStore = defineStore('libraries', () => {
     else items.value[index] = library;
   }
 
-  return { items, loading, error, fetchAll, create, join, remove, upsert };
+  async function alternarVerTodo(): Promise<void> {
+    verTodo.value = !verTodo.value;
+    await fetchAll();
+  }
+
+  return { items, loading, error, verTodo, fetchAll, alternarVerTodo, create, join, remove, upsert };
 });

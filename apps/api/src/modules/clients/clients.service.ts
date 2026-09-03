@@ -6,6 +6,7 @@ import { PLANS, type PlanId } from '../billing/plans.js';
 import * as mp from '../billing/mercadopago.service.js';
 import type {
   BillingDataInput,
+  GrantPlanInput,
   ChargeItem,
   CreateChargeInput,
   CreateTeacherInput,
@@ -871,6 +872,111 @@ export async function updateCharge(chargeId: string, input: UpdateChargeInput): 
     [chargeId, ...entradas.map(([, valor]) => valor)],
   );
   return toCharge(rows[0]);
+}
+
+/**
+ * Otorga una licencia sin pasar por caja.
+ *
+ * Para acuerdos cerrados fuera de la plataforma. Los cupos nulos son ilimitados.
+ * Sustituye a la licencia vigente del cliente en lugar de acumularse: dos activas
+ * a la vez harian que los cupos dependieran de cual se leyera primero.
+ */
+export interface GrantResult {
+  subscription: PortalSubscription;
+  /** La cuenta de cobro emitida a la vez, si se pidio. */
+  charge: Charge | null;
+}
+
+export async function grantPlan(
+  organizationId: string,
+  issuedBy: string,
+  input: GrantPlanInput,
+): Promise<GrantResult> {
+  const { rows: org } = await query<{ id: string; owner_id: string | null; name: string }>(
+    'SELECT id, owner_id, name FROM organizations WHERE id = $1',
+    [organizationId],
+  );
+  if (!org[0]) throw HttpError.notFound('Cliente no encontrado');
+  if (!org[0].owner_id) {
+    throw HttpError.badRequest('Asigna primero un titular: la licencia va a nombre de alguien');
+  }
+
+  const plan = PLANS[input.plan];
+  const desde = new Date();
+  const hasta = new Date(desde);
+  hasta.setMonth(hasta.getMonth() + input.months);
+
+  const { rows } = await withTransaction(async (client) => {
+    // Las anteriores quedan canceladas, con su rastro y su fecha.
+    await client.query(
+      `UPDATE subscriptions SET status = 'cancelada', cancelled_at = CURRENT_TIMESTAMP
+       WHERE (organization_id = $1 OR owner_id = $2) AND status IN ('activa', 'pendiente')`,
+      [organizationId, org[0].owner_id],
+    );
+
+    return client.query<{
+      id: string;
+      plan: PlanId;
+      status: string;
+      amount_cop: string;
+      auto_renew: boolean;
+      starts_at: Date;
+      expires_at: Date;
+    }>(
+      `INSERT INTO subscriptions
+         (owner_id, organization_id, organization, plan, status, amount_cop,
+          max_teachers, max_students, auto_renew, starts_at, expires_at)
+       VALUES ($1, $2, $3, $4, 'activa', $5, $6, $7, FALSE, $8, $9)
+       RETURNING id, plan, status, amount_cop, auto_renew, starts_at, expires_at`,
+      [
+        org[0].owner_id,
+        organizationId,
+        org[0].name,
+        input.plan,
+        input.amountCop,
+        input.maxTeachers ?? null,
+        input.maxStudents ?? null,
+        desde,
+        hasta,
+      ],
+    );
+  });
+
+  const fila = rows[0];
+  const subscription: PortalSubscription = {
+    id: fila.id,
+    plan: fila.plan,
+    planName: plan.name,
+    status: fila.status,
+    amountCop: Number(fila.amount_cop),
+    autoRenew: fila.auto_renew,
+    startsAt: fila.starts_at.toISOString(),
+    expiresAt: fila.expires_at.toISOString(),
+    daysLeft: Math.ceil((fila.expires_at.getTime() - Date.now()) / 86_400_000),
+  };
+
+  // El cobro de la licencia, en el mismo gesto. Una cuenta de cero no se emite.
+  let charge: Charge | null = null;
+  if (input.issueCharge && input.amountCop > 0) {
+    const vence = new Date();
+    vence.setDate(vence.getDate() + input.dueDays);
+    charge = await createCharge(organizationId, issuedBy, {
+      concept: `Plan ${plan.name} · ${input.months} meses`,
+      items: [
+        {
+          description: `Licencia ${plan.name} (${input.months} meses)`,
+          quantity: 1,
+          unitCop: input.amountCop,
+        },
+      ],
+      dueDate: vence.toISOString().slice(0, 10),
+      subscriptionId: subscription.id,
+      notes: input.notes,
+      issue: true,
+    });
+  }
+
+  return { subscription, charge };
 }
 
 export async function listCharges(organizationId: string): Promise<Charge[]> {

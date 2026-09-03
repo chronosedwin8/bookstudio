@@ -223,6 +223,26 @@ async function removeLibrary(id: string, name: string): Promise<void> {
     <div class="mb-3 mt-10">
       <h2 class="font-bold text-slate-800">Clases</h2>
       <p class="text-xs text-slate-500">Bibliotecas compartidas con alumnos y otros docentes.</p>
+
+      <!--
+        Ver todo el colegio. Va apagado por omision: encontrarse cada dia con las
+        bibliotecas de todo el centro convertiria este panel en algo inservible.
+      -->
+      <label
+        v-if="auth.user?.role === 'admin'"
+        class="mt-2 flex items-center gap-2 text-xs font-semibold text-slate-600"
+      >
+        <input
+          type="checkbox"
+          class="h-3.5 w-3.5 rounded"
+          :checked="libraries.verTodo"
+          @change="libraries.alternarVerTodo()"
+        />
+        Ver las bibliotecas de todo el colegio
+        <span v-if="libraries.verTodo" class="rounded bg-amber-100 px-1.5 py-0.5 text-amber-800">
+          modo administración
+        </span>
+      </label>
     </div>
 
     <div class="grid gap-4 md:grid-cols-2">

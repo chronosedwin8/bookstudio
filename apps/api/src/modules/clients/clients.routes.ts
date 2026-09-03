@@ -8,6 +8,7 @@ import {
   chargeParamsSchema,
   createChargeSchema,
   createTeacherSchema,
+  grantPlanSchema,
   linkOwnerSchema,
   orgParamsSchema,
   organizationSchema,
@@ -143,6 +144,17 @@ clientsRouter.post(
   validate(linkOwnerSchema),
   asyncHandler(async (req, res) => {
     res.json({ organization: await service.linkOwner(req.params.id, req.body.email) });
+  }),
+);
+
+/** Otorgar una licencia sin cobro: acuerdos cerrados fuera de la plataforma. */
+clientsRouter.post(
+  '/organizations/:id/plan',
+  requireRole('admin'),
+  validate(orgParamsSchema, 'params'),
+  validate(grantPlanSchema),
+  asyncHandler(async (req, res) => {
+    res.status(201).json(await service.grantPlan(req.params.id, req.auth!.userId, req.body));
   }),
 );
 

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { asyncHandler } from '../../lib/async-handler.js';
 import { requireAuth, requireRole } from '../../middleware/auth.js';
+import { EDITOR_TOOLS } from '../canvas/tools.js';
 import { validate } from '../../middleware/validate.js';
 import {
   addStudentsSchema,
@@ -24,10 +25,20 @@ export const librariesRouter = Router();
 
 librariesRouter.use(requireAuth);
 
+/**
+ * Catalogo de herramientas del editor. Vive en el servidor para que la pantalla
+ * de ajustes y la comprobacion al insertar hablen de la misma lista.
+ */
+librariesRouter.get('/tools', (_req, res) => {
+  res.json({ tools: EDITOR_TOOLS });
+});
+
 librariesRouter.get(
   '/',
   asyncHandler(async (req, res) => {
-    res.json({ libraries: await service.listLibrariesForUser(req.auth!.userId) });
+    // ?all=true: interruptor de la administracion para ver las de todo el colegio.
+    const verTodo = (req.query as { all?: string }).all === 'true';
+    res.json({ libraries: await service.listLibrariesForUser(req.auth!.userId, verTodo) });
   }),
 );
 

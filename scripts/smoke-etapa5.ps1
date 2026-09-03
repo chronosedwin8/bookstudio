@@ -45,6 +45,11 @@ $admin = Invoke-Api POST '/auth/register' @{ email = "e5.adm.$suffix@test.local"
 $aToken = $admin.token
 $doc = Invoke-Api POST '/auth/register' @{ email = "e5.doc.$suffix@test.local"; password = 'Secreto12345'; fullName = 'Docente Etapa5'; role = 'teacher' }
 $dToken = $doc.token
+# Un docente sin relacion con la clase. Antes este papel lo hacia el administrador,
+# pero desde que la administracion manda sobre todo ya no sirve para comprobar que
+# a un extrano se le cierra la puerta.
+$ext = Invoke-Api POST '/auth/register' @{ email = "e5.ext.$suffix@test.local"; password = 'Secreto12345'; fullName = 'Docente Ajeno'; role = 'teacher' }
+$xToken = $ext.token
 
 # --- Gestion de usuarios ---
 Write-Host "`n-- Gestion de usuarios --" -ForegroundColor Cyan
@@ -141,8 +146,13 @@ Test-Step 'Ahora el alumno si puede editar y anadir contenido' {
     if ($el.element.properties.text -ne 'Aporte de la alumna') { throw 'No se guardo' }
 }
 
-Test-Step 'Alguien de fuera de la clase sigue sin poder -> 403' {
-    Assert-Status { Invoke-Api GET "/books/$($libro.id)" -Token $aToken } 403
+Test-Step 'Un docente ajeno a la clase sigue sin poder -> 403' {
+    Assert-Status { Invoke-Api GET "/books/$($libro.id)" -Token $xToken } 403
+}
+
+Test-Step 'La administracion si entra, para poder dar soporte' {
+    $d = (Invoke-Api GET "/books/$($libro.id)" -Token $aToken).book
+    if (-not $d.permissions.canEdit) { throw 'La administracion deberia poder editarlo' }
 }
 
 Test-Step 'Desactivar la colaboracion revoca la edicion' {

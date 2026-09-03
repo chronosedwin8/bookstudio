@@ -63,6 +63,11 @@ export const listBooksQuerySchema = z.object({
   isTemplate: z.enum(['true', 'false']).optional(),
   /** personal = libros fuera de clase; library = libros de una biblioteca. */
   scope: z.enum(['all', 'personal', 'library']).default('all'),
+  /**
+   * Interruptor de la administracion para ver los libros de todo el colegio. Solo
+   * surte efecto con rol `admin`; a cualquier otra persona no le abre nada.
+   */
+  all: z.enum(['true', 'false']).optional(),
 });
 
 export const createPageSchema = z.object({

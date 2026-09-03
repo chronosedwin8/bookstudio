@@ -3,6 +3,7 @@ import { query, withTransaction } from '../../db/pool.js';
 import { HttpError } from '../../lib/http-error.js';
 import { getAccess } from '../libraries/libraries.service.js';
 import { TRIAL_LIMITS } from '../auth/trial.service.js';
+import { EDITOR_TOOLS, sanitizeTools } from '../canvas/tools.js';
 import {
   parseProperties,
   type CreateElementInput,
@@ -151,6 +152,8 @@ export interface BookPermissions {
 interface BookContext {
   book: BookRow;
   permissions: BookPermissions;
+  /** Herramientas del editor que el alumnado de esta biblioteca no puede usar. */
+  disabledTools: ElementType[];
 }
 
 /** Resuelve el libro junto a los permisos efectivos derivados de la biblioteca y del rol. */
@@ -162,32 +165,50 @@ async function loadContext(bookId: string, userId: string): Promise<BookContext>
       student_publishable: boolean;
       students_see_peers: boolean;
       creator_is_manager: boolean;
+      es_administracion: boolean | null;
+      disabled_tools: ElementType[] | null;
     }
   >(
     `SELECT b.id, b.title, b.library_id, b.portfolio_id, b.creator_id, b.layout_format,
             b.is_template, b.is_published, b.publishing_settings, b.created_at, b.updated_at,
             b.share_visibility, b.share_token, b.collaborative,
-            l.student_editable, l.student_publishable, l.students_see_peers,
+            l.student_editable, l.student_publishable, l.students_see_peers, l.disabled_tools,
             -- El material que reparte el profesorado se ve siempre, aunque el resto
             -- de creaciones esten ocultas entre companeros.
             (b.creator_id = l.owner_id OR EXISTS (
                SELECT 1 FROM library_teachers lt
                WHERE lt.library_id = l.id AND lt.teacher_id = b.creator_id
-             )) AS creator_is_manager
+             )) AS creator_is_manager,
+            (SELECT role = 'admin' FROM users WHERE id = $2) AS es_administracion
      FROM books b LEFT JOIN libraries l ON l.id = b.library_id
      WHERE b.id = $1`,
-    [bookId],
+    [bookId, userId],
   );
 
   const row = rows[0];
   if (!row) throw HttpError.notFound('Libro no encontrado');
 
-  // Libro personal: su autor manda sobre todo y nadie mas lo ve.
-  if (!row.library_id) {
-    if (row.creator_id !== userId) throw HttpError.notFound('Libro no encontrado');
+  /*
+   * La administracion de la plataforma alcanza cualquier libro, tambien los
+   * personales de otras personas. Es lo que permite arreglar un libro roto sin
+   * pedirle la contrasena a su autor.
+   */
+  if (row.es_administracion) {
     return {
       book: row,
       permissions: { canView: true, canEdit: true, canPublish: true, isManager: true },
+      disabledTools: [],
+    };
+  }
+
+  // Libro personal: su autor manda sobre todo y nadie mas lo ve.
+  if (!row.library_id) {
+    if (row.creator_id !== userId) throw HttpError.notFound('Libro no encontrado');
+    // Un libro personal no pertenece a ninguna clase: no hay nada que limitar.
+    return {
+      book: row,
+      permissions: { canView: true, canEdit: true, canPublish: true, isManager: true },
+      disabledTools: [],
     };
   }
 
@@ -214,6 +235,7 @@ async function loadContext(bookId: string, userId: string): Promise<BookContext>
       canPublish: isManager || (isOwner && row.student_publishable),
       isManager,
     },
+    disabledTools: sanitizeTools(row.disabled_tools),
   };
 }
 
@@ -343,20 +365,28 @@ export async function createBook(userId: string, role: string, input: CreateBook
 export async function listBooks(userId: string, filters: ListBooksQuery): Promise<Book[]> {
   if (filters.libraryId) await getAccess(filters.libraryId, userId);
 
-  const values: unknown[] = [userId];
+  const values: unknown[] = [userId, filters.all === 'true'];
+
+  /*
+   * Con el interruptor de la administracion, las dos reglas de visibilidad se
+   * levantan de golpe. Solo surte efecto para quien tiene rol `admin`: el
+   * parametro por si solo no abre nada.
+   */
+  const ADMIN = `($2 AND EXISTS (SELECT 1 FROM users adm WHERE adm.id = $1 AND adm.role = 'admin'))`;
 
   // Un libro es visible si pertenece a una biblioteca del usuario o si es su libro personal.
   // Con EXISTS en vez de JOIN no hacen falta DISTINCT (que ademas no admite columnas json).
   const conditions: string[] = [
-    `((b.library_id IS NOT NULL AND (
+    `(${ADMIN} OR ((b.library_id IS NOT NULL AND (
          l.owner_id = $1
          OR EXISTS (SELECT 1 FROM library_teachers lt WHERE lt.library_id = l.id AND lt.teacher_id = $1)
          OR EXISTS (SELECT 1 FROM library_students ls WHERE ls.library_id = l.id AND ls.student_id = $1)
       ))
-      OR (b.library_id IS NULL AND b.creator_id = $1))`,
+      OR (b.library_id IS NULL AND b.creator_id = $1)))`,
     // Visibilidad entre companeros: si la biblioteca la tiene apagada y quien mira es
     // alumno, solo salen sus libros, los del profesorado y los colaborativos.
-    `(b.library_id IS NULL
+    `(${ADMIN}
+      OR b.library_id IS NULL
       OR l.students_see_peers
       OR b.creator_id = $1
       OR b.collaborative
@@ -462,6 +492,11 @@ function toElement(row: ElementRow): CanvasElement {
 export interface BookDetail extends Book {
   pages: Page[];
   permissions: BookPermissions;
+  /**
+   * Herramientas que el editor debe esconder a quien abre el libro. Llega vacia
+   * para el profesorado: la limitacion es para el alumnado.
+   */
+  disabledTools: ElementType[];
 }
 
 interface StoredQuestionOption {
@@ -542,9 +577,14 @@ async function loadPages(bookId: string, revealAnswers: boolean): Promise<Page[]
 }
 
 export async function getBookDetail(bookId: string, userId: string): Promise<BookDetail> {
-  const { book, permissions } = await loadContext(bookId, userId);
+  const { book, permissions, disabledTools } = await loadContext(bookId, userId);
   // Solo quien puede editar necesita ver cuales son las respuestas correctas.
-  return { ...toBook(book), permissions, pages: await loadPages(bookId, permissions.canEdit) };
+  return {
+    ...toBook(book),
+    permissions,
+    disabledTools: permissions.isManager ? [] : disabledTools,
+    pages: await loadPages(bookId, permissions.canEdit),
+  };
 }
 
 // --- Comparticion por enlace ---
@@ -646,8 +686,10 @@ export async function getSharedBook(token: string, userId?: string): Promise<Sha
   return {
     ...toBook(row),
     authorName: row.author_name,
-    // Un enlace compartido siempre es de solo lectura.
+    // Un enlace compartido siempre es de solo lectura: no hay nada que insertar,
+    // asi que la lista de herramientas vetadas no pinta nada aqui.
     permissions: { canView: true, canEdit: false, canPublish: false, isManager: false },
+    disabledTools: [],
     pages: await loadPages(row.id, false),
   };
 }
@@ -1062,7 +1104,18 @@ export async function createElement(
   userId: string,
   input: CreateElementInput,
 ): Promise<CanvasElement> {
-  await requireEdit(bookId, userId);
+  const { permissions, disabledTools } = await requireEdit(bookId, userId);
+
+  /*
+   * Herramientas vetadas al alumnado. Se comprueba aqui y no solo escondiendo el
+   * boton: un alumno con la consola del navegador abierta se saltaria un menu
+   * oculto en un minuto. Al profesorado no le afecta, que es quien decide.
+   */
+  if (!permissions.isManager && disabledTools.includes(input.type)) {
+    const nombre = EDITOR_TOOLS.find((t) => t.id === input.type)?.label ?? input.type;
+    throw HttpError.forbidden(`En esta biblioteca no se puede usar la herramienta "${nombre}"`);
+  }
+
   const properties = parseProperties(input.type, input.properties);
 
   return withTransaction(async (client) => {
