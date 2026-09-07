@@ -205,6 +205,22 @@ async function resolver(userId: string, role: string, organizationId?: string): 
   return propia;
 }
 
+/**
+ * Si esta persona es titular de algun cliente.
+ *
+ * Existe para que la aplicacion pueda preguntarlo sin provocar un error: la
+ * mayoria de docentes no paga nada, y usar getPortal para averiguarlo dejaba un
+ * 404 en la consola del navegador en cada inicio de sesion. Un 404 esperado y
+ * repetido es ruido que acaba tapando los errores de verdad.
+ */
+export async function esTitularDeCliente(userId: string): Promise<boolean> {
+  const { rows } = await query<{ uno: number }>(
+    'SELECT 1 AS uno FROM organizations WHERE owner_id = $1 LIMIT 1',
+    [userId],
+  );
+  return rows.length > 0;
+}
+
 // --- Portal del cliente ---
 
 export interface Usage {

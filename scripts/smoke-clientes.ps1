@@ -65,6 +65,11 @@ Check 'no admite dos clientes con el mismo NIT' ((Codigo POST '/clients/organiza
 
 Write-Host "`n== 2. Titular de la cuenta ==" -ForegroundColor Cyan
 
+# La aplicacion pregunta esto en cada inicio de sesion: no debe dar error a quien
+# no es cliente, o llenaria la consola de 404 esperados a todo el profesorado.
+Check 'preguntar si es cliente no falla a quien no lo es' ((Llamar GET '/clients/status' $null $tokenCliente).isClient -eq $false)
+Check 'ni siquiera a un alumno' ((Codigo GET '/clients/status' $null $tokenAdmin) -eq 200)
+
 Check 'sin titular, el pagador no tiene portal' ((Codigo GET '/clients/portal' $null $tokenCliente) -eq 404)
 
 $conDuenio = (Llamar POST "/clients/organizations/$($org.id)/owner" @{ email = "pagador-$sufijo@test.local" } $tokenAdmin).organization
@@ -72,6 +77,7 @@ Check 'se asigna el titular' ($conDuenio.ownerId -eq $cliente.user.id)
 
 $portal = (Llamar GET '/clients/portal' $null $tokenCliente).portal
 Check 'ahora si ve su portal' ($portal.organization.id -eq $org.id)
+Check 'y consta como cliente' ((Llamar GET '/clients/status' $null $tokenCliente).isClient -eq $true)
 Check 'y empieza sin nada pendiente' ($portal.pendingCop -eq 0) "$($portal.pendingCop)"
 
 Check 'no se puede poner a un alumno como titular' ((Codigo POST "/clients/organizations/$($org.id)/owner" @{ email = 'nadie@test.local' } $tokenAdmin) -eq 404)
@@ -198,8 +204,12 @@ Write-Host "`n== 10. Validacion de las cuentas ==" -ForegroundColor Cyan
 Check 'rechaza una cuenta sin lineas' ((Codigo POST "/clients/organizations/$($org.id)/charges" @{ concept = 'Vacia'; items = @() } $tokenAdmin) -eq 400)
 Check 'rechaza un importe de cero' ((Codigo POST "/clients/organizations/$($org.id)/charges" @{ concept = 'Gratis'; items = @(@{ description = 'Nada'; unitCop = 0 }) } $tokenAdmin) -eq 400)
 Check 'rechaza un importe negativo' ((Codigo POST "/clients/organizations/$($org.id)/charges" @{ concept = 'Regalo'; items = @(@{ description = 'Nada'; unitCop = -5000 }) } $tokenAdmin) -eq 400)
-Check 'rechaza una fecha mal escrita' ((Codigo POST "/clients/organizations/$($org.id)/charges" @{ concept = 'Fecha rara'; items = @(@{ description = 'X'; unitCop = 1000 }); dueDate = '15/10/2026' } $tokenAdmin) -eq 400)
-Check 'rechaza un concepto de dos letras' ((Codigo POST "/clients/organizations/$($org.id)/charges" @{ concept = 'ab'; items = @(@{ description = 'X'; unitCop = 1000 }) } $tokenAdmin) -eq 400)
+# Las lineas van con descripcion valida a proposito: con una de una sola letra el
+# 400 lo provocaba la linea, no la fecha ni el concepto, y la comprobacion pasaba
+# sin comprobar lo que dice.
+Check 'rechaza una fecha mal escrita' ((Codigo POST "/clients/organizations/$($org.id)/charges" @{ concept = 'Fecha rara'; items = @(@{ description = 'Linea valida'; unitCop = 1000 }); dueDate = '15/10/2026' } $tokenAdmin) -eq 400)
+Check 'rechaza un concepto de dos letras' ((Codigo POST "/clients/organizations/$($org.id)/charges" @{ concept = 'ab'; items = @(@{ description = 'Linea valida'; unitCop = 1000 }) } $tokenAdmin) -eq 400)
+Check 'y acepta una linea bien formada' ((Codigo POST "/clients/organizations/$($org.id)/charges" @{ concept = 'Cuenta correcta'; items = @(@{ description = 'Linea valida'; unitCop = 1000 }) } $tokenAdmin) -eq 200)
 
 Write-Host "`n== 11. Anular ==" -ForegroundColor Cyan
 
@@ -241,7 +251,7 @@ Check 'un docente no borra clientes' ((Codigo DELETE "/clients/organizations/$($
 
 $borrable = (Llamar POST '/clients/organizations' @{ name = "Creado por error $sufijo" } $tokenAdmin).organization
 Llamar POST "/clients/organizations/$($borrable.id)/charges" @{
-  concept = 'Cobro que se ira con el cliente'; items = @(@{ description = 'X'; unitCop = 50000 }); issue = $true
+  concept = 'Cobro que se ira con el cliente'; items = @(@{ description = 'Concepto de una linea'; unitCop = 50000 }); issue = $true
 } $tokenAdmin | Out-Null
 $borrado = Llamar DELETE "/clients/organizations/$($borrable.id)" $null $tokenAdmin
 Check 'se borra un cliente creado por error' ($borrado.chargesDeleted -eq 1) "$($borrado.chargesDeleted)"

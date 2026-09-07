@@ -31,6 +31,14 @@ clientsRouter.use(requireAuth);
 const orgQuerySchema = z.object({ organizationId: z.string().uuid().optional() });
 const deQuery = (req: { query: unknown }) => (req.query as { organizationId?: string }).organizationId;
 
+/** Para pintar o no el enlace "Mi cuenta" sin provocar un 404 esperado. */
+clientsRouter.get(
+  '/status',
+  asyncHandler(async (req, res) => {
+    res.json({ isClient: await service.esTitularDeCliente(req.auth!.userId) });
+  }),
+);
+
 // --- Portal del cliente ---
 
 clientsRouter.get(

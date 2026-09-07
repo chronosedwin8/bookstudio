@@ -623,6 +623,11 @@ export const magnificApi = {
 };
 
 export const clientsApi = {
+  /** Si quien mira es titular de un cliente. No falla si no lo es. */
+  async status() {
+    const { data } = await http.get<{ isClient: boolean }>('/clients/status');
+    return data.isClient;
+  },
   /** organizationId solo lo usa la administracion, para entrar en otro cliente. */
   async portal(organizationId?: string) {
     const { data } = await http.get<{ portal: ClientPortal }>('/clients/portal', {

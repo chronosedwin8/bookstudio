@@ -23,10 +23,9 @@ watch(
     esCliente.value = false;
     if (!id || auth.user?.role === 'student') return;
     try {
-      await clientsApi.portal();
-      esCliente.value = true;
+      esCliente.value = await clientsApi.status();
     } catch {
-      // Un 404 aqui es lo normal: la mayoria de docentes no paga nada.
+      // Sin respuesta se asume que no: mejor un enlace de menos que uno que falla.
     }
   },
   { immediate: true },
