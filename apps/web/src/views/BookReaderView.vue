@@ -190,7 +190,9 @@ onBeforeUnmount(() => {
     </div>
 
     <template v-else-if="book">
-      <header class="flex shrink-0 flex-wrap items-center justify-between gap-3 bg-slate-800 px-4 py-2 text-white">
+      <!-- relative z-30: la hoja en vuelo sobresale del libro y, sin esto, se
+           pintaba por encima de la cabecera y del pie. -->
+      <header class="relative z-30 flex shrink-0 flex-wrap items-center justify-between gap-3 bg-slate-800 px-4 py-2 text-white">
         <div class="flex min-w-0 items-center gap-3">
           <RouterLink
             v-if="auth.isAuthenticated"
@@ -272,7 +274,7 @@ onBeforeUnmount(() => {
         >›</button>
       </div>
 
-      <footer class="shrink-0 bg-slate-800 px-4 py-2 text-center text-sm text-slate-300">
+      <footer class="relative z-30 shrink-0 bg-slate-800 px-4 py-2 text-center text-sm text-slate-300">
         <span class="tabular-nums">
           {{ rotuloPagina }} de {{ pages.length }}
         </span>
