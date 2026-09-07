@@ -184,23 +184,50 @@ defineExpose({ pasar, hayAnterior, haySiguiente, paginasVisibles });
 /** Lo que se pinta debajo: la mezcla mientras hay giro, la vista normal si no. */
 const fondo = computed<Vista>(() => giro.value?.fondo ?? vista.value);
 
+/**
+ * Cuanto se corre el libro para centrar una hoja que va sola.
+ *
+ * La portada y, en los libros de paginas impares, la ultima hoja no tienen
+ * pareja. Emparejarlas con una pagina en blanco dejaba media pantalla vacia, que
+ * es justo lo que hacia que no pareciera un libro sino una hoja mal encajada.
+ * Corriendo el marco, la hoja suelta queda centrada y el libro se abre al pasarla,
+ * como en papel.
+ *
+ * Se calcula sobre la vista de destino, no sobre la mezcla que se pinta durante el
+ * giro: asi el desplazamiento se anima a la vez que la hoja y el libro parece
+ * abrirse, en lugar de dar un salto.
+ */
+const desplazamiento = computed(() => {
+  if (!dobleCabe.value) return 0;
+  const medio = (anchoPagina.value + LOMO) / 2;
+  if (vista.value.izquierda === null) return -medio;
+  if (vista.value.derecha === null) return medio;
+  return 0;
+});
+
 const medidas = computed(() => ({ width: `${anchoPagina.value}px`, height: `${altoPagina.value}px` }));
 </script>
 
 <template>
+  <!--
+    El marco se corre para centrar una hoja suelta; el libro de dentro es el que
+    lleva la perspectiva. Van separados para que el desplazamiento no se mezcle con
+    los giros en 3D de las hojas.
+  -->
   <div
     v-if="anchoPagina > 0"
-    class="libro"
-    :class="{ doble: dobleCabe }"
+    class="marco"
     :style="{
       width: `${dobleCabe ? anchoPagina * 2 + LOMO : anchoPagina}px`,
       height: `${altoPagina}px`,
+      transform: `translateX(${desplazamiento}px)`,
     }"
   >
-    <!-- Hoja izquierda -->
-    <div v-if="dobleCabe" class="hoja izquierda" :style="medidas">
+  <div class="libro" :class="{ doble: dobleCabe }">
+    <!-- Hoja izquierda. Si no hay pagina no se pinta nada: una hoja en blanco
+         al lado dejaba media pantalla vacia. -->
+    <div v-if="dobleCabe && pagina(fondo.izquierda)" class="hoja izquierda" :style="medidas">
       <PagePreview
-        v-if="pagina(fondo.izquierda)"
         :key="pagina(fondo.izquierda)!.id"
         :background-color="pagina(fondo.izquierda)!.backgroundColor"
         :background-pattern="pagina(fondo.izquierda)!.backgroundPattern"
@@ -211,17 +238,12 @@ const medidas = computed(() => ({ width: `${anchoPagina.value}px`, height: `${al
         :check-answer="checkAnswer"
         @ir-a-pagina="emit('irAPagina', $event)"
       />
-      <!-- Guarda: la cara interior de la tapa. Mantiene constante la geometria del
-           libro, que es lo que permite que el giro no cambie de sitio a media
-           animacion. -->
-      <div v-else class="guarda"></div>
       <div class="lomo lomo-derecha"></div>
     </div>
 
     <!-- Hoja derecha, o unica -->
-    <div class="hoja derecha" :style="medidas">
+    <div v-if="pagina(fondo.derecha)" class="hoja derecha" :style="medidas">
       <PagePreview
-        v-if="pagina(fondo.derecha)"
         :key="pagina(fondo.derecha)!.id"
         :background-color="pagina(fondo.derecha)!.backgroundColor"
         :background-pattern="pagina(fondo.derecha)!.backgroundPattern"
@@ -232,7 +254,6 @@ const medidas = computed(() => ({ width: `${anchoPagina.value}px`, height: `${al
         :check-answer="checkAnswer"
         @ir-a-pagina="emit('irAPagina', $event)"
       />
-      <div v-else class="guarda"></div>
       <div v-if="dobleCabe" class="lomo lomo-izquierda"></div>
     </div>
 
@@ -257,7 +278,6 @@ const medidas = computed(() => ({ width: `${anchoPagina.value}px`, height: `${al
           :aspect-ratio="aspectRatio"
           :width="anchoPagina"
         />
-        <div v-else class="guarda"></div>
         <div class="velo"></div>
       </div>
 
@@ -270,7 +290,6 @@ const medidas = computed(() => ({ width: `${anchoPagina.value}px`, height: `${al
           :aspect-ratio="aspectRatio"
           :width="anchoPagina"
         />
-        <div v-else class="guarda"></div>
         <div class="velo velo-dorso"></div>
       </div>
     </div>
@@ -295,6 +314,7 @@ const medidas = computed(() => ({ width: `${anchoPagina.value}px`, height: `${al
       @click="pasar(1)"
     ></button>
   </div>
+  </div>
 </template>
 
 <style scoped>
@@ -303,8 +323,16 @@ const medidas = computed(() => ({ width: `${anchoPagina.value}px`, height: `${al
  * lo de alrededor. Un valor alto da un giro sereno; uno bajo lo exagera y parece
  * un truco de presentacion.
  */
-.libro {
+/* El marco solo se corre para centrar una hoja suelta; se anima con la misma
+   curva que el giro para que abrir el libro y pasar la hoja sean un solo gesto. */
+.marco {
   position: relative;
+  transition: transform 620ms cubic-bezier(0.42, 0.02, 0.35, 1);
+}
+
+.libro {
+  position: absolute;
+  inset: 0;
   /*
    * Cuanto mas corta la perspectiva, mas se abre la hoja al girar y mas se sale
    * del ancho del libro. A 2600 se salia bastante; con 3400 el vuelo sigue
@@ -315,26 +343,37 @@ const medidas = computed(() => ({ width: `${anchoPagina.value}px`, height: `${al
   border-radius: 6px;
 }
 
-/* El canto: las hojas apiladas que asoman bajo la de arriba. */
-.libro.doble::after {
+/*
+ * El canto: las hojas apiladas que asoman por debajo. Va en cada hoja y no en el
+ * libro entero porque cuando una va sola —la portada, o la ultima si el libro
+ * tiene paginas impares— un canto de dos hojas asomaria por debajo de la nada.
+ */
+.hoja::after {
   content: '';
   position: absolute;
-  inset: 7px -6px -7px -6px;
+  inset: auto -4px -6px -4px;
+  height: 8px;
   z-index: -1;
-  border-radius: 4px;
+  border-radius: 0 0 4px 4px;
   background: #e7e2d8;
   box-shadow:
-    0 12px 34px rgba(0, 0, 0, 0.5),
+    0 10px 30px rgba(0, 0, 0, 0.45),
     0 2px 0 #f3efe7,
-    0 4px 0 #e2ddd2,
-    0 6px 0 #f0ece3;
+    0 4px 0 #e2ddd2;
 }
 
 .hoja {
   position: absolute;
   top: 0;
-  overflow: hidden;
+  /* Sin overflow-hidden el canto de abajo quedaria recortado por la propia hoja. */
   background: #fff;
+  box-shadow: 0 14px 38px rgba(0, 0, 0, 0.42);
+}
+
+/* El contenido si se recorta a la hoja; el canto vive fuera. */
+.hoja > :not(.lomo) {
+  overflow: hidden;
+  border-radius: inherit;
 }
 
 .libro:not(.doble) .hoja.derecha {
