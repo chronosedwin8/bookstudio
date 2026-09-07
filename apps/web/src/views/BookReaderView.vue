@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import AlertMessage from '@/components/AlertMessage.vue';
+import BookSpread from '@/components/canvas/BookSpread.vue';
 import PagePreview from '@/components/canvas/PagePreview.vue';
 import { booksApi } from '@/services/api';
 import { errorMessage } from '@/services/http';
@@ -20,31 +21,28 @@ const book = ref<SharedBook | null>(null);
 const error = ref<string | null>(null);
 const loading = ref(true);
 const index = ref(0);
-/** 'next' pasa la hoja hacia la izquierda; 'prev' al reves. */
-const direction = ref<'next' | 'prev'>('next');
 const showPages = ref(false);
+
+/** El libro abierto; se le pide pasar de hoja para que la animacion sea la suya. */
+const libro = ref<InstanceType<typeof BookSpread> | null>(null);
 
 const stage = ref<HTMLElement | null>(null);
 const stageSize = ref({ width: 0, height: 0 });
 
 const aspectRatio = computed(() => (book.value ? ASPECT[book.value.layoutFormat] : 1));
 const pages = computed(() => book.value?.pages ?? []);
-const currentPage = computed(() => pages.value[index.value]);
-const isFirst = computed(() => index.value === 0);
-const isLast = computed(() => index.value >= pages.value.length - 1);
 
-/** La pagina se amplia hasta donde permita el lado mas restrictivo del escenario. */
-const pageWidth = computed(() => {
-  const { width, height } = stageSize.value;
-  if (!width || !height) return 0;
-  return Math.floor(Math.min(width, height * aspectRatio.value));
-});
+/*
+ * Los extremos los decide el libro, no el indice de pagina: a doble pagina la
+ * ultima vista puede contener dos, asi que "estar en la ultima pagina" y "no poder
+ * avanzar" dejaron de ser lo mismo.
+ */
+const isFirst = computed(() => libro.value?.hayAnterior !== true);
+const isLast = computed(() => libro.value?.haySiguiente !== true);
 
+/** Pasar de hoja lo hace el libro, que es quien sabe animarlo. */
 function turn(step: number): void {
-  const next = index.value + step;
-  if (next < 0 || next >= pages.value.length) return;
-  direction.value = step > 0 ? 'next' : 'prev';
-  index.value = next;
+  libro.value?.pasar(step > 0 ? 1 : -1);
 }
 
 /**
@@ -58,8 +56,19 @@ function irAPaginaNumero(numero: number): void {
   if (destino >= 0) goTo(destino);
 }
 
+/**
+ * Rotulo del pie. A doble pagina se ven dos a la vez, asi que decir "pagina 3" de
+ * un pliego 3-4 seria mentir a medias.
+ */
+const rotuloPagina = computed(() => {
+  const visibles = libro.value?.paginasVisibles ?? [];
+  if (!visibles.length) return 'Portada';
+  if (visibles.length === 1) return visibles[0] === 1 ? 'Portada' : `Página ${visibles[0]}`;
+  return `Páginas ${visibles[0]}-${visibles[visibles.length - 1]}`;
+});
+
+/** Salto directo (miniaturas, marcadores, inicio y fin): sin giro, seria falso. */
 function goTo(target: number): void {
-  direction.value = target > index.value ? 'next' : 'prev';
   index.value = target;
   showPages.value = false;
 }
@@ -114,10 +123,22 @@ function syncFullscreen(): void {
 
 let observer: ResizeObserver | undefined;
 
+/**
+ * Hueco real para el libro.
+ *
+ * Se descuenta el relleno: clientHeight lo incluye, asi que dar esa altura por
+ * disponible hacia que el libro se pasara justo de lo que cabe y el contenedor le
+ * recortara los bordes.
+ */
 function measure(): void {
   const el = stage.value;
   if (!el) return;
-  stageSize.value = { width: el.clientWidth, height: el.clientHeight };
+  const estilo = getComputedStyle(el);
+  const relleno = (a: string, b: string) => parseFloat(estilo[a as never]) + parseFloat(estilo[b as never]);
+  stageSize.value = {
+    width: Math.max(0, el.clientWidth - relleno('paddingLeft', 'paddingRight')),
+    height: Math.max(0, el.clientHeight - relleno('paddingTop', 'paddingBottom')),
+  };
 }
 
 /**
@@ -225,25 +246,21 @@ onBeforeUnmount(() => {
           @click="turn(-1)"
         >‹</button>
 
-        <div ref="stage" class="stage grid min-h-0 min-w-0 flex-1 place-items-center overflow-hidden py-3">
-          <Transition :name="`page-${direction}`" mode="out-in">
-            <div
-              v-if="currentPage && pageWidth > 0"
-              :key="currentPage.id"
-              class="sheet relative overflow-hidden rounded-lg shadow-2xl ring-1 ring-black/20"
-            >
-              <PagePreview
-                :background-color="currentPage.backgroundColor"
-                :background-pattern="currentPage.backgroundPattern"
-                :elements="currentPage.elements"
-                :aspect-ratio="aspectRatio"
-                :width="pageWidth"
-                interactive
-                :check-answer="checkAnswer"
-                @ir-a-pagina="irAPaginaNumero"
-              />
-            </div>
-          </Transition>
+        <!--
+          Sin overflow-hidden: al girar, la hoja se sale del ancho del libro por la
+          propia perspectiva, y recortarla ahi delataba el truco. El contenedor de
+          arriba ya impide que nada se escape de la ventana.
+        -->
+        <div ref="stage" class="grid min-h-0 min-w-0 flex-1 place-items-center py-3">
+          <BookSpread
+            ref="libro"
+            v-model="index"
+            :pages="pages"
+            :aspect-ratio="aspectRatio"
+            :available="stageSize"
+            :check-answer="checkAnswer"
+            @ir-a-pagina="irAPaginaNumero"
+          />
         </div>
 
         <button
@@ -257,7 +274,7 @@ onBeforeUnmount(() => {
 
       <footer class="shrink-0 bg-slate-800 px-4 py-2 text-center text-sm text-slate-300">
         <span class="tabular-nums">
-          {{ index === 0 ? 'Portada' : `Página ${currentPage?.pageNumber}` }} de {{ pages.length }}
+          {{ rotuloPagina }} de {{ pages.length }}
         </span>
         <span class="ml-3 hidden text-xs text-slate-500 sm:inline">
           Usa las flechas del teclado para pasar de página
@@ -307,92 +324,8 @@ onBeforeUnmount(() => {
 
 <style scoped>
 /*
- * Paso de hoja.
- *
- * La perspectiva vive en el escenario y el giro se hace sobre el borde interior
- * (transform-origin en el lomo), que es lo que hace que parezca una hoja real y
- * no un panel deslizandose. La sombra del lomo refuerza el volumen.
+ * El paso de hoja vive en BookSpread, que es quien conoce el lomo y las dos caras
+ * del papel. Aqui solo queda el escenario, que se limita a centrar el libro y a
+ * medir el hueco del que dispone.
  */
-.stage {
-  perspective: 2200px;
-  perspective-origin: center center;
-}
-
-.sheet {
-  transform-style: preserve-3d;
-  backface-visibility: hidden;
-}
-
-/* Degradado del lomo: mas oscuro junto al pliegue. */
-.sheet::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background: linear-gradient(to right, rgba(0, 0, 0, 0.16), rgba(0, 0, 0, 0) 9%, rgba(0, 0, 0, 0) 91%, rgba(0, 0, 0, 0.1));
-}
-
-.page-next-enter-active,
-.page-prev-enter-active {
-  transition: transform 0.42s cubic-bezier(0.22, 0.7, 0.3, 1), opacity 0.2s ease;
-}
-
-.page-next-leave-active,
-.page-prev-leave-active {
-  transition: transform 0.34s cubic-bezier(0.6, 0, 0.8, 0.4), opacity 0.3s ease 0.1s;
-}
-
-/* Avanzar: la hoja saliente se levanta por el lomo izquierdo... */
-.page-next-leave-active {
-  transform-origin: left center;
-}
-.page-next-leave-to {
-  transform: rotateY(-105deg) scale(0.96);
-  opacity: 0;
-}
-
-/* ...y la entrante cae desde la derecha. */
-.page-next-enter-active {
-  transform-origin: left center;
-}
-.page-next-enter-from {
-  transform: rotateY(72deg) scale(0.97);
-  opacity: 0.2;
-}
-
-/* Retroceder: el giro es simetrico sobre el lomo derecho. */
-.page-prev-leave-active {
-  transform-origin: right center;
-}
-.page-prev-leave-to {
-  transform: rotateY(105deg) scale(0.96);
-  opacity: 0;
-}
-
-.page-prev-enter-active {
-  transform-origin: right center;
-}
-.page-prev-enter-from {
-  transform: rotateY(-72deg) scale(0.97);
-  opacity: 0.2;
-}
-
-/* Sin perspectiva ni giros para quien pide menos movimiento. */
-@media (prefers-reduced-motion: reduce) {
-  .stage {
-    perspective: none;
-  }
-  .page-next-enter-active,
-  .page-next-leave-active,
-  .page-prev-enter-active,
-  .page-prev-leave-active {
-    transition: opacity 0.15s ease;
-  }
-  .page-next-enter-from,
-  .page-next-leave-to,
-  .page-prev-enter-from,
-  .page-prev-leave-to {
-    transform: none;
-  }
-}
 </style>
