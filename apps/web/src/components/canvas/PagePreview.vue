@@ -125,6 +125,21 @@ function esFocalizable(element: CanvasElement): boolean {
   return Boolean(element.interaction) || element.animation?.trigger === 'click';
 }
 
+/**
+ * Perder el foco cierra el globo, pero NUNCA la ventana.
+ *
+ * La ventana se lleva el foco al abrirse, para que Escape y el tabulador vayan a
+ * ella. Eso hace que el elemento pierda el foco acto seguido, y cerrar aqui sin
+ * mirar el tipo cerraba la ventana en el mismo instante de abrirla. Era ademas
+ * una carrera: segun quien llegara antes, el clic o el foco, unas veces se abria
+ * y otras no.
+ *
+ * Una ventana se cierra con su aspa, con su boton, con Escape o pulsando fuera.
+ */
+function alPerderFoco(): void {
+  if (activa.value?.interaction.kind === 'tooltip') activa.value = null;
+}
+
 /** El foco del teclado abre lo mismo que el raton, centrado en el elemento. */
 function alEnfocar(element: CanvasElement, event: FocusEvent): void {
   const info = interaccionDe(element);
@@ -213,7 +228,7 @@ function alTerminarAnimacion(element: CanvasElement): void {
         @mousemove="alMover(element, $event)"
         @mouseleave="alSalir(element)"
         @focus="alEnfocar(element, $event)"
-        @blur="activa = null"
+        @blur="alPerderFoco()"
         @keydown.enter="alPulsarTeclado(element, $event)"
         :target="linkOf(element) ? '_blank' : undefined"
         :rel="linkOf(element) ? 'noopener noreferrer' : undefined"
