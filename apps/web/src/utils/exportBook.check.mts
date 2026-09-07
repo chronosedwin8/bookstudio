@@ -81,6 +81,30 @@ const conImagen = conInteraccion([{ type: 'image', url: 'https://ejemplo.org/a.p
 check('las imagenes del contenido viajan', conImagen.includes('src=&quot;https://ejemplo.org/a.png&quot;'));
 check('con su pie', conImagen.includes('&lt;figcaption&gt;En otono&lt;/figcaption&gt;'));
 
+// --- Videos y contenido incrustado ---
+const VIDEO = 'https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ';
+const conVideo = conInteraccion([
+  { type: 'embed', sourceUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+    provider: 'youtube', embedUrl: VIDEO, caption: 'El ciclo del agua' },
+]);
+check('el video viaja como iframe', conVideo.includes('&lt;iframe src=&quot;' + VIDEO + '&quot;'));
+check('con sandbox', conVideo.includes('sandbox=&quot;allow-scripts'));
+check('y con su pie', conVideo.includes('&lt;figcaption&gt;El ciclo del agua&lt;/figcaption&gt;'));
+check('la copia lleva el estilo del video', conVideo.includes('figure.video iframe'));
+
+const videoSinResolver = conInteraccion([
+  { type: 'embed', sourceUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ', caption: '' },
+]);
+check(
+  'un incrustado sin direccion resuelta no pinta iframe',
+  !videoSinResolver.includes('&lt;iframe'),
+);
+
+const videoVenenoso = conInteraccion([
+  { type: 'embed', sourceUrl: 'x', provider: 'youtube', embedUrl: 'javascript:alert(1)', caption: '' },
+]);
+check('una direccion no navegable no pinta iframe', !videoVenenoso.includes('javascript:alert'));
+
 // --- Un elemento sin nada no arrastra atributos vacios ---
 const pelado = bookToHtml(libro([elemento({})]));
 check('sin interaccion no se marca', !pelado.includes('class="el tiene-info"'));
@@ -144,6 +168,13 @@ if (destino) {
               { type: 'heading', spans: [{ text: 'Caracteristicas' }] },
               { type: 'list', ordered: false, items: [[{ text: 'Vive ' }, { text: '500 anos', bold: true }]] },
               { type: 'paragraph', spans: [{ text: 'Con etiqueta escrita: <b>no</b> debe verse en negrita' }] },
+              {
+                type: 'embed',
+                sourceUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+                provider: 'youtube',
+                embedUrl: 'https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ',
+                caption: 'El ciclo del agua',
+              },
             ],
           },
         }),

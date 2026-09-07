@@ -251,6 +251,73 @@ Test-Step 'Enlace y globo al pasar el raton si conviven' {
     if ($el.interaction.trigger -ne 'hover') { throw "Disparo equivocado: $($el.interaction.trigger)" }
 }
 
+# --- Videos y contenido incrustado ---
+
+$VIDEO = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ'
+
+Test-Step 'Una ventana admite un video de YouTube' {
+    $el = (Invoke-Api POST $path @{
+        type = 'text'; transformMatrix = $box; properties = @{ text = 'Ficha' }
+        interaction = @{ kind = 'popup'; title = 'El agua'; text = 'Ficha'
+            content = @(@{ type = 'embed'; sourceUrl = $VIDEO; caption = 'El ciclo del agua' }) }
+    } -Token $token).element
+    $b = $el.interaction.content[0]
+    if ($b.embedUrl -ne 'https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ') {
+        throw "Direccion mal resuelta: $($b.embedUrl)"
+    }
+    if ($b.provider -ne 'youtube') { throw "Proveedor: $($b.provider)" }
+    if ($b.caption -ne 'El ciclo del agua') { throw 'Se perdio el pie' }
+}
+
+Test-Step 'La direccion de incrustacion la pone el servidor, no el cliente' {
+    $el = (Invoke-Api POST $path @{
+        type = 'text'; transformMatrix = $box; properties = @{ text = 'x' }
+        interaction = @{ kind = 'popup'; text = 'x'
+            content = @(@{ type = 'embed'; sourceUrl = $VIDEO; provider = 'inventado'
+                           embedUrl = 'https://malo.example/incrustar' }) }
+    } -Token $token).element
+    if ($el.interaction.content[0].embedUrl -like '*malo.example*') {
+        throw 'Se colo una direccion elegida por el cliente'
+    }
+}
+
+Test-Step 'Un proveedor fuera de la lista se rechaza' {
+    Assert-Status { Invoke-Api POST $path @{
+        type = 'text'; transformMatrix = $box; properties = @{ text = 'x' }
+        interaction = @{ kind = 'popup'; text = 'x'
+            content = @(@{ type = 'embed'; sourceUrl = 'https://malo.example/video/1' }) }
+    } -Token $token } 400
+}
+
+Test-Step 'Un dominio que solo se parece a YouTube tampoco cuela' {
+    Assert-Status { Invoke-Api POST $path @{
+        type = 'text'; transformMatrix = $box; properties = @{ text = 'x' }
+        interaction = @{ kind = 'popup'; text = 'x'
+            content = @(@{ type = 'embed'; sourceUrl = 'https://youtube.com.malo.net/watch?v=dQw4w9WgXcQ' }) }
+    } -Token $token } 400
+}
+
+Test-Step 'El globo no admite videos' {
+    Assert-Status { Invoke-Api POST $path @{
+        type = 'text'; transformMatrix = $box; properties = @{ text = 'x' }
+        interaction = @{ kind = 'tooltip'; text = 'x'
+            content = @(@{ type = 'embed'; sourceUrl = $VIDEO }) }
+    } -Token $token } 400
+}
+
+Test-Step 'Otros proveedores de la lista tambien valen' {
+    foreach ($enlace in @('https://vimeo.com/123456789',
+                          'https://docs.google.com/presentation/d/abcdefghij123/edit',
+                          'https://archive.org/details/librodeprueba')) {
+        $el = (Invoke-Api POST $path @{
+            type = 'text'; transformMatrix = $box; properties = @{ text = 'x' }
+            interaction = @{ kind = 'popup'; text = 'x'
+                content = @(@{ type = 'embed'; sourceUrl = $enlace }) }
+        } -Token $token).element
+        if (-not $el.interaction.content[0].embedUrl) { throw "No resolvio $enlace" }
+    }
+}
+
 # --- Que la copia de una pagina se lo lleve todo ---
 
 Test-Step 'Duplicar la pagina copia globos y animaciones' {

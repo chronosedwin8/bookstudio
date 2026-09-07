@@ -29,6 +29,19 @@ function enlaceDe(span: RichSpan): string | null {
   return /^https?:\/\//i.test(url) || url.startsWith('/') ? url : null;
 }
 
+const NOMBRES: Record<string, string> = {
+  youtube: 'YouTube', vimeo: 'Vimeo', peertube: 'PeerTube',
+  'google-docs': 'Documento de Google', 'google-slides': 'Presentación de Google',
+  'google-sheets': 'Hoja de Google', 'google-forms': 'Formulario de Google',
+  'microsoft-office': 'Microsoft Office', archive: 'Internet Archive',
+  wikipedia: 'Wikipedia', canva: 'Canva', genially: 'Genially', h5p: 'H5P',
+  padlet: 'Padlet', desmos: 'Desmos', geogebra: 'GeoGebra', thinglink: 'ThingLink',
+};
+
+function nombreDe(proveedor?: string): string {
+  return NOMBRES[proveedor ?? ''] ?? 'contenido externo';
+}
+
 function clasesDe(span: RichSpan): string[] {
   const c: string[] = [];
   if (span.bold) c.push('font-semibold');
@@ -90,6 +103,37 @@ function clasesDe(span: RichSpan): string[] {
             </template>
           </li>
         </component>
+
+        <!--
+          Video o contenido externo. El iframe va con sandbox y con la direccion
+          que reconstruyo el servidor: aqui nunca llega un enlace cualquiera.
+
+          referrerpolicy es strict-origin-when-cross-origin y no no-referrer
+          porque YouTube exige conocer el origen para autorizar la incrustacion;
+          sin el devuelve "Error 153". Se manda el origen, nunca la ruta del libro.
+        -->
+        <figure v-else-if="bloque.type === 'embed'" class="overflow-hidden rounded-lg">
+          <div v-if="bloque.embedUrl" class="aspect-video w-full overflow-hidden rounded-lg bg-slate-900">
+            <iframe
+              :src="bloque.embedUrl"
+              :title="bloque.caption || nombreDe(bloque.provider)"
+              class="h-full w-full border-0"
+              loading="lazy"
+              referrerpolicy="strict-origin-when-cross-origin"
+              sandbox="allow-scripts allow-same-origin allow-presentation allow-popups allow-popups-to-escape-sandbox"
+              allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
+              allowfullscreen
+            ></iframe>
+          </div>
+          <p
+            v-else
+            class="rounded-lg bg-slate-100 px-3 py-6 text-center text-xs text-slate-500"
+          >Contenido de {{ nombreDe(bloque.provider) }} no disponible</p>
+          <figcaption
+            v-if="bloque.caption"
+            class="mt-1 text-center text-[11px] italic opacity-75"
+          >{{ bloque.caption }}</figcaption>
+        </figure>
 
         <figure v-else-if="bloque.type === 'image'" class="overflow-hidden rounded-lg">
           <img

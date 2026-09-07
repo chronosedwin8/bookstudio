@@ -372,7 +372,13 @@ export type RichBlock =
   | { type: 'paragraph'; spans: RichSpan[] }
   | { type: 'heading'; spans: RichSpan[] }
   | { type: 'list'; ordered: boolean; items: RichSpan[][] }
-  | { type: 'image'; url: string; alt: string; caption: string };
+  | { type: 'image'; url: string; alt: string; caption: string }
+  /**
+   * Video o contenido externo. `embedUrl` y `provider` los pone el servidor a
+   * partir de `sourceUrl` contra su lista cerrada de proveedores: mandarlos desde
+   * aqui no sirve de nada, se recalculan.
+   */
+  | { type: 'embed'; sourceUrl: string; provider?: string; embedUrl?: string; caption: string };
 
 /** Informacion ampliada de un elemento: lo que se ve al pasar el raton o al pulsar. */
 export interface ElementInteraction {
@@ -394,8 +400,10 @@ export interface ElementInteraction {
 
 /** Topes por tipo; los mismos que aplica el servidor. */
 export const TOPES_INTERACCION = {
-  tooltip: { texto: 600, imagenes: 1, bloques: 8 },
-  popup: { texto: 8000, imagenes: 10, bloques: 60 },
+  // El globo flota sin recibir el raton, asi que un video ahi no se podria ni
+  // reproducir: los incrustados son cosa de la ventana.
+  tooltip: { texto: 600, imagenes: 1, bloques: 8, incrustados: 0 },
+  popup: { texto: 8000, imagenes: 10, bloques: 60, incrustados: 4 },
 } as const;
 
 export type AnimationEffect =

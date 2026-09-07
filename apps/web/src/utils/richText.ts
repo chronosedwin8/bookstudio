@@ -302,3 +302,7 @@ export function longitudVisible(bloques: RichBlock[]): number {
 export function contarImagenes(bloques: RichBlock[]): number {
   return bloques.filter((b) => b.type === 'image').length;
 }
+
+export function contarIncrustados(bloques: RichBlock[]): number {
+  return bloques.filter((b) => b.type === 'embed').length;
+}

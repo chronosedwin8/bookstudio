@@ -6,7 +6,7 @@
  * verdad, y probarlos contra un DOM simulado seria comprobar el simulador. Se
  * prueban en Chrome, en el guion de verificacion, contra el modulo real.
  */
-import { bloquesATexto, contarImagenes, enlaceValido, longitudVisible } from './richText.js';
+import { bloquesATexto, contarImagenes, contarIncrustados, enlaceValido, longitudVisible } from './richText.js';
 import type { RichBlock } from '@/types/api';
 
 let fallos = 0;
@@ -49,6 +49,18 @@ check(
   String(longitudVisible(contenido)),
 );
 check('las imagenes se cuentan', contarImagenes(contenido) === 1);
+check('los incrustados se cuentan aparte', contarIncrustados(contenido) === 0);
+check(
+  'y se cuentan cuando los hay',
+  contarIncrustados([
+    ...contenido,
+    { type: 'embed', sourceUrl: 'https://youtu.be/dQw4w9WgXcQ', caption: '' },
+  ]) === 1,
+);
+check(
+  'el pie de un video cuenta como texto visible',
+  longitudVisible([{ type: 'embed', sourceUrl: 'https://youtu.be/x', caption: 'Documental' }]) === 'Documental'.length,
+);
 check('sin bloques la longitud es cero', longitudVisible([]) === 0);
 check('y el texto plano queda vacio', bloquesATexto([]) === '');
 

@@ -367,10 +367,59 @@ export const richBlockSchema = z.discriminatedUnion('type', [
     alt: z.string().max(300).default(''),
     caption: z.string().max(300).default(''),
   }),
+  /**
+   * Video o contenido externo. Igual que el elemento `embed` del lienzo:
+   * `embedUrl` NO lo elige quien escribe, se deriva del enlace original contra la
+   * lista cerrada de proveedores. Un iframe hacia una direccion cualquiera dentro
+   * del libro de un alumno seria una puerta abierta a cualquier pagina.
+   */
+  z.object({
+    type: z.literal('embed'),
+    sourceUrl: z.string().min(8).max(2048).trim(),
+    provider: z.string().max(40).optional(),
+    embedUrl: z.string().max(2048).optional(),
+    caption: z.string().max(300).default(''),
+  }),
 ]);
 
 export type RichSpan = z.infer<typeof richSpanSchema>;
 export type RichBlock = z.infer<typeof richBlockSchema>;
+
+/**
+ * Lista de bloques, con la direccion de incrustacion ya resuelta.
+ *
+ * La resolucion va aqui y no en el bloque porque `discriminatedUnion` solo admite
+ * objetos: al ponerle un `.transform()` a una de sus ramas deja de serlo y la
+ * union lo rechaza.
+ */
+export const richContentSchema = z
+  .array(richBlockSchema)
+  .max(60)
+  .transform((bloques, ctx) => {
+    const salida: RichBlock[] = [];
+    let hayFallo = false;
+
+    bloques.forEach((bloque, i) => {
+      if (bloque.type !== 'embed') {
+        salida.push(bloque);
+        return;
+      }
+      const resuelto = resolveEmbed(bloque.sourceUrl);
+      if (!resuelto) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [i, 'sourceUrl'],
+          message:
+            'Enlace no admitido. Usa YouTube, Vimeo, PeerTube, Google, Microsoft, Internet Archive o Wikipedia.',
+        });
+        hayFallo = true;
+        return;
+      }
+      salida.push({ ...bloque, provider: resuelto.provider, embedUrl: resuelto.embedUrl });
+    });
+
+    return hayFallo ? z.NEVER : salida;
+  });
 
 /** Cuenta los caracteres visibles de un contenido, para los topes de tamano. */
 export function longitudVisible(bloques: RichBlock[]): number {
@@ -391,12 +440,16 @@ export function contarImagenes(bloques: RichBlock[]): number {
   return bloques.filter((b) => b.type === 'image').length;
 }
 
+export function contarIncrustados(bloques: RichBlock[]): number {
+  return bloques.filter((b) => b.type === 'embed').length;
+}
+
 /*
  * Topes. El globo flota junto al cursor y tiene que caber en pantalla sin tapar
  * lo que se esta mirando; la ventana ocupa el centro y puede extenderse.
  */
-const TOPE_GLOBO = { texto: 600, imagenes: 1, bloques: 8 };
-const TOPE_VENTANA = { texto: 8000, imagenes: 10, bloques: 60 };
+const TOPE_GLOBO = { texto: 600, imagenes: 1, bloques: 8, incrustados: 0 };
+const TOPE_VENTANA = { texto: 8000, imagenes: 10, bloques: 60, incrustados: 4 };
 
 export const TOPES_INTERACCION = { tooltip: TOPE_GLOBO, popup: TOPE_VENTANA };
 
@@ -421,14 +474,22 @@ export const interactionSchema = z
      */
     text: z.string().trim().max(8000).default(''),
     /** El contenido de verdad. Si falta, se pinta `text` como un parrafo. */
-    content: z.array(richBlockSchema).max(60).optional(),
+    content: richContentSchema.optional(),
     /** Imagen de cabecera, encima del contenido. */
     imageUrl: z.string().max(2048).optional(),
   })
   .superRefine((value, ctx) => {
     const tope = TOPES_INTERACCION[value.kind];
-    const bloques = value.content ?? [];
     const nombre = value.kind === 'tooltip' ? 'globo' : 'ventana';
+
+    /*
+     * Cuando la resolucion de un incrustado aborta, Zod deja aqui su centinela en
+     * lugar del array. Sin esta guarda, contar los bloques reventaba: un enlace de
+     * un proveedor no admitido daba un 500 en vez del 400 que le corresponde.
+     * Ya hay una queja registrada por ese bloque, asi que no hace falta anadir mas.
+     */
+    if (value.content !== undefined && !Array.isArray(value.content)) return;
+    const bloques = value.content ?? [];
 
     // Sin nada que mostrar no hay interaccion que valga.
     if (!value.text.trim() && bloques.length === 0 && !value.imageUrl) {
@@ -446,6 +507,22 @@ export const interactionSchema = z
         code: z.ZodIssueCode.custom,
         path: ['content'],
         message: `Un ${nombre} admite hasta ${tope.texto} caracteres. Para mas texto, usa una ventana.`,
+      });
+    }
+
+    /*
+     * El globo flota sin recibir el raton (si lo recibiera, apareceria bajo el
+     * cursor y parpadearia sin parar), asi que un video ahi no se podria ni
+     * reproducir. Y una tarjeta pegada al cursor tampoco es sitio para verlo.
+     */
+    const incrustados = contarIncrustados(bloques);
+    if (incrustados > tope.incrustados) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['content'],
+        message: tope.incrustados === 0
+          ? 'Un globo no admite videos ni contenido incrustado. Para eso usa una ventana.'
+          : `Una ventana admite hasta ${tope.incrustados} videos o contenidos incrustados.`,
       });
     }
 

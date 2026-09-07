@@ -2,11 +2,14 @@
 import { computed, ref } from 'vue';
 import RichContent from './RichContent.vue';
 import RichTextEditor from './RichTextEditor.vue';
+import EmbedDialog from '@/components/media/EmbedDialog.vue';
 import MagnificDialog from '@/components/media/MagnificDialog.vue';
 import MediaSearchDialog from '@/components/media/MediaSearchDialog.vue';
 import { mediaApi } from '@/services/api';
 import { errorMessage } from '@/services/http';
-import { bloquesATexto, contarImagenes, enlaceValido, longitudVisible } from '@/utils/richText';
+import {
+  bloquesATexto, contarImagenes, contarIncrustados, enlaceValido, longitudVisible,
+} from '@/utils/richText';
 import { TOPES_INTERACCION, type ElementInteraction, type MediaResult, type RichBlock } from '@/types/api';
 
 /**
@@ -31,13 +34,18 @@ const emit = defineEmits<{
  */
 type Seccion =
   | { tipo: 'texto'; bloques: RichBlock[] }
-  | { tipo: 'imagen'; bloque: Extract<RichBlock, { type: 'image' }> };
+  | { tipo: 'imagen'; bloque: Extract<RichBlock, { type: 'image' }> }
+  | { tipo: 'incrustado'; bloque: Extract<RichBlock, { type: 'embed' }> };
 
 function aSecciones(bloques: RichBlock[]): Seccion[] {
   const salida: Seccion[] = [];
   for (const bloque of bloques) {
     if (bloque.type === 'image') {
       salida.push({ tipo: 'imagen', bloque });
+      continue;
+    }
+    if (bloque.type === 'embed') {
+      salida.push({ tipo: 'incrustado', bloque });
       continue;
     }
     const ultima = salida[salida.length - 1];
@@ -66,6 +74,10 @@ const bloques = computed<RichBlock[]>(() =>
 );
 
 const tope = computed(() => TOPES_INTERACCION[props.interaction.kind]);
+const incrustados = computed(() => contarIncrustados(bloques.value));
+
+/** El globo no admite incrustados: no recibe el raton y no se podrian usar. */
+const admiteIncrustados = computed(() => tope.value.incrustados > 0);
 const largo = computed(() => longitudVisible(bloques.value));
 const imagenes = computed(() => contarImagenes(bloques.value) + (imagenCabecera.value ? 1 : 0));
 
@@ -77,10 +89,17 @@ const problema = computed(() => {
   if (imagenes.value > tope.value.imagenes) {
     return `Un ${nombre} admite hasta ${tope.value.imagenes} imagen(es) y llevas ${imagenes.value}.`;
   }
+  if (incrustados.value > tope.value.incrustados) {
+    return tope.value.incrustados === 0
+      ? 'Un globo no admite vídeos. Cambia a ventana o quita el vídeo.'
+      : `Una ventana admite hasta ${tope.value.incrustados} vídeos y llevas ${incrustados.value}.`;
+  }
   if (bloques.value.length > tope.value.bloques) {
     return `Un ${nombre} admite hasta ${tope.value.bloques} bloques.`;
   }
-  if (!largo.value && !imagenes.value) return 'Escribe un texto o añade una imagen.';
+  if (!largo.value && !imagenes.value && !incrustados.value) {
+    return 'Escribe un texto o añade una imagen o un vídeo.';
+  }
   return null;
 });
 
@@ -119,7 +138,7 @@ function actualizarTexto(indice: number, nuevos: RichBlock[]): void {
 
 // --- Imagenes ---
 
-const dialogo = ref<'ninguno' | 'buscar' | 'ia'>('ninguno');
+const dialogo = ref<'ninguno' | 'buscar' | 'ia' | 'incrustar'>('ninguno');
 /** Cuando se pide una imagen, adonde va: al cuerpo o a la cabecera. */
 const destinoImagen = ref<'cuerpo' | 'cabecera'>('cuerpo');
 const subiendo = ref(false);
@@ -180,6 +199,20 @@ function alBuscar(resultado: MediaResult): void {
 function alGenerar(payload: { fileUrl: string; altText: string }): void {
   dialogo.value = 'ninguno';
   colocarImagen(payload.fileUrl, payload.altText);
+}
+
+/**
+ * El enlace se manda tal cual lo pego quien escribe. La direccion de
+ * incrustacion y el proveedor los deriva el servidor contra su lista cerrada,
+ * asi que aqui no hace falta (ni serviria) adivinarlos.
+ */
+function alIncrustar(payload: { sourceUrl: string; title: string }): void {
+  dialogo.value = 'ninguno';
+  error.value = null;
+  secciones.value = [
+    ...secciones.value,
+    { tipo: 'incrustado', bloque: { type: 'embed', sourceUrl: payload.sourceUrl, caption: payload.title } },
+  ];
 }
 
 function pegarDireccion(destino: 'cuerpo' | 'cabecera'): void {
@@ -274,7 +307,7 @@ function guardar(): void {
             >
               <div class="mb-1.5 flex items-center justify-between">
                 <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-                  {{ seccion.tipo === 'texto' ? 'Texto' : 'Imagen' }}
+                  {{ { texto: 'Texto', imagen: 'Imagen', incrustado: 'Vídeo' }[seccion.tipo] }}
                 </span>
                 <div class="flex items-center gap-1">
                   <button
@@ -299,6 +332,21 @@ function guardar(): void {
                 :rows="3"
                 @update="actualizarTexto(i, $event)"
               />
+
+              <!-- Video o contenido externo: aqui solo se ve la ficha; el
+                   reproductor se monta en el lector, no dentro del editor. -->
+              <div v-else-if="seccion.tipo === 'incrustado'" class="space-y-1.5">
+                <p class="truncate text-xs text-slate-500">
+                  <span class="mr-1">▶</span>{{ seccion.bloque.sourceUrl }}
+                </p>
+                <input
+                  v-model="seccion.bloque.caption"
+                  type="text"
+                  class="input py-1 text-xs"
+                  maxlength="300"
+                  placeholder="Pie del vídeo (opcional)"
+                />
+              </div>
 
               <div v-else class="flex gap-3">
                 <img :src="seccion.bloque.url" alt="" class="h-24 w-32 shrink-0 rounded object-cover" />
@@ -337,6 +385,12 @@ function guardar(): void {
               <button type="button" class="btn-secondary px-2 py-1 text-xs" @click="pegarDireccion('cuerpo')">
                 + Imagen (dirección)
               </button>
+              <button
+                v-if="admiteIncrustados"
+                type="button"
+                class="btn-secondary px-2 py-1 text-xs"
+                @click="dialogo = 'incrustar'"
+              >+ Vídeo o incrustado</button>
             </div>
           </div>
 
@@ -374,6 +428,13 @@ function guardar(): void {
           <p class="mt-3 text-[11px] leading-tight text-slate-500">
             {{ largo }}/{{ tope.texto }} caracteres · {{ imagenes }}/{{ tope.imagenes }}
             {{ tope.imagenes === 1 ? 'imagen' : 'imágenes' }}
+            <template v-if="admiteIncrustados">
+              · {{ incrustados }}/{{ tope.incrustados }} vídeos
+            </template>
+          </p>
+          <p v-if="!admiteIncrustados" class="mt-1 text-[11px] leading-tight text-slate-400">
+            El globo flota junto al cursor y no recibe el ratón, así que un vídeo ahí no
+            se podría reproducir. Para vídeos, usa una ventana.
           </p>
         </aside>
       </div>
@@ -393,5 +454,6 @@ function guardar(): void {
 
     <MediaSearchDialog v-if="dialogo === 'buscar'" @close="dialogo = 'ninguno'" @pick="alBuscar" />
     <MagnificDialog v-else-if="dialogo === 'ia'" @close="dialogo = 'ninguno'" @pick="alGenerar" />
+    <EmbedDialog v-else-if="dialogo === 'incrustar'" @close="dialogo = 'ninguno'" @pick="alIncrustar" />
   </div>
 </template>

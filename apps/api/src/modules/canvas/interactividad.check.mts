@@ -135,6 +135,84 @@ check(
   }).success,
 );
 
+// --- Videos y contenido incrustado ---
+const VIDEO = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ';
+
+const conVideo = interactionSchema.safeParse({
+  kind: 'popup', text: 'Ficha',
+  content: [{ type: 'embed', sourceUrl: VIDEO, caption: 'El ciclo del agua' }],
+});
+check('una ventana admite un video', conVideo.success, JSON.stringify(conVideo.error?.issues?.[0]));
+check(
+  'la direccion de incrustacion la pone el servidor, no quien escribe',
+  (conVideo.data?.content?.[0] as { embedUrl?: string })?.embedUrl === 'https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ',
+  JSON.stringify(conVideo.data?.content?.[0]),
+);
+check(
+  'y tambien el proveedor',
+  (conVideo.data?.content?.[0] as { provider?: string })?.provider === 'youtube',
+);
+check(
+  'una direccion de incrustacion enviada a mano se ignora',
+  (interactionSchema.safeParse({
+    kind: 'popup', text: 'x',
+    content: [{ type: 'embed', sourceUrl: VIDEO, provider: 'inventado', embedUrl: 'https://malo.example/incrustar' }],
+  }).data?.content?.[0] as { embedUrl?: string })?.embedUrl === 'https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ',
+);
+check(
+  'un proveedor que no esta en la lista se rechaza',
+  !interactionSchema.safeParse({
+    kind: 'popup', text: 'x', content: [{ type: 'embed', sourceUrl: 'https://malo.example/video/1' }],
+  }).success,
+);
+check(
+  'sin https no hay incrustacion',
+  !interactionSchema.safeParse({
+    kind: 'popup', text: 'x', content: [{ type: 'embed', sourceUrl: 'http://www.youtube.com/watch?v=dQw4w9WgXcQ' }],
+  }).success,
+);
+check(
+  'un dominio que solo se le parece no cuela',
+  !interactionSchema.safeParse({
+    kind: 'popup', text: 'x', content: [{ type: 'embed', sourceUrl: 'https://youtube.com.malo.net/watch?v=dQw4w9WgXcQ' }],
+  }).success,
+);
+check(
+  'el globo NO admite videos',
+  !interactionSchema.safeParse({
+    kind: 'tooltip', text: 'x', content: [{ type: 'embed', sourceUrl: VIDEO }],
+  }).success,
+);
+check(
+  'una ventana con cinco videos se rechaza',
+  !interactionSchema.safeParse({
+    kind: 'popup', text: 'x',
+    content: Array.from({ length: 5 }, () => ({ type: 'embed' as const, sourceUrl: VIDEO })),
+  }).success,
+);
+check(
+  'con cuatro si vale',
+  interactionSchema.safeParse({
+    kind: 'popup', text: 'x',
+    content: Array.from({ length: 4 }, () => ({ type: 'embed' as const, sourceUrl: VIDEO })),
+  }).success,
+);
+check(
+  'un video mezclado con texto e imagenes vale',
+  interactionSchema.safeParse({
+    kind: 'popup', text: 'Ficha',
+    content: [
+      { type: 'heading', spans: [{ text: 'El agua' }] },
+      { type: 'embed', sourceUrl: 'https://vimeo.com/123456789', caption: 'Documental' },
+      { type: 'image', url: 'https://x/a.png' },
+    ],
+  }).success,
+);
+check(
+  'un video solo, sin texto, ya es contenido',
+  interactionSchema.safeParse({ kind: 'popup', content: [{ type: 'embed', sourceUrl: VIDEO }] }).success,
+);
+
 // --- El enlace y el clic no caben juntos ---
 const conEnlace = { text: 'Hola', linkUrl: 'https://ejemplo.org' };
 check(

@@ -276,9 +276,24 @@ function blocksHtml(blocks: RichBlock[]): string {
         const items = bloque.items.map((item) => `<li>${spansHtml(item)}</li>`).join('');
         return `<${etiqueta}>${items}</${etiqueta}>`;
       }
+      const pie = bloque.caption ? `<figcaption>${escapeHtml(bloque.caption)}</figcaption>` : '';
+
+      if (bloque.type === 'embed') {
+        /*
+         * La direccion la reconstruyo el servidor contra su lista cerrada de
+         * proveedores, no la eligio quien escribio. Aun asi el iframe va con
+         * sandbox: la copia se abre fuera de la plataforma y de sus defensas.
+         */
+        const incrustada = safeUrl(bloque.embedUrl);
+        if (!incrustada) return '';
+        return `<figure class="video"><iframe src="${escapeHtml(incrustada)}" loading="lazy"` +
+          ` referrerpolicy="strict-origin-when-cross-origin"` +
+          ` sandbox="allow-scripts allow-same-origin allow-presentation allow-popups allow-popups-to-escape-sandbox"` +
+          ` allow="encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe>${pie}</figure>`;
+      }
+
       const url = safeUrl(bloque.url);
       if (!url) return '';
-      const pie = bloque.caption ? `<figcaption>${escapeHtml(bloque.caption)}</figcaption>` : '';
       return `<figure><img src="${escapeHtml(url)}" alt="${escapeHtml(bloque.alt ?? '')}" loading="lazy">${pie}</figure>`;
     })
     .join('');
@@ -387,6 +402,9 @@ export function bookToHtml(book: BookDetail): string {
   .info-cuerpo ul, .info-cuerpo ol { margin:0 0 .5rem; padding-left:1.25rem; }
   .info-cuerpo li { margin:.15rem 0; }
   .info-cuerpo figure { margin:.5rem 0; }
+  .info-cuerpo figure.video { aspect-ratio:16/9; }
+  .info-cuerpo figure.video iframe { width:100%; height:100%; border:0; border-radius:.5rem;
+                                     background:#0f172a; }
   .info-cuerpo img { display:block; width:100%; max-height:16rem; object-fit:contain;
                      border-radius:.5rem; }
   .info-cuerpo figcaption { text-align:center; font-size:.75rem; font-style:italic;
