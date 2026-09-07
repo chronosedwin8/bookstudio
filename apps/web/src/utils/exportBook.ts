@@ -7,7 +7,7 @@
  */
 import { paperStyle } from './papers';
 import { SHAPES, type ShapeName } from './shapes';
-import type { BookDetail, CanvasElement, Page } from '@/types/api';
+import type { BookDetail, CanvasElement, Page, RichBlock, RichSpan } from '@/types/api';
 
 const ASPECT = { square: 1, portrait: 3 / 4, landscape: 4 / 3 } as const;
 
@@ -224,13 +224,64 @@ function elementHtml(element: CanvasElement): string {
    * tamano y su recorte: un globo dentro de una imagen pequena seria ilegible.
    */
   const info = element.interaction;
+  /*
+   * El contenido viaja ya convertido en marcado dentro de un atributo, generado
+   * por blocksHtml: no es marcado que haya escrito nadie, es el que produce este
+   * fichero a partir de los bloques, con cada texto escapado. El guion de abajo
+   * lo coloca con innerHTML, y solo esa cadena, nunca lo que teclee una persona.
+   */
+  const cuerpo = info
+    ? info.content?.length
+      ? blocksHtml(info.content)
+      : `<p>${escapeHtml(info.text).replace(/\n/g, '<br>')}</p>`
+    : '';
+
   const extra = info
-    ? ` data-info="${escapeHtml(info.text)}" data-info-titulo="${escapeHtml(info.title)}"` +
+    ? ` data-info="${escapeHtml(cuerpo)}" data-info-titulo="${escapeHtml(info.title)}"` +
+      ` data-info-plano="${escapeHtml(info.text)}"` +
       ` data-info-modo="${info.kind}" data-info-abre="${info.trigger}"` +
       (safeUrl(info.imageUrl) ? ` data-info-img="${escapeHtml(safeUrl(info.imageUrl)!)}"` : '')
     : '';
 
   return `<div class="el${info ? ' tiene-info' : ''}"${extra}${wrapperStyle}>${inner}</div>`;
+}
+
+/**
+ * Convierte el contenido con formato en marcado. Cada texto pasa por escapeHtml
+ * y las etiquetas las pone este codigo, no el contenido: por eso una negrita se
+ * ve como negrita y un `<script>` escrito por alguien se ve como el texto que es.
+ */
+function spansHtml(spans: RichSpan[]): string {
+  return spans
+    .map((span) => {
+      let dentro = escapeHtml(span.text).replace(/\n/g, '<br>');
+      if (span.bold) dentro = `<b>${dentro}</b>`;
+      if (span.italic) dentro = `<i>${dentro}</i>`;
+      if (span.underline) dentro = `<u>${dentro}</u>`;
+      if (span.strike) dentro = `<s>${dentro}</s>`;
+      const url = safeUrl(span.href);
+      if (url) dentro = `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${dentro}</a>`;
+      return dentro;
+    })
+    .join('');
+}
+
+function blocksHtml(blocks: RichBlock[]): string {
+  return blocks
+    .map((bloque) => {
+      if (bloque.type === 'paragraph') return `<p>${spansHtml(bloque.spans)}</p>`;
+      if (bloque.type === 'heading') return `<h4>${spansHtml(bloque.spans)}</h4>`;
+      if (bloque.type === 'list') {
+        const etiqueta = bloque.ordered ? 'ol' : 'ul';
+        const items = bloque.items.map((item) => `<li>${spansHtml(item)}</li>`).join('');
+        return `<${etiqueta}>${items}</${etiqueta}>`;
+      }
+      const url = safeUrl(bloque.url);
+      if (!url) return '';
+      const pie = bloque.caption ? `<figcaption>${escapeHtml(bloque.caption)}</figcaption>` : '';
+      return `<figure><img src="${escapeHtml(url)}" alt="${escapeHtml(bloque.alt ?? '')}" loading="lazy">${pie}</figure>`;
+    })
+    .join('');
 }
 
 function pageHtml(page: Page, index: number): string {
@@ -308,20 +359,40 @@ export function bookToHtml(book: BookDetail): string {
                         border-radius:0; margin:0; }
   }
   .tiene-info { cursor:help; }
-  #globo { position:fixed; z-index:60; max-width:20rem; display:none; pointer-events:none;
-           background:rgba(15,23,42,.96); color:#fff; padding:.5rem .7rem; border-radius:.5rem;
-           font-size:13px; line-height:1.35; box-shadow:0 8px 24px rgba(0,0,0,.35); }
-  #globo b { display:block; margin-bottom:.15rem; }
-  #globo span, #vent p { white-space:pre-line; }
+  #globo { position:fixed; z-index:60; max-width:19rem; display:none; pointer-events:none;
+           background:rgba(15,23,42,.96); color:#fff; border-radius:.75rem; overflow:hidden;
+           font-size:13px; line-height:1.35; box-shadow:0 12px 32px rgba(0,0,0,.4); }
+  #globo .cab { display:block; margin:0; padding:.5rem .7rem 0; font-weight:600; }
+  #globo .cuerpo { padding:.4rem .7rem .55rem; }
+  #globo img { display:block; width:100%; max-height:9rem; object-fit:cover; }
+
   #vent { position:fixed; inset:0; z-index:61; display:none; place-items:center;
-          background:rgba(15,23,42,.65); padding:1rem; }
-  #vent > div { background:#fff; color:#0f172a; border-radius:1rem; padding:1.25rem;
-                max-width:32rem; width:100%; max-height:85vh; overflow:auto; }
-  #vent h2 { margin:0 0 .6rem; font-size:1.05rem; }
-  #vent img { max-width:100%; max-height:16rem; object-fit:contain; border-radius:.5rem;
-              margin-bottom:.6rem; }
-  #vent button { float:right; border:0; background:none; font-size:1.4rem; line-height:1;
-                 cursor:pointer; color:#94a3b8; }
+          background:rgba(15,23,42,.7); padding:1rem; }
+  #vent .caja { display:flex; flex-direction:column; background:#fff; color:#0f172a;
+                border-radius:1rem; width:100%; max-width:36rem; max-height:88vh;
+                overflow:hidden; box-shadow:0 24px 60px rgba(0,0,0,.45); }
+  #vent header { display:flex; align-items:flex-start; justify-content:space-between; gap:.75rem;
+                 padding:.75rem 1.25rem; border-bottom:1px solid #e2e8f0; background:#f8fafc; }
+  #vent h2 { margin:0; font-size:1rem; line-height:1.35; }
+  #vent .cuerpo { flex:1; min-height:0; overflow:auto; }
+  #vent .relleno { padding:.9rem 1.25rem; }
+  #vent .hero { display:block; width:100%; max-height:18rem; object-fit:cover; }
+  #vent button { border:0; background:none; font-size:1.5rem; line-height:1; cursor:pointer;
+                 color:#94a3b8; padding:0 .25rem; }
+  #vent button:hover { color:#334155; }
+
+  /* Contenido con formato, en los dos sitios */
+  .info-cuerpo p { margin:0 0 .5rem; }
+  .info-cuerpo h4 { margin:.6rem 0 .3rem; font-size:1rem; }
+  .info-cuerpo ul, .info-cuerpo ol { margin:0 0 .5rem; padding-left:1.25rem; }
+  .info-cuerpo li { margin:.15rem 0; }
+  .info-cuerpo figure { margin:.5rem 0; }
+  .info-cuerpo img { display:block; width:100%; max-height:16rem; object-fit:contain;
+                     border-radius:.5rem; }
+  .info-cuerpo figcaption { text-align:center; font-size:.75rem; font-style:italic;
+                            opacity:.75; margin-top:.25rem; }
+  .info-cuerpo > :last-child { margin-bottom:0; }
+  #globo .info-cuerpo img { max-height:8rem; }
 </style>
 </head>
 <body>
@@ -339,10 +410,17 @@ export function bookToHtml(book: BookDetail): string {
 
 <footer>Creado con BookStudio</footer>
 
-<div id="globo" role="tooltip"></div>
-<div id="vent" role="dialog" aria-modal="true"><div>
-  <button type="button" aria-label="Cerrar">&times;</button>
-  <h2></h2><img alt="" hidden><p></p>
+<div id="globo" role="tooltip">
+  <img alt="" hidden>
+  <p class="cab" hidden></p>
+  <div class="cuerpo info-cuerpo"></div>
+</div>
+<div id="vent" role="dialog" aria-modal="true"><div class="caja">
+  <header><h2></h2><button type="button" aria-label="Cerrar">&times;</button></header>
+  <div class="cuerpo">
+    <img class="hero" alt="" hidden>
+    <div class="relleno info-cuerpo"></div>
+  </div>
 </div></div>
 <script>
   /*
@@ -350,10 +428,13 @@ export function bookToHtml(book: BookDetail): string {
    * texto lo tecleo una persona y aqui no se convierte en marcado.
    */
   var globo = document.getElementById('globo');
+  var globoCab = globo.querySelector('.cab');
+  var globoCuerpo = globo.querySelector('.cuerpo');
+  var globoImg = globo.querySelector('img');
   var vent = document.getElementById('vent');
   var ventTit = vent.querySelector('h2');
-  var ventTxt = vent.querySelector('p');
-  var ventImg = vent.querySelector('img');
+  var ventTxt = vent.querySelector('.relleno');
+  var ventImg = vent.querySelector('.hero');
 
   function cerrarVentana() { vent.style.display = 'none'; }
   vent.querySelector('button').addEventListener('click', cerrarVentana);
@@ -362,7 +443,9 @@ export function bookToHtml(book: BookDetail): string {
 
   function abrirVentana(el) {
     ventTit.textContent = el.getAttribute('data-info-titulo') || 'Mas informacion';
-    ventTxt.textContent = el.getAttribute('data-info') || '';
+    // innerHTML solo con la cadena que genero este mismo fichero al exportar,
+    // donde cada texto de origen ya paso por escapeHtml.
+    ventTxt.innerHTML = el.getAttribute('data-info') || '';
     var img = el.getAttribute('data-info-img');
     ventImg.hidden = !img;
     if (img) ventImg.src = img;
@@ -392,11 +475,12 @@ export function bookToHtml(book: BookDetail): string {
     }
     el.addEventListener('mouseenter', function (e) {
       var titulo = el.getAttribute('data-info-titulo');
-      globo.textContent = '';
-      if (titulo) { var b = document.createElement('b'); b.textContent = titulo; globo.appendChild(b); }
-      var s = document.createElement('span');
-      s.textContent = el.getAttribute('data-info') || '';
-      globo.appendChild(s);
+      globoCab.textContent = titulo || '';
+      globoCab.hidden = !titulo;
+      var img = el.getAttribute('data-info-img');
+      globoImg.hidden = !img;
+      if (img) globoImg.src = img;
+      globoCuerpo.innerHTML = el.getAttribute('data-info') || '';
       globo.style.display = 'block';
       colocarGlobo(e);
     });

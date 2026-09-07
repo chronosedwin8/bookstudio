@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import ChartInspector from './ChartInspector.vue';
+import InteractionContentDialog from './InteractionContentDialog.vue';
 import QuestionInspector from './QuestionInspector.vue';
 import {
   FONT_GROUPS,
@@ -8,6 +9,7 @@ import {
   type CanvasElement,
   type ElementAnimation,
   type ElementInteraction,
+  type RichBlock,
   type ChartProperties,
   type QuestionProperties,
   type ShapeProperties,
@@ -104,26 +106,32 @@ const duracion = computed(() => {
  * Interactividad: informacion ampliada al pasar el raton o al pulsar
  * ------------------------------------------------------------------------ */
 
-/** Limites que tambien aplica el backend; aqui solo para avisar antes de enviar. */
-const TOPE_GLOBO = 300;
-const TOPE_VENTANA = 4000;
-
 const interaccion = computed(() => props.element?.interaction ?? null);
-
-const topeTexto = computed(() => (interaccion.value?.kind === 'popup' ? TOPE_VENTANA : TOPE_GLOBO));
 
 /** El clic ya esta ocupado si el elemento lleva enlace: no caben los dos. */
 const clicOcupado = computed(() => linkUrl.value.trim().length > 0);
 
+/** Resumen de lo que hay dentro, para no tener que abrir el dialogo a mirar. */
+const resumen = computed(() => {
+  const info = interaccion.value;
+  if (!info) return null;
+  const bloques: RichBlock[] = info.content ?? [];
+  const imagenes = bloques.filter((b) => b.type === 'image').length + (info.imageUrl ? 1 : 0);
+  const texto = (info.text ?? '').trim();
+  return {
+    titulo: info.title,
+    adelanto: texto.length > 90 ? texto.slice(0, 90) + '...' : texto,
+    imagenes,
+  };
+});
+
+const editandoContenido = ref(false);
+
 /**
- * Lo que se esta escribiendo antes de que valga la pena guardarlo. Sin esto, el
- * primer caracter del titulo se perderia: el elemento aun no tiene interaccion
- * guardada y el campo volveria a quedarse vacio en cuanto se repintara.
+ * Al elegir tipo o disparo se guarda enseguida, pero solo si ya hay contenido:
+ * el servidor rechaza una interaccion vacia, y con razon. Sin contenido, elegir
+ * el tipo abre directamente el dialogo para escribirlo.
  */
-const borrador = ref<ElementInteraction | null>(null);
-
-const infoActual = computed(() => interaccion.value ?? borrador.value);
-
 function ponerInteraccion(cambio: Partial<ElementInteraction>): void {
   const base: ElementInteraction = interaccion.value ?? {
     kind: 'tooltip',
@@ -132,25 +140,35 @@ function ponerInteraccion(cambio: Partial<ElementInteraction>): void {
     text: '',
   };
   const siguiente = { ...base, ...cambio };
-
-  // Un globo no admite ni parrafadas ni imagen. Se recorta al vuelo en vez de
-  // dejar que el backend rechace el cambio con un error que no explica nada.
-  if (siguiente.kind === 'tooltip') {
-    siguiente.text = siguiente.text.slice(0, TOPE_GLOBO);
-    delete siguiente.imageUrl;
-  } else {
-    siguiente.text = siguiente.text.slice(0, TOPE_VENTANA);
-  }
   if (clicOcupado.value && siguiente.trigger === 'click') siguiente.trigger = 'hover';
 
-  // Sin texto no hay nada que mostrar, y el backend lo rechaza: se guarda solo
-  // cuando ya hay contenido. Mientras tanto vive en el borrador de aqui.
-  borrador.value = siguiente;
-  if (siguiente.text.trim()) emit('patch', { interaction: siguiente });
+  if (!interaccion.value) {
+    // Aun no hay nada guardado: se lleva al dialogo con el tipo ya elegido.
+    pendiente.value = siguiente;
+    editandoContenido.value = true;
+    return;
+  }
+  emit('patch', { interaction: siguiente });
+}
+
+/** Interaccion a medio crear, mientras el dialogo esta abierto. */
+const pendiente = ref<ElementInteraction | null>(null);
+
+const enEdicion = computed<ElementInteraction | null>(() => pendiente.value ?? interaccion.value);
+
+function guardarContenido(valor: ElementInteraction): void {
+  editandoContenido.value = false;
+  pendiente.value = null;
+  emit('patch', { interaction: valor });
+}
+
+function cerrarContenido(): void {
+  editandoContenido.value = false;
+  pendiente.value = null;
 }
 
 function quitarInteraccion(): void {
-  borrador.value = null;
+  pendiente.value = null;
   emit('patch', { interaction: null });
 }
 
@@ -177,7 +195,7 @@ const MOMENTOS: Array<{ id: ElementAnimation['trigger']; label: string; ayuda: s
   { id: 'click', label: 'Al pulsar', ayuda: 'Se reproduce cada vez que se pulsa el elemento.' },
 ];
 
-watch(() => props.element?.id, () => { borrador.value = null; });
+watch(() => props.element?.id, () => { pendiente.value = null; editandoContenido.value = false; });
 
 const animacion = computed(() => props.element?.animation ?? null);
 
@@ -588,7 +606,7 @@ const SOFT_BACKGROUNDS = ['transparent', '#F7F4EC', '#EDF2F0', '#FBF3E4', '#EFEA
             :key="modo.id"
             type="button"
             class="flex-1 rounded-lg border px-2 py-1.5 text-xs font-medium transition"
-            :class="(infoActual?.kind ?? 'ninguna') === modo.id
+            :class="(interaccion?.kind ?? 'ninguna') === modo.id
               ? 'border-brand-500 bg-brand-50 text-brand-700'
               : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50'"
             @click="modo.id === 'ninguna'
@@ -597,7 +615,7 @@ const SOFT_BACKGROUNDS = ['transparent', '#F7F4EC', '#EDF2F0', '#FBF3E4', '#EFEA
           >{{ modo.label }}</button>
         </div>
 
-        <template v-if="infoActual">
+        <template v-if="interaccion">
           <div class="flex gap-1">
             <button
               v-for="disparo in [
@@ -608,7 +626,7 @@ const SOFT_BACKGROUNDS = ['transparent', '#F7F4EC', '#EDF2F0', '#FBF3E4', '#EFEA
               type="button"
               class="flex-1 rounded-lg border px-2 py-1.5 text-[11px] font-medium transition
                      disabled:cursor-not-allowed disabled:opacity-40"
-              :class="infoActual.trigger === disparo.id
+              :class="interaccion.trigger === disparo.id
                 ? 'border-brand-500 bg-brand-50 text-brand-700'
                 : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50'"
               :disabled="disparo.id === 'click' && clicOcupado"
@@ -621,45 +639,23 @@ const SOFT_BACKGROUNDS = ['transparent', '#F7F4EC', '#EDF2F0', '#FBF3E4', '#EFEA
             se mostrará al pasar el ratón.
           </p>
 
-          <input
-            type="text"
-            class="input"
-            placeholder="Título (opcional)"
-            maxlength="120"
-            :value="infoActual.title"
-            @input="ponerInteraccion({ title: ($event.target as HTMLInputElement).value })"
-          />
-
-          <textarea
-            class="input resize-y"
-            :rows="infoActual.kind === 'popup' ? 5 : 3"
-            :maxlength="topeTexto"
-            placeholder="Texto que verá quien lea el libro"
-            :value="infoActual.text"
-            @input="ponerInteraccion({ text: ($event.target as HTMLTextAreaElement).value })"
-          ></textarea>
-
-          <p class="flex items-center justify-between text-[11px] leading-tight text-slate-400">
-            <span>Texto sin formato: se muestra tal cual.</span>
-            <span :class="infoActual.text.length >= topeTexto ? 'font-semibold text-amber-600' : ''">
-              {{ infoActual.text.length }}/{{ topeTexto }}
-            </span>
-          </p>
-
-          <template v-if="infoActual.kind === 'popup'">
-            <input
-              type="url"
-              class="input"
-              placeholder="Imagen de la ventana (opcional)"
-              :value="infoActual.imageUrl ?? ''"
-              @change="ponerInteraccion({ imageUrl: ($event.target as HTMLInputElement).value.trim() || undefined })"
-            />
-            <p class="text-[11px] leading-tight text-slate-400">
-              Se abre una ventana centrada. Se cierra con su aspa o con la tecla Escape.
+          <!-- Resumen de lo que hay guardado -->
+          <div v-if="resumen" class="rounded-lg border border-slate-200 bg-slate-50 p-2">
+            <p v-if="resumen.titulo" class="text-xs font-semibold text-slate-700">{{ resumen.titulo }}</p>
+            <p v-if="resumen.adelanto" class="text-[11px] leading-tight text-slate-500">{{ resumen.adelanto }}</p>
+            <p v-if="resumen.imagenes" class="mt-0.5 text-[11px] text-slate-400">
+              {{ resumen.imagenes }} {{ resumen.imagenes === 1 ? 'imagen' : 'imágenes' }}
             </p>
-          </template>
-          <p v-else class="text-[11px] leading-tight text-slate-400">
-            Aparece un globo junto al cursor. Para más texto o una imagen, usa una ventana.
+          </div>
+
+          <button type="button" class="btn-secondary w-full py-1.5 text-xs" @click="editandoContenido = true">
+            Editar contenido
+          </button>
+
+          <p class="text-[11px] leading-tight text-slate-400">
+            {{ interaccion.kind === 'tooltip'
+              ? 'Aparece una tarjeta junto al cursor. Admite texto con formato y una imagen.'
+              : 'Se abre una ventana centrada. Admite texto con formato, listas y varias imágenes.' }}
           </p>
         </template>
 
@@ -752,6 +748,13 @@ const SOFT_BACKGROUNDS = ['transparent', '#F7F4EC', '#EDF2F0', '#FBF3E4', '#EFEA
       </section>
 
       <button type="button" class="btn-danger mt-auto w-full" @click="emit('remove')">Eliminar elemento</button>
+
+      <InteractionContentDialog
+        v-if="editandoContenido && enEdicion"
+        :interaction="enEdicion"
+        @close="cerrarContenido()"
+        @save="guardarContenido"
+      />
     </template>
   </aside>
 </template>

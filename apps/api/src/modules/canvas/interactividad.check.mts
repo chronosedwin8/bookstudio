@@ -22,30 +22,118 @@ const texto = { text: 'Hola' };
 const elemento = (extra: Record<string, unknown>) =>
   createElementSchema.safeParse({ type: 'text', transformMatrix: marco, properties: texto, ...extra });
 
-// --- El globo de ayuda ---
+// --- El globo y la ventana ---
+const parrafo = (texto: string) => ({ type: 'paragraph' as const, spans: [{ text: texto }] });
+
 check('un globo con texto corto vale', interactionSchema.safeParse({ kind: 'tooltip', text: 'Es un roble' }).success);
 check(
   'el globo no admite una parrafada',
-  !interactionSchema.safeParse({ kind: 'tooltip', text: 'a'.repeat(301) }).success,
+  !interactionSchema.safeParse({ kind: 'tooltip', text: 'a'.repeat(601) }).success,
 );
 check(
   'pero la ventana si',
   interactionSchema.safeParse({ kind: 'popup', text: 'a'.repeat(3000) }).success,
 );
 check(
-  'el globo no admite imagen',
-  !interactionSchema.safeParse({ kind: 'tooltip', text: 'Corto', imageUrl: 'https://x/y.png' }).success,
+  'el globo ya SI admite una imagen',
+  interactionSchema.safeParse({ kind: 'tooltip', text: 'Corto', imageUrl: 'https://x/y.png' }).success,
 );
 check(
-  'la ventana si admite imagen',
-  interactionSchema.safeParse({ kind: 'popup', text: 'Largo', imageUrl: 'https://x/y.png' }).success,
+  'pero solo una',
+  !interactionSchema.safeParse({
+    kind: 'tooltip',
+    text: 'Corto',
+    imageUrl: 'https://x/y.png',
+    content: [{ type: 'image', url: 'https://x/z.png' }],
+  }).success,
 );
-check('sin texto no hay nada que mostrar', !interactionSchema.safeParse({ kind: 'popup', text: '' }).success);
+check(
+  'la ventana admite varias',
+  interactionSchema.safeParse({
+    kind: 'popup',
+    text: 'Ficha',
+    content: [
+      { type: 'image', url: 'https://x/a.png' },
+      { type: 'image', url: 'https://x/b.png' },
+      { type: 'image', url: 'https://x/c.png' },
+    ],
+  }).success,
+);
+check(
+  'una imagen sola, sin texto, ya es contenido',
+  interactionSchema.safeParse({ kind: 'tooltip', content: [{ type: 'image', url: 'https://x/y.png' }] }).success,
+);
+check('sin nada no hay interaccion', !interactionSchema.safeParse({ kind: 'popup', text: '' }).success);
 check(
   'por omision se muestra al pasar el raton',
   interactionSchema.safeParse({ kind: 'tooltip', text: 'Hola' }).data?.trigger === 'hover',
 );
 check('un tipo inventado se rechaza', !interactionSchema.safeParse({ kind: 'globo', text: 'Hola' }).success);
+
+// --- El contenido con formato ---
+check(
+  'un parrafo con negrita y cursiva vale',
+  interactionSchema.safeParse({
+    kind: 'popup',
+    text: 'Hola mundo',
+    content: [{ type: 'paragraph', spans: [{ text: 'Hola ', bold: true }, { text: 'mundo', italic: true }] }],
+  }).success,
+);
+check(
+  'los titulos y las listas valen',
+  interactionSchema.safeParse({
+    kind: 'popup',
+    text: 'Ficha',
+    content: [
+      { type: 'heading', spans: [{ text: 'Caracteristicas' }] },
+      { type: 'list', ordered: true, items: [[{ text: 'Hoja caduca' }], [{ text: 'Vive 500 anos' }]] },
+    ],
+  }).success,
+);
+check(
+  'un bloque inventado se rechaza',
+  !interactionSchema.safeParse({
+    kind: 'popup', text: 'x', content: [{ type: 'video', url: 'https://x/y.mp4' }],
+  }).success,
+);
+check(
+  'un enlace normal vale',
+  interactionSchema.safeParse({
+    kind: 'popup', text: 'x',
+    content: [{ type: 'paragraph', spans: [{ text: 'Ver mas', href: 'https://ejemplo.org' }] }],
+  }).success,
+);
+check(
+  'un enlace que no se navega se rechaza',
+  !interactionSchema.safeParse({
+    kind: 'popup', text: 'x',
+    content: [{ type: 'paragraph', spans: [{ text: 'Pulsa', href: 'javascript:alert(1)' }] }],
+  }).success,
+);
+check(
+  'una imagen con direccion rara se rechaza',
+  !interactionSchema.safeParse({
+    kind: 'popup', text: 'x', content: [{ type: 'image', url: 'javascript:alert(1)' }],
+  }).success,
+);
+check(
+  'el tope del globo cuenta el contenido, no solo el texto plano',
+  !interactionSchema.safeParse({
+    kind: 'tooltip', text: 'corto', content: [parrafo('a'.repeat(601))],
+  }).success,
+);
+check(
+  'y la ventana deja pasar lo que al globo no',
+  interactionSchema.safeParse({
+    kind: 'popup', text: 'corto', content: [parrafo('a'.repeat(601))],
+  }).success,
+);
+check(
+  'demasiados bloques en un globo se rechazan',
+  !interactionSchema.safeParse({
+    kind: 'tooltip', text: 'x', content: Array.from({ length: 9 }, () => parrafo('hola')),
+  }).success,
+);
 
 // --- El enlace y el clic no caben juntos ---
 const conEnlace = { text: 'Hola', linkUrl: 'https://ejemplo.org' };

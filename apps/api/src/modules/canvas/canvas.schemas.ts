@@ -323,38 +323,146 @@ export function parseProperties(type: ElementType, properties: unknown) {
  * ------------------------------------------------------------------------ */
 
 /** Que se muestra al pasar el raton o al pulsar sobre un elemento. */
+/* ---------------------------------------------------------------------------
+ * Contenido enriquecido
+ *
+ * NO se guarda HTML. Se guarda una estructura de bloques y marcas, y quien la
+ * pinta convierte cada tipo conocido en un elemento con interpolacion normal.
+ *
+ * La diferencia importa: un campo de HTML obliga a confiar en un saneador que
+ * acierte siempre, y el contenido lo escribe cualquiera con permiso de edicion,
+ * incluido el alumnado. Con una estructura no hay saneador al que escapársele
+ * nada, porque en ningun punto el texto de una persona se convierte en marcado:
+ * lo que no encaja en un tipo conocido sencillamente no existe.
+ * ------------------------------------------------------------------------ */
+
+/** Un trozo de texto con sus marcas. El enlace es una marca mas. */
+export const richSpanSchema = z.object({
+  text: z.string().max(4000),
+  bold: z.boolean().optional(),
+  italic: z.boolean().optional(),
+  underline: z.boolean().optional(),
+  strike: z.boolean().optional(),
+  /** Solo direcciones navegables; el resto se descarta al guardar. */
+  href: z
+    .string()
+    .max(2048)
+    .refine((v) => /^https?:\/\//i.test(v) || v.startsWith('/'), 'El enlace debe empezar por http:// o https://')
+    .optional(),
+});
+
+const spansSchema = z.array(richSpanSchema).max(200);
+
+export const richBlockSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('paragraph'), spans: spansSchema }),
+  z.object({ type: z.literal('heading'), spans: spansSchema }),
+  z.object({
+    type: z.literal('list'),
+    ordered: z.boolean().default(false),
+    items: z.array(spansSchema).max(50),
+  }),
+  z.object({
+    type: z.literal('image'),
+    url: z.string().max(2048).refine((v) => /^https?:\/\//i.test(v) || v.startsWith('/'), 'Direccion de imagen no valida'),
+    alt: z.string().max(300).default(''),
+    caption: z.string().max(300).default(''),
+  }),
+]);
+
+export type RichSpan = z.infer<typeof richSpanSchema>;
+export type RichBlock = z.infer<typeof richBlockSchema>;
+
+/** Cuenta los caracteres visibles de un contenido, para los topes de tamano. */
+export function longitudVisible(bloques: RichBlock[]): number {
+  let total = 0;
+  for (const b of bloques) {
+    if (b.type === 'paragraph' || b.type === 'heading') {
+      for (const s of b.spans) total += s.text.length;
+    } else if (b.type === 'list') {
+      for (const item of b.items) for (const s of item) total += s.text.length;
+    } else {
+      total += b.caption.length;
+    }
+  }
+  return total;
+}
+
+export function contarImagenes(bloques: RichBlock[]): number {
+  return bloques.filter((b) => b.type === 'image').length;
+}
+
+/*
+ * Topes. El globo flota junto al cursor y tiene que caber en pantalla sin tapar
+ * lo que se esta mirando; la ventana ocupa el centro y puede extenderse.
+ */
+const TOPE_GLOBO = { texto: 600, imagenes: 1, bloques: 8 };
+const TOPE_VENTANA = { texto: 8000, imagenes: 10, bloques: 60 };
+
+export const TOPES_INTERACCION = { tooltip: TOPE_GLOBO, popup: TOPE_VENTANA };
+
+/** Que se muestra al pasar el raton o al pulsar sobre un elemento. */
 export const interactionSchema = z
   .object({
     /**
-     * tooltip: un globo pequeno de texto, para una aclaracion corta.
-     * popup: una ventana con titulo, texto largo y una imagen opcional.
+     * tooltip: una tarjeta pequena que flota junto al cursor.
+     * popup: una ventana centrada, con su cabecera y su cuerpo.
+     *
+     * Las dos admiten texto con formato e imagenes; lo que cambia es donde
+     * aparecen y cuanto les cabe.
      */
     kind: z.enum(['tooltip', 'popup']),
     trigger: z.enum(['hover', 'click']).default('hover'),
     title: z.string().trim().max(120).default(''),
     /**
-     * Texto plano a proposito: se pinta con saltos de linea, no como HTML. Un
-     * campo que admitiera etiquetas seria una via de entrada para inyectar
-     * codigo en el navegador de quien lee, y el contenido lo escribe cualquiera
-     * con permiso de edicion, incluido el alumnado.
+     * Version en texto plano de `content`. Se conserva y se sigue exigiendo por
+     * dos motivos: es lo que tienen guardado los libros anteriores a los bloques,
+     * y es lo que puede leer cualquier sitio que no sepa pintar el contenido
+     * (un resumen, una busqueda, un lector de pantalla de emergencia).
      */
-    text: z.string().trim().min(1, 'Escribe el texto que quieres mostrar').max(4000),
+    text: z.string().trim().max(8000).default(''),
+    /** El contenido de verdad. Si falta, se pinta `text` como un parrafo. */
+    content: z.array(richBlockSchema).max(60).optional(),
+    /** Imagen de cabecera, encima del contenido. */
     imageUrl: z.string().max(2048).optional(),
   })
   .superRefine((value, ctx) => {
-    // Un globo con quinientas palabras tapa la pagina: para eso esta la ventana.
-    if (value.kind === 'tooltip' && value.text.length > 300) {
+    const tope = TOPES_INTERACCION[value.kind];
+    const bloques = value.content ?? [];
+    const nombre = value.kind === 'tooltip' ? 'globo' : 'ventana';
+
+    // Sin nada que mostrar no hay interaccion que valga.
+    if (!value.text.trim() && bloques.length === 0 && !value.imageUrl) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        path: ['text'],
-        message: 'Un globo admite hasta 300 caracteres. Para mas texto, usa una ventana.',
+        path: ['content'],
+        message: 'Escribe un texto o anade una imagen: no hay nada que mostrar.',
+      });
+      return;
+    }
+
+    const largo = bloques.length ? longitudVisible(bloques) : value.text.length;
+    if (largo > tope.texto) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['content'],
+        message: `Un ${nombre} admite hasta ${tope.texto} caracteres. Para mas texto, usa una ventana.`,
       });
     }
-    if (value.kind === 'tooltip' && value.imageUrl) {
+
+    const imagenes = contarImagenes(bloques) + (value.imageUrl ? 1 : 0);
+    if (imagenes > tope.imagenes) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        path: ['imageUrl'],
-        message: 'El globo es solo texto. Para acompanar una imagen, usa una ventana.',
+        path: ['content'],
+        message: `Un ${nombre} admite hasta ${tope.imagenes} imagen(es).`,
+      });
+    }
+
+    if (bloques.length > tope.bloques) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['content'],
+        message: `Un ${nombre} admite hasta ${tope.bloques} bloques.`,
       });
     }
   });

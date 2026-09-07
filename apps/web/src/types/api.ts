@@ -350,19 +350,53 @@ export interface ShapeProperties {
 }
 
 /**
- * Informacion ampliada de un elemento: lo que se ve al pasar el raton o al pulsar.
+ * Contenido con formato.
  *
- * `text` es texto plano y se pinta como tal. No se convierte en HTML en ninguna
- * parte: lo escribe cualquiera con permiso de edicion, incluido el alumnado.
+ * NO es HTML y no debe convertirse en HTML en ningun sitio. Es una estructura de
+ * bloques y marcas que se pinta con componentes: cada tipo conocido se convierte
+ * en su etiqueta y el texto va por interpolacion normal. Asi, lo que escriba
+ * cualquiera con permiso de edicion (el alumnado incluido) no puede convertirse
+ * en marcado, sin depender de que un saneador acierte siempre.
  */
+export interface RichSpan {
+  text: string;
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+  strike?: boolean;
+  /** Solo direcciones navegables; el servidor rechaza el resto. */
+  href?: string;
+}
+
+export type RichBlock =
+  | { type: 'paragraph'; spans: RichSpan[] }
+  | { type: 'heading'; spans: RichSpan[] }
+  | { type: 'list'; ordered: boolean; items: RichSpan[][] }
+  | { type: 'image'; url: string; alt: string; caption: string };
+
+/** Informacion ampliada de un elemento: lo que se ve al pasar el raton o al pulsar. */
 export interface ElementInteraction {
-  /** tooltip: globo corto de texto. popup: ventana con titulo, texto e imagen. */
+  /** tooltip: tarjeta que flota junto al cursor. popup: ventana centrada. */
   kind: 'tooltip' | 'popup';
   trigger: 'hover' | 'click';
   title: string;
+  /**
+   * Version en texto plano de `content`. Se conserva porque es lo que tienen
+   * los libros anteriores a los bloques y lo que puede leer cualquier sitio
+   * que no sepa pintar el contenido.
+   */
   text: string;
+  /** El contenido de verdad. Si falta, se pinta `text` como un parrafo. */
+  content?: RichBlock[];
+  /** Imagen de cabecera, encima del contenido. */
   imageUrl?: string;
 }
+
+/** Topes por tipo; los mismos que aplica el servidor. */
+export const TOPES_INTERACCION = {
+  tooltip: { texto: 600, imagenes: 1, bloques: 8 },
+  popup: { texto: 8000, imagenes: 10, bloques: 60 },
+} as const;
 
 export type AnimationEffect =
   | 'fade'

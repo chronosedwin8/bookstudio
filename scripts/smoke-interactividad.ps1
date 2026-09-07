@@ -111,10 +111,10 @@ Test-Step 'Mandar null quita tambien la animacion' {
 
 # --- Lo que el backend no debe aceptar ---
 
-Test-Step 'Un globo con mas de 300 caracteres se rechaza' {
+Test-Step 'Un globo con mas de 600 caracteres se rechaza' {
     Assert-Status { Invoke-Api POST $path @{
         type = 'text'; transformMatrix = $box; properties = @{ text = 'x' }
-        interaction = @{ kind = 'tooltip'; text = ('a' * 301) }
+        interaction = @{ kind = 'tooltip'; text = ('a' * 601) }
     } -Token $token } 400
 }
 
@@ -126,11 +126,105 @@ Test-Step 'La ventana si admite un texto largo' {
     if ($el.interaction.text.Length -ne 3000) { throw "Llego recortado: $($el.interaction.text.Length)" }
 }
 
-Test-Step 'Un globo con imagen se rechaza' {
-    Assert-Status { Invoke-Api POST $path @{
+# El globo admite imagen desde el 7 de septiembre de 2026: se pidio expresamente
+# poder ensenar una imagen al pasar el raton, no solo al pulsar.
+Test-Step 'Un globo SI admite una imagen' {
+    $el = (Invoke-Api POST $path @{
         type = 'text'; transformMatrix = $box; properties = @{ text = 'x' }
         interaction = @{ kind = 'tooltip'; text = 'Corto'; imageUrl = 'https://ejemplo.org/a.png' }
+    } -Token $token).element
+    if ($el.interaction.imageUrl -ne 'https://ejemplo.org/a.png') { throw 'Se perdio la imagen' }
+}
+
+Test-Step 'Pero solo una: la de cabecera mas otra se rechaza' {
+    Assert-Status { Invoke-Api POST $path @{
+        type = 'text'; transformMatrix = $box; properties = @{ text = 'x' }
+        interaction = @{
+            kind = 'tooltip'; text = 'Corto'; imageUrl = 'https://ejemplo.org/a.png'
+            content = @(@{ type = 'image'; url = 'https://ejemplo.org/b.png' })
+        }
     } -Token $token } 400
+}
+
+# --- Contenido con formato ---
+
+Test-Step 'Una ficha con titulo, negrita, lista e imagenes se guarda entera' {
+    $el = (Invoke-Api POST $path @{
+        type = 'text'; transformMatrix = $box; properties = @{ text = 'Ficha' }
+        interaction = @{
+            kind = 'popup'; trigger = 'click'; title = 'El roble'
+            text = "El roble`nArbol de hoja caduca"
+            content = @(
+                @{ type = 'heading'; spans = @(@{ text = 'Caracteristicas' }) },
+                @{ type = 'paragraph'; spans = @(
+                    @{ text = 'Arbol de ' },
+                    @{ text = 'hoja caduca'; bold = $true; italic = $true }
+                ) },
+                @{ type = 'list'; ordered = $true; items = @(
+                    @(@{ text = 'Vive 500 anos' }),
+                    @(@{ text = 'Hasta 40 metros' })
+                ) },
+                @{ type = 'image'; url = 'https://ejemplo.org/roble.png'; alt = 'Un roble'; caption = 'En otono' },
+                @{ type = 'paragraph'; spans = @(@{ text = 'Mas datos'; href = 'https://ejemplo.org' }) }
+            )
+        }
+    } -Token $token).element
+
+    $c = $el.interaction.content
+    if (@($c).Count -ne 5) { throw "Llegaron $(@($c).Count) bloques de 5" }
+    if ($c[0].type -ne 'heading') { throw "El primero es $($c[0].type)" }
+    if ($c[1].spans[1].bold -ne $true) { throw 'Se perdio la negrita' }
+    if ($c[1].spans[1].italic -ne $true) { throw 'Se perdio la cursiva' }
+    if ($c[2].ordered -ne $true) { throw 'La lista dejo de ser numerada' }
+    if (@($c[2].items).Count -ne 2) { throw 'Se perdio un punto de la lista' }
+    if ($c[3].caption -ne 'En otono') { throw 'Se perdio el pie de la imagen' }
+    if ($c[4].spans[0].href -ne 'https://ejemplo.org') { throw 'Se perdio el enlace' }
+}
+
+Test-Step 'El contenido sobrevive a releer el libro' {
+    $d = (Invoke-Api GET "/books/$($book.id)" -Token $token).book
+    $page = $d.pages | Where-Object { $_.id -eq $pageId }
+    $ficha = $page.elements | Where-Object { $_.interaction.title -eq 'El roble' }
+    if (-not $ficha) { throw 'No se encontro la ficha' }
+    if (@($ficha.interaction.content).Count -ne 5) { throw 'La ficha perdio bloques al releer' }
+}
+
+Test-Step 'Un bloque de un tipo inventado se rechaza' {
+    Assert-Status { Invoke-Api POST $path @{
+        type = 'text'; transformMatrix = $box; properties = @{ text = 'x' }
+        interaction = @{ kind = 'popup'; text = 'x'; content = @(@{ type = 'video'; url = 'https://x/y.mp4' }) }
+    } -Token $token } 400
+}
+
+Test-Step 'Un enlace que no se navega se rechaza' {
+    Assert-Status { Invoke-Api POST $path @{
+        type = 'text'; transformMatrix = $box; properties = @{ text = 'x' }
+        interaction = @{ kind = 'popup'; text = 'x'; content = @(
+            @{ type = 'paragraph'; spans = @(@{ text = 'Pulsa'; href = 'javascript:alert(1)' }) }
+        ) }
+    } -Token $token } 400
+}
+
+Test-Step 'Una imagen con direccion rara se rechaza' {
+    Assert-Status { Invoke-Api POST $path @{
+        type = 'text'; transformMatrix = $box; properties = @{ text = 'x' }
+        interaction = @{ kind = 'popup'; text = 'x'; content = @(
+            @{ type = 'image'; url = 'javascript:alert(1)' }
+        ) }
+    } -Token $token } 400
+}
+
+Test-Step 'El texto de un bloque se guarda tal cual, sin interpretarlo' {
+    $veneno = '<img src=x onerror=alert(1)>'
+    $el = (Invoke-Api POST $path @{
+        type = 'text'; transformMatrix = $box; properties = @{ text = 'x' }
+        interaction = @{ kind = 'popup'; text = $veneno; content = @(
+            @{ type = 'paragraph'; spans = @(@{ text = $veneno }) }
+        ) }
+    } -Token $token).element
+    if ($el.interaction.content[0].spans[0].text -ne $veneno) {
+        throw "El servidor toco el texto: $($el.interaction.content[0].spans[0].text)"
+    }
 }
 
 Test-Step 'Un efecto que no existe se rechaza' {
@@ -189,7 +283,13 @@ Test-Step 'El material repartido a la clase conserva globos y animaciones' {
     $fichaPagina = ((Invoke-Api GET "/books/$($ficha.id)" -Token $token).book).pages[0].id
     $null = Invoke-Api POST "/books/$($ficha.id)/pages/$fichaPagina/elements" @{
         type = 'text'; transformMatrix = $box; properties = @{ text = 'El ciclo del agua' }
-        interaction = @{ kind = 'popup'; title = 'Evaporacion'; text = 'El sol calienta el agua' }
+        interaction = @{
+            kind = 'popup'; title = 'Evaporacion'; text = 'El sol calienta el agua'
+            content = @(
+                @{ type = 'paragraph'; spans = @(@{ text = 'El sol '; }, @{ text = 'calienta'; bold = $true }) },
+                @{ type = 'image'; url = 'https://ejemplo.org/agua.png'; alt = 'Ciclo'; caption = 'El ciclo' }
+            )
+        }
         animation = @{ trigger = 'entrance'; effect = 'zoom'; duration = 1; delay = 0 }
     } -Token $token
 
@@ -206,6 +306,8 @@ Test-Step 'El material repartido a la clase conserva globos y animaciones' {
     if (-not $recibido) { throw "El elemento no llego a la copia" }
     if ($recibido.interaction.title -ne 'Evaporacion') { throw "La copia llego sin la ventana" }
     if ($recibido.animation.effect -ne 'zoom') { throw "La copia llego sin la animacion" }
+    if (@($recibido.interaction.content).Count -ne 2) { throw 'La copia llego sin el contenido con formato' }
+    if ($recibido.interaction.content[0].spans[1].bold -ne $true) { throw 'La copia perdio la negrita' }
 }
 
 Write-Host "`n== Resultado: $pass OK / $fail FAIL ==" -ForegroundColor $(if ($fail -eq 0) { 'Green' } else { 'Red' })
