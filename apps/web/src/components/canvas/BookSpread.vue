@@ -277,6 +277,7 @@ const medidas = computed(() => ({ width: `${anchoPagina.value}px`, height: `${al
           :elements="pagina(giro.frente)!.elements"
           :aspect-ratio="aspectRatio"
           :width="anchoPagina"
+          en-vuelo
         />
         <div class="velo"></div>
       </div>
@@ -289,6 +290,7 @@ const medidas = computed(() => ({ width: `${anchoPagina.value}px`, height: `${al
           :elements="pagina(giro.dorso)!.elements"
           :aspect-ratio="aspectRatio"
           :width="anchoPagina"
+          en-vuelo
         />
         <div class="velo velo-dorso"></div>
       </div>

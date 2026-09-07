@@ -40,6 +40,8 @@ import type {
   Candidate,
   ClassView,
   DistributeResult,
+  ElementAnimation,
+  ElementInteraction,
   ElementType,
   Grade,
   GradeBook,
@@ -351,6 +353,8 @@ export const booksApi = {
       properties: Record<string, unknown>;
       opacity?: number;
       isLocked?: boolean;
+      interaction?: ElementInteraction | null;
+      animation?: ElementAnimation | null;
     },
   ) {
     const { data } = await http.post<{ element: CanvasElement }>(`/books/${bookId}/pages/${pageId}/elements`, payload);
@@ -366,6 +370,9 @@ export const booksApi = {
       zIndex?: number;
       isLocked?: boolean;
       opacity?: number;
+      /** null la quita; ausente la deja como estaba. */
+      interaction?: ElementInteraction | null;
+      animation?: ElementAnimation | null;
     },
   ) {
     const { data } = await http.patch<{ element: CanvasElement }>(

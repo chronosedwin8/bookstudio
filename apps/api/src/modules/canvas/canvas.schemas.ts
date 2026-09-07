@@ -313,6 +313,80 @@ export function parseProperties(type: ElementType, properties: unknown) {
   return PROPERTY_SCHEMAS[type].parse(properties);
 }
 
+
+/* ---------------------------------------------------------------------------
+ * Interactividad y animacion
+ *
+ * Valen para cualquier tipo de elemento, asi que viven al lado de `properties`
+ * y no dentro. Copiarlas en los doce esquemas de tipo obligaria a mantener doce
+ * copias iguales; ya paso con `linkUrl`, que quedo en cuatro.
+ * ------------------------------------------------------------------------ */
+
+/** Que se muestra al pasar el raton o al pulsar sobre un elemento. */
+export const interactionSchema = z
+  .object({
+    /**
+     * tooltip: un globo pequeno de texto, para una aclaracion corta.
+     * popup: una ventana con titulo, texto largo y una imagen opcional.
+     */
+    kind: z.enum(['tooltip', 'popup']),
+    trigger: z.enum(['hover', 'click']).default('hover'),
+    title: z.string().trim().max(120).default(''),
+    /**
+     * Texto plano a proposito: se pinta con saltos de linea, no como HTML. Un
+     * campo que admitiera etiquetas seria una via de entrada para inyectar
+     * codigo en el navegador de quien lee, y el contenido lo escribe cualquiera
+     * con permiso de edicion, incluido el alumnado.
+     */
+    text: z.string().trim().min(1, 'Escribe el texto que quieres mostrar').max(4000),
+    imageUrl: z.string().max(2048).optional(),
+  })
+  .superRefine((value, ctx) => {
+    // Un globo con quinientas palabras tapa la pagina: para eso esta la ventana.
+    if (value.kind === 'tooltip' && value.text.length > 300) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['text'],
+        message: 'Un globo admite hasta 300 caracteres. Para mas texto, usa una ventana.',
+      });
+    }
+    if (value.kind === 'tooltip' && value.imageUrl) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['imageUrl'],
+        message: 'El globo es solo texto. Para acompanar una imagen, usa una ventana.',
+      });
+    }
+  });
+
+export const animationEffect = z.enum([
+  'fade',      // aparecer suavemente
+  'zoom',      // entrar creciendo
+  'slide',     // deslizarse desde un lado
+  'bounce',    // rebotar
+  'rotate',    // girar
+  'swirl',     // girar creciendo
+  'roll-in',   // entrar rodando
+  'focus',     // llamar la atencion sin moverse
+  'pulse',     // latido
+]);
+
+/** Cuando y como se mueve un elemento en modo lectura. */
+export const animationSchema = z.object({
+  /**
+   * entrance: al aparecer la pagina.  loop: sin parar.
+   * hover: al pasar el raton.         click: al pulsar.
+   *
+   * No hay animacion de salida: al pasar de hoja, la pagina se va girando con el
+   * papel, y una salida encima obligaria a retener el giro para que se viera.
+   */
+  trigger: z.enum(['entrance', 'loop', 'hover', 'click']).default('entrance'),
+  effect: animationEffect,
+  /** Segundos. */
+  duration: z.number().min(0.2).max(6).default(0.8),
+  delay: z.number().min(0).max(10).default(0),
+});
+
 export const createElementSchema = z
   .object({
     type: elementType,
@@ -321,6 +395,9 @@ export const createElementSchema = z
     zIndex: z.number().int().min(0).max(10_000).optional(),
     isLocked: z.boolean().default(false),
     opacity: z.number().min(0).max(1).default(1),
+    /** null lo quita; ausente lo deja como estaba. */
+    interaction: interactionSchema.nullish(),
+    animation: animationSchema.nullish(),
   })
   .superRefine((value, ctx) => {
     const result = PROPERTY_SCHEMAS[value.type].safeParse(value.properties);
@@ -328,6 +405,21 @@ export const createElementSchema = z
       for (const issue of result.error.issues) {
         ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['properties', ...issue.path], message: issue.message });
       }
+      return;
+    }
+
+    /*
+     * Un elemento no puede llevar enlace y ademas abrir una ventana al pulsar:
+     * el clic es uno solo. Se rechaza en vez de elegir por el autor, porque
+     * cualquiera de las dos elecciones sorprenderia a quien lo monto.
+     */
+    const enlace = String((result.data as { linkUrl?: unknown }).linkUrl ?? '').trim();
+    if (enlace && value.interaction?.trigger === 'click') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['interaction', 'trigger'],
+        message: 'Este elemento ya tiene un enlace. Quita el enlace o muestra la informacion al pasar el raton.',
+      });
     }
   });
 
@@ -338,6 +430,9 @@ export const updateElementSchema = z
     zIndex: z.number().int().min(0).max(10_000).optional(),
     isLocked: z.boolean().optional(),
     opacity: z.number().min(0).max(1).optional(),
+    /** null lo quita; ausente lo deja como estaba. */
+    interaction: interactionSchema.nullish(),
+    animation: animationSchema.nullish(),
   })
   .refine((v) => Object.values(v).some((x) => x !== undefined), 'No hay campos para actualizar');
 
@@ -350,3 +445,6 @@ export type QuestionOption = z.infer<typeof questionOptionSchema>;
 export type CreateElementInput = z.infer<typeof createElementSchema>;
 export type UpdateElementInput = z.infer<typeof updateElementSchema>;
 export type TransformMatrix = z.infer<typeof transformMatrixSchema>;
+export type ElementInteraction = z.infer<typeof interactionSchema>;
+export type ElementAnimation = z.infer<typeof animationSchema>;
+export type AnimationEffect = z.infer<typeof animationEffect>;

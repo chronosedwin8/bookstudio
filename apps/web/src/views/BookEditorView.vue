@@ -30,6 +30,8 @@ import type {
   CanvasElement,
   ChartType,
   DistributeResult,
+  ElementAnimation,
+  ElementInteraction,
   ElementType,
   MediaResult,
   TransformMatrix,
@@ -535,7 +537,14 @@ async function onFileChosen(event: Event): Promise<void> {
   await uploadAndInsert(await readAsDataUrl(file), duration, kind === 'image' ? file.name : '');
 }
 
-type InspectorPatch = { properties?: Record<string, unknown>; isLocked?: boolean; opacity?: number };
+type InspectorPatch = {
+  properties?: Record<string, unknown>;
+  isLocked?: boolean;
+  opacity?: number;
+  /** null la quita; ausente la deja como estaba. */
+  interaction?: ElementInteraction | null;
+  animation?: ElementAnimation | null;
+};
 
 /** Memoriza los ajustes tipograficos para que el siguiente texto los herede. */
 async function onInspectorPatch(payload: InspectorPatch): Promise<void> {

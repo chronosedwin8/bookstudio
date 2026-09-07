@@ -42,6 +42,9 @@ function toPreviewElements(template: PageTemplate): CanvasElement[] {
     properties: element.properties,
     isLocked: false,
     opacity: 1,
+    // Ninguna plantilla trae interactividad ni animacion: las pone quien la use.
+    interaction: null,
+    animation: null,
     updatedAt: '',
   }));
 }

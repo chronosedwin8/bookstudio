@@ -6,6 +6,8 @@ import { errorMessage } from '@/services/http';
 import type {
   BookDetail,
   CanvasElement,
+  ElementAnimation,
+  ElementInteraction,
   ElementType,
   Page,
   ShareVisibility,
@@ -195,6 +197,9 @@ export const useEditorStore = defineStore('editor', () => {
       zIndex?: number;
       isLocked?: boolean;
       opacity?: number;
+      /** null la quita; ausente la deja como estaba. */
+      interaction?: ElementInteraction | null;
+      animation?: ElementAnimation | null;
     },
   ): Promise<void> {
     if (!book.value || !currentPage.value) return;
@@ -260,6 +265,8 @@ export const useEditorStore = defineStore('editor', () => {
               type: borrado.type,
               transformMatrix: borrado.transformMatrix,
               properties: borrado.properties as Record<string, unknown>,
+              interaction: borrado.interaction,
+              animation: borrado.animation,
             });
             vigente = recreado.id;
             book.value!.pages.find((p) => p.id === pageId)?.elements.push(recreado);

@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref, watch } from 'vue';
 import ElementRenderer from './ElementRenderer.vue';
+import InteractionLayer from './InteractionLayer.vue';
 import { paperStyle } from '@/utils/papers';
-import type { AnswerResult, CanvasElement } from '@/types/api';
+import type { AnswerResult, CanvasElement, ElementInteraction } from '@/types/api';
 
 /**
  * Miniatura no interactiva de una pagina. Reutiliza el mismo lienzo logico de 1000px
@@ -19,6 +20,12 @@ const props = defineProps<{
   interactive?: boolean;
   /** Corrige las preguntas contra el servidor; solo lo aporta el modo lectura. */
   checkAnswer?: (elementId: string, answer: string[]) => Promise<AnswerResult>;
+  /**
+   * Esta pagina va dibujada en la hoja que esta girando. Lo que tenga animacion
+   * de entrada se calla hasta que la hoja aterrice: si se viera durante el giro,
+   * al posarse volveria a entrar desde cero y daria un respingo.
+   */
+  enVuelo?: boolean;
 }>();
 
 /** Salto a otra pagina del propio libro, desde un marcador. */
@@ -63,6 +70,128 @@ function paginaDestino(element: CanvasElement): number | null {
   const m = /^#pagina-(\d{1,4})$/.exec(url);
   return m ? Number(m[1]) : null;
 }
+
+/* --------------------------------------------------------------------------
+ * Interactividad y animacion
+ *
+ * Las dos se limitan al modo lectura. En una rejilla de miniaturas no habria a
+ * quien mostrarle un globo, y una veintena de objetos animandose en bucle a la
+ * vez convierte el panel de paginas en un cartel luminoso.
+ * ------------------------------------------------------------------------ */
+
+const activa = ref<{ interaction: ElementInteraction; x: number; y: number } | null>(null);
+
+function interaccionDe(element: CanvasElement): ElementInteraction | null {
+  return props.interactive ? (element.interaction ?? null) : null;
+}
+
+function alEntrar(element: CanvasElement, event: MouseEvent): void {
+  const info = interaccionDe(element);
+  if (info?.trigger === 'hover') activa.value = { interaction: info, x: event.clientX, y: event.clientY };
+}
+
+function alMover(element: CanvasElement, event: MouseEvent): void {
+  // El globo sigue al cursor; la ventana no, que se abrio centrada.
+  if (activa.value?.interaction.kind !== 'tooltip') return;
+  const info = interaccionDe(element);
+  if (info?.trigger === 'hover' && info.kind === 'tooltip') {
+    activa.value = { interaction: info, x: event.clientX, y: event.clientY };
+  }
+}
+
+function alSalir(element: CanvasElement): void {
+  const info = interaccionDe(element);
+  // Una ventana abierta al pasar el raton se queda: se cierra con su aspa o con
+  // Escape. Si se cerrara al salir, seria imposible leerla hasta el final.
+  if (info?.trigger === 'hover' && info.kind === 'tooltip') activa.value = null;
+}
+
+function alPulsar(element: CanvasElement, event: MouseEvent): void {
+  const destino = paginaDestino(element);
+  if (destino !== null && props.interactive) emit('irAPagina', destino);
+
+  const info = interaccionDe(element);
+  if (info?.trigger === 'click') {
+    event.preventDefault();
+    activa.value = { interaction: info, x: event.clientX, y: event.clientY };
+  }
+
+  animarAlPulsar(element);
+}
+
+/** Un elemento con informacion o con animacion al pulsar responde al teclado. */
+function esFocalizable(element: CanvasElement): boolean {
+  if (!props.interactive || linkOf(element)) return false;
+  return Boolean(element.interaction) || element.animation?.trigger === 'click';
+}
+
+/** El foco del teclado abre lo mismo que el raton, centrado en el elemento. */
+function alEnfocar(element: CanvasElement, event: FocusEvent): void {
+  const info = interaccionDe(element);
+  if (!info) return;
+  const caja = (event.target as HTMLElement).getBoundingClientRect();
+  activa.value = { interaction: info, x: caja.left + caja.width / 2, y: caja.bottom };
+}
+
+// --- Animacion ---
+
+/**
+ * Las de entrada tienen que volver a correr cada vez que la pagina cambia de
+ * contenido. Vue reaprovecha los nodos, y una animacion ya reproducida no se
+ * repite sola: cambiando esta parte de la clave, el nodo se recrea y arranca.
+ */
+const ciclo = ref(0);
+watch(() => props.elements, () => { ciclo.value++; });
+
+/** Elementos a los que se les esta reproduciendo la animacion de clic. */
+const pulsados = ref(new Set<string>());
+
+/** Lo que entrara animado no se ensena todavia mientras la hoja da la vuelta. */
+function esperaSuTurno(element: CanvasElement): boolean {
+  return Boolean(props.enVuelo && element.animation?.trigger === 'entrance');
+}
+
+function clasesAnimacion(element: CanvasElement): string[] {
+  const a = element.animation;
+  if (!props.interactive || !a) return [];
+  const clases = ['anim', `anim-${a.effect}`, `anim-${a.trigger}`];
+  if (a.trigger === 'click' && pulsados.value.has(element.id)) clases.push('anim-activa');
+  return clases;
+}
+
+function estiloAnimacion(element: CanvasElement): Record<string, string> {
+  const a = element.animation;
+  if (!props.interactive || !a) return {};
+  return { '--anim-dur': `${a.duration}s`, '--anim-esp': `${a.delay}s` };
+}
+
+function animarAlPulsar(element: CanvasElement): void {
+  if (!props.interactive || element.animation?.trigger !== 'click') return;
+  // Se quita al terminar; si se quedara puesta, el segundo clic no animaria nada.
+  pulsados.value = new Set(pulsados.value).add(element.id);
+}
+
+/** Enter equivale al clic para quien navega sin raton. */
+function alPulsarTeclado(element: CanvasElement, event: KeyboardEvent): void {
+  const destino = paginaDestino(element);
+  if (destino !== null && props.interactive) emit('irAPagina', destino);
+
+  const info = interaccionDe(element);
+  if (info?.trigger === 'click') {
+    event.preventDefault();
+    const caja = (event.target as HTMLElement).getBoundingClientRect();
+    activa.value = { interaction: info, x: caja.left + caja.width / 2, y: caja.bottom };
+  }
+
+  animarAlPulsar(element);
+}
+
+function alTerminarAnimacion(element: CanvasElement): void {
+  if (!pulsados.value.has(element.id)) return;
+  const resto = new Set(pulsados.value);
+  resto.delete(element.id);
+  pulsados.value = resto;
+}
 </script>
 
 <template>
@@ -73,9 +202,19 @@ function paginaDestino(element: CanvasElement): number | null {
         v-for="element in sorted"
         :key="element.id"
         class="absolute"
-        :class="linkOf(element) || paginaDestino(element) !== null ? 'cursor-pointer' : ''"
+        :class="[
+          linkOf(element) || paginaDestino(element) !== null ? 'cursor-pointer' : '',
+          interactive && element.interaction ? 'cursor-help' : '',
+        ]"
         :href="linkOf(element) ?? undefined"
-        @click="paginaDestino(element) !== null && emit('irAPagina', paginaDestino(element)!)"
+        :tabindex="esFocalizable(element) ? 0 : undefined"
+        @click="alPulsar(element, $event)"
+        @mouseenter="alEntrar(element, $event)"
+        @mousemove="alMover(element, $event)"
+        @mouseleave="alSalir(element)"
+        @focus="alEnfocar(element, $event)"
+        @blur="activa = null"
+        @keydown.enter="alPulsarTeclado(element, $event)"
         :target="linkOf(element) ? '_blank' : undefined"
         :rel="linkOf(element) ? 'noopener noreferrer' : undefined"
         :style="{
@@ -87,7 +226,17 @@ function paginaDestino(element: CanvasElement): number | null {
           opacity: element.opacity,
         }"
       >
-        <ElementRenderer :element="element" :preview="!interactive" :check-answer="checkAnswer" />
+        <!-- La animacion va en una capa interior: la de fuera ya gasta su
+             `transform` en colocar y girar el elemento donde lo puso el autor. -->
+        <div
+          :key="`${element.id}-${ciclo}`"
+          class="h-full w-full"
+          :class="clasesAnimacion(element)"
+          :style="{ ...estiloAnimacion(element), visibility: esperaSuTurno(element) ? 'hidden' : undefined }"
+          @animationend="alTerminarAnimacion(element)"
+        >
+          <ElementRenderer :element="element" :preview="!interactive" :check-answer="checkAnswer" />
+        </div>
       </component>
     </div>
 
@@ -97,5 +246,7 @@ function paginaDestino(element: CanvasElement): number | null {
     >
       Sin contenido
     </p>
+
+    <InteractionLayer :activa="activa" @cerrar="activa = null" />
   </div>
 </template>

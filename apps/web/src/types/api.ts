@@ -349,6 +349,41 @@ export interface ShapeProperties {
   label: string;
 }
 
+/**
+ * Informacion ampliada de un elemento: lo que se ve al pasar el raton o al pulsar.
+ *
+ * `text` es texto plano y se pinta como tal. No se convierte en HTML en ninguna
+ * parte: lo escribe cualquiera con permiso de edicion, incluido el alumnado.
+ */
+export interface ElementInteraction {
+  /** tooltip: globo corto de texto. popup: ventana con titulo, texto e imagen. */
+  kind: 'tooltip' | 'popup';
+  trigger: 'hover' | 'click';
+  title: string;
+  text: string;
+  imageUrl?: string;
+}
+
+export type AnimationEffect =
+  | 'fade'
+  | 'zoom'
+  | 'slide'
+  | 'bounce'
+  | 'rotate'
+  | 'swirl'
+  | 'roll-in'
+  | 'focus'
+  | 'pulse';
+
+/** Movimiento del elemento en modo lectura. No hay salida: la hoja ya se gira. */
+export interface ElementAnimation {
+  trigger: 'entrance' | 'loop' | 'hover' | 'click';
+  effect: AnimationEffect;
+  /** Segundos. */
+  duration: number;
+  delay: number;
+}
+
 export interface CanvasElement {
   id: string;
   pageId: string;
@@ -358,6 +393,10 @@ export interface CanvasElement {
   properties: Record<string, unknown>;
   isLocked: boolean;
   opacity: number;
+  /** null cuando el elemento no muestra informacion ampliada. */
+  interaction: ElementInteraction | null;
+  /** null cuando el elemento no se anima. */
+  animation: ElementAnimation | null;
   updatedAt: string;
 }
 

@@ -218,7 +218,19 @@ function elementHtml(element: CanvasElement): string {
     inner = `<a href="${escapeHtml(link)}" target="_blank" rel="noopener noreferrer" class="lnk">${inner}</a>`;
   }
 
-  return `<div class="el"${wrapperStyle}>${inner}</div>`;
+  /*
+   * La informacion ampliada viaja en atributos y la pinta el guion de abajo. Va
+   * asi, y no como marcado dentro del elemento, porque entonces heredaria su
+   * tamano y su recorte: un globo dentro de una imagen pequena seria ilegible.
+   */
+  const info = element.interaction;
+  const extra = info
+    ? ` data-info="${escapeHtml(info.text)}" data-info-titulo="${escapeHtml(info.title)}"` +
+      ` data-info-modo="${info.kind}" data-info-abre="${info.trigger}"` +
+      (safeUrl(info.imageUrl) ? ` data-info-img="${escapeHtml(safeUrl(info.imageUrl)!)}"` : '')
+    : '';
+
+  return `<div class="el${info ? ' tiene-info' : ''}"${extra}${wrapperStyle}>${inner}</div>`;
 }
 
 function pageHtml(page: Page, index: number): string {
@@ -295,6 +307,21 @@ export function bookToHtml(book: BookDetail): string {
     .pg, .pg:not(.on) { display:block; width:100%; break-after:page; box-shadow:none;
                         border-radius:0; margin:0; }
   }
+  .tiene-info { cursor:help; }
+  #globo { position:fixed; z-index:60; max-width:20rem; display:none; pointer-events:none;
+           background:rgba(15,23,42,.96); color:#fff; padding:.5rem .7rem; border-radius:.5rem;
+           font-size:13px; line-height:1.35; box-shadow:0 8px 24px rgba(0,0,0,.35); }
+  #globo b { display:block; margin-bottom:.15rem; }
+  #globo span, #vent p { white-space:pre-line; }
+  #vent { position:fixed; inset:0; z-index:61; display:none; place-items:center;
+          background:rgba(15,23,42,.65); padding:1rem; }
+  #vent > div { background:#fff; color:#0f172a; border-radius:1rem; padding:1.25rem;
+                max-width:32rem; width:100%; max-height:85vh; overflow:auto; }
+  #vent h2 { margin:0 0 .6rem; font-size:1.05rem; }
+  #vent img { max-width:100%; max-height:16rem; object-fit:contain; border-radius:.5rem;
+              margin-bottom:.6rem; }
+  #vent button { float:right; border:0; background:none; font-size:1.4rem; line-height:1;
+                 cursor:pointer; color:#94a3b8; }
 </style>
 </head>
 <body>
@@ -312,7 +339,71 @@ export function bookToHtml(book: BookDetail): string {
 
 <footer>Creado con BookStudio</footer>
 
+<div id="globo" role="tooltip"></div>
+<div id="vent" role="dialog" aria-modal="true"><div>
+  <button type="button" aria-label="Cerrar">&times;</button>
+  <h2></h2><img alt="" hidden><p></p>
+</div></div>
 <script>
+  /*
+   * Informacion ampliada. Se escribe con textContent, nunca con innerHTML: el
+   * texto lo tecleo una persona y aqui no se convierte en marcado.
+   */
+  var globo = document.getElementById('globo');
+  var vent = document.getElementById('vent');
+  var ventTit = vent.querySelector('h2');
+  var ventTxt = vent.querySelector('p');
+  var ventImg = vent.querySelector('img');
+
+  function cerrarVentana() { vent.style.display = 'none'; }
+  vent.querySelector('button').addEventListener('click', cerrarVentana);
+  vent.addEventListener('click', function (e) { if (e.target === vent) cerrarVentana(); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') cerrarVentana(); });
+
+  function abrirVentana(el) {
+    ventTit.textContent = el.getAttribute('data-info-titulo') || 'Mas informacion';
+    ventTxt.textContent = el.getAttribute('data-info') || '';
+    var img = el.getAttribute('data-info-img');
+    ventImg.hidden = !img;
+    if (img) ventImg.src = img;
+    vent.style.display = 'grid';
+  }
+
+  function colocarGlobo(e) {
+    var caja = globo.getBoundingClientRect();
+    var margen = 12;
+    var x = Math.min(Math.max(margen, e.clientX - caja.width / 2), innerWidth - caja.width - margen);
+    var cabeDebajo = innerHeight - e.clientY > caja.height + margen * 2;
+    globo.style.left = x + 'px';
+    globo.style.top = (cabeDebajo ? e.clientY + margen : Math.max(margen, e.clientY - caja.height - margen)) + 'px';
+  }
+
+  Array.prototype.forEach.call(document.querySelectorAll('.tiene-info'), function (el) {
+    var alPulsar = el.getAttribute('data-info-abre') === 'click';
+    var esVentana = el.getAttribute('data-info-modo') === 'popup';
+
+    if (alPulsar) {
+      el.addEventListener('click', function (e) { e.preventDefault(); abrirVentana(el); });
+      return;
+    }
+    if (esVentana) {
+      el.addEventListener('mouseenter', function () { abrirVentana(el); });
+      return;
+    }
+    el.addEventListener('mouseenter', function (e) {
+      var titulo = el.getAttribute('data-info-titulo');
+      globo.textContent = '';
+      if (titulo) { var b = document.createElement('b'); b.textContent = titulo; globo.appendChild(b); }
+      var s = document.createElement('span');
+      s.textContent = el.getAttribute('data-info') || '';
+      globo.appendChild(s);
+      globo.style.display = 'block';
+      colocarGlobo(e);
+    });
+    el.addEventListener('mousemove', colocarGlobo);
+    el.addEventListener('mouseleave', function () { globo.style.display = 'none'; });
+  });
+
   var paginas = Array.prototype.slice.call(document.querySelectorAll('.pg'));
   var actual = 0;
   var ind = document.getElementById('ind');

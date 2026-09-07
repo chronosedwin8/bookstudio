@@ -1,0 +1,159 @@
+/*
+ * Animaciones de los objetos del lienzo.
+ *
+ * Viven aqui y no dentro de un componente porque las usan dos sitios: el lector,
+ * donde se ven de verdad, y el inspector, que las muestra en pequeno para que
+ * quien las elige sepa lo que esta eligiendo antes de guardar.
+ *
+ * Todas mueven `transform` u `opacity`, que el navegador resuelve sin volver a
+ * calcular la pagina. La clase se pone SIEMPRE en un elemento interior, nunca en
+ * el que coloca el objeto: ese ya lleva su propio `transform` con el giro que le
+ * dio el autor, y una animacion encima lo borraria.
+ */
+
+.anim {
+  /* Sin esto, el giro y el rebote pivotarian sobre la esquina. */
+  transform-origin: center center;
+  animation-duration: var(--anim-dur, 0.8s);
+  animation-delay: var(--anim-esp, 0s);
+  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  animation-fill-mode: both;
+}
+
+/* De entrada: se reproduce una vez al aparecer la pagina. */
+.anim-entrance.anim-fade { animation-name: anim-fade; }
+.anim-entrance.anim-zoom { animation-name: anim-zoom; }
+.anim-entrance.anim-slide { animation-name: anim-slide; }
+.anim-entrance.anim-bounce { animation-name: anim-bounce; }
+.anim-entrance.anim-rotate { animation-name: anim-rotate; }
+.anim-entrance.anim-swirl { animation-name: anim-swirl; }
+.anim-entrance.anim-roll-in { animation-name: anim-roll-in; }
+.anim-entrance.anim-focus { animation-name: anim-focus; }
+.anim-entrance.anim-pulse { animation-name: anim-pulse; }
+
+/*
+ * Continua: no para. Se reserva a los efectos que vuelven al punto de partida;
+ * un desvanecido en bucle parpadearia sin descanso y cansa a los diez segundos.
+ */
+.anim-loop {
+  animation-iteration-count: infinite;
+  animation-timing-function: ease-in-out;
+}
+.anim-loop.anim-pulse { animation-name: anim-pulse; }
+.anim-loop.anim-bounce { animation-name: anim-bounce-loop; }
+.anim-loop.anim-rotate { animation-name: anim-giro-continuo; animation-timing-function: linear; }
+.anim-loop.anim-focus { animation-name: anim-latido-suave; }
+.anim-loop.anim-swirl { animation-name: anim-giro-continuo; animation-timing-function: linear; }
+.anim-loop.anim-fade { animation-name: anim-latido-suave; }
+.anim-loop.anim-zoom { animation-name: anim-pulse; }
+.anim-loop.anim-slide { animation-name: anim-vaiven; }
+.anim-loop.anim-roll-in { animation-name: anim-vaiven; }
+
+/*
+ * Al pasar el raton y al pulsar. La clase `anim-activa` la pone y la quita el
+ * componente: al pulsar hay que retirarla al terminar, o el segundo clic no
+ * volveria a animar nada porque la animacion ya estaria puesta.
+ */
+.anim-hover:hover,
+.anim-activa {
+  animation-name: var(--anim-nombre);
+}
+.anim-hover.anim-fade, .anim-click.anim-fade { --anim-nombre: anim-fade; }
+.anim-hover.anim-zoom, .anim-click.anim-zoom { --anim-nombre: anim-zoom; }
+.anim-hover.anim-slide, .anim-click.anim-slide { --anim-nombre: anim-slide; }
+.anim-hover.anim-bounce, .anim-click.anim-bounce { --anim-nombre: anim-bounce; }
+.anim-hover.anim-rotate, .anim-click.anim-rotate { --anim-nombre: anim-giro-completo; }
+.anim-hover.anim-swirl, .anim-click.anim-swirl { --anim-nombre: anim-swirl; }
+.anim-hover.anim-roll-in, .anim-click.anim-roll-in { --anim-nombre: anim-roll-in; }
+.anim-hover.anim-focus, .anim-click.anim-focus { --anim-nombre: anim-focus; }
+.anim-hover.anim-pulse, .anim-click.anim-pulse { --anim-nombre: anim-pulse; }
+
+/* --- Los movimientos --- */
+
+@keyframes anim-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes anim-zoom {
+  from { opacity: 0; transform: scale(0.4); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes anim-slide {
+  from { opacity: 0; transform: translateX(-45%); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes anim-bounce {
+  0% { opacity: 0; transform: translateY(-60%); }
+  55% { opacity: 1; transform: translateY(6%); }
+  75% { transform: translateY(-4%); }
+  100% { transform: translateY(0); }
+}
+
+@keyframes anim-bounce-loop {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-9%); }
+}
+
+@keyframes anim-rotate {
+  from { opacity: 0; transform: rotate(-200deg) scale(0.6); }
+  to { opacity: 1; transform: rotate(0) scale(1); }
+}
+
+/* Una vuelta entera, para el raton y el clic: acaba donde empezo. */
+@keyframes anim-giro-completo {
+  from { transform: rotate(0); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes anim-giro-continuo {
+  from { transform: rotate(0); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes anim-swirl {
+  from { opacity: 0; transform: rotate(-540deg) scale(0.1); }
+  to { opacity: 1; transform: rotate(0) scale(1); }
+}
+
+@keyframes anim-roll-in {
+  from { opacity: 0; transform: translateX(-100%) rotate(-240deg); }
+  to { opacity: 1; transform: translateX(0) rotate(0); }
+}
+
+/* Enfoque: entra desenfocado y se afila, como una diapositiva al ajustarse. */
+@keyframes anim-focus {
+  from { opacity: 0; filter: blur(14px); }
+  to { opacity: 1; filter: blur(0); }
+}
+
+@keyframes anim-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.09); }
+}
+
+@keyframes anim-latido-suave {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+
+@keyframes anim-vaiven {
+  0%, 100% { transform: translateX(0); }
+  50% { transform: translateX(6%); }
+}
+
+/*
+ * Quien pide en su sistema que no se muevan las cosas suele hacerlo por mareos o
+ * por migranas. Se anula el movimiento, no el contenido: al quitar la animacion
+ * desaparece tambien el fotograma inicial, asi que el objeto queda a la vista.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .anim,
+  .anim-hover:hover,
+  .anim-activa {
+    animation: none !important;
+    filter: none !important;
+  }
+}

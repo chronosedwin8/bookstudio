@@ -122,8 +122,9 @@ async function copiarPaginas(
     );
 
     await client.query(
-      `INSERT INTO canvas_elements (page_id, type, z_index, transform_matrix, properties, is_locked, opacity)
-       SELECT $1, type, z_index, transform_matrix, properties, is_locked, opacity
+      `INSERT INTO canvas_elements
+         (page_id, type, z_index, transform_matrix, properties, is_locked, opacity, interaction, animation)
+       SELECT $1, type, z_index, transform_matrix, properties, is_locked, opacity, interaction, animation
        FROM canvas_elements WHERE page_id = $2
        ORDER BY z_index`,
       [insertada.rows[0].id, pagina.id],

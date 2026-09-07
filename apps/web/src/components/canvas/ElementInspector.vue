@@ -4,7 +4,10 @@ import ChartInspector from './ChartInspector.vue';
 import QuestionInspector from './QuestionInspector.vue';
 import {
   FONT_GROUPS,
+  type AnimationEffect,
   type CanvasElement,
+  type ElementAnimation,
+  type ElementInteraction,
   type ChartProperties,
   type QuestionProperties,
   type ShapeProperties,
@@ -19,7 +22,16 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  patch: [payload: { properties?: Record<string, unknown>; isLocked?: boolean; opacity?: number }];
+  patch: [
+    payload: {
+      properties?: Record<string, unknown>;
+      isLocked?: boolean;
+      opacity?: number;
+      /** null la quita; ausente la deja como estaba. */
+      interaction?: ElementInteraction | null;
+      animation?: ElementAnimation | null;
+    },
+  ];
   move: [direction: 'front' | 'forward' | 'backward' | 'back'];
   remove: [];
 }>();
@@ -86,6 +98,126 @@ const duracion = computed(() => {
   if (!s) return null;
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 });
+
+
+/* --------------------------------------------------------------------------
+ * Interactividad: informacion ampliada al pasar el raton o al pulsar
+ * ------------------------------------------------------------------------ */
+
+/** Limites que tambien aplica el backend; aqui solo para avisar antes de enviar. */
+const TOPE_GLOBO = 300;
+const TOPE_VENTANA = 4000;
+
+const interaccion = computed(() => props.element?.interaction ?? null);
+
+const topeTexto = computed(() => (interaccion.value?.kind === 'popup' ? TOPE_VENTANA : TOPE_GLOBO));
+
+/** El clic ya esta ocupado si el elemento lleva enlace: no caben los dos. */
+const clicOcupado = computed(() => linkUrl.value.trim().length > 0);
+
+/**
+ * Lo que se esta escribiendo antes de que valga la pena guardarlo. Sin esto, el
+ * primer caracter del titulo se perderia: el elemento aun no tiene interaccion
+ * guardada y el campo volveria a quedarse vacio en cuanto se repintara.
+ */
+const borrador = ref<ElementInteraction | null>(null);
+
+const infoActual = computed(() => interaccion.value ?? borrador.value);
+
+function ponerInteraccion(cambio: Partial<ElementInteraction>): void {
+  const base: ElementInteraction = interaccion.value ?? {
+    kind: 'tooltip',
+    trigger: 'hover',
+    title: '',
+    text: '',
+  };
+  const siguiente = { ...base, ...cambio };
+
+  // Un globo no admite ni parrafadas ni imagen. Se recorta al vuelo en vez de
+  // dejar que el backend rechace el cambio con un error que no explica nada.
+  if (siguiente.kind === 'tooltip') {
+    siguiente.text = siguiente.text.slice(0, TOPE_GLOBO);
+    delete siguiente.imageUrl;
+  } else {
+    siguiente.text = siguiente.text.slice(0, TOPE_VENTANA);
+  }
+  if (clicOcupado.value && siguiente.trigger === 'click') siguiente.trigger = 'hover';
+
+  // Sin texto no hay nada que mostrar, y el backend lo rechaza: se guarda solo
+  // cuando ya hay contenido. Mientras tanto vive en el borrador de aqui.
+  borrador.value = siguiente;
+  if (siguiente.text.trim()) emit('patch', { interaction: siguiente });
+}
+
+function quitarInteraccion(): void {
+  borrador.value = null;
+  emit('patch', { interaction: null });
+}
+
+/* --------------------------------------------------------------------------
+ * Animacion
+ * ------------------------------------------------------------------------ */
+
+const EFECTOS: Array<{ id: AnimationEffect; label: string }> = [
+  { id: 'fade', label: 'Aparecer' },
+  { id: 'zoom', label: 'Acercar' },
+  { id: 'slide', label: 'Deslizar' },
+  { id: 'bounce', label: 'Rebotar' },
+  { id: 'rotate', label: 'Girar' },
+  { id: 'swirl', label: 'Remolino' },
+  { id: 'roll-in', label: 'Rodar' },
+  { id: 'focus', label: 'Enfocar' },
+  { id: 'pulse', label: 'Latir' },
+];
+
+const MOMENTOS: Array<{ id: ElementAnimation['trigger']; label: string; ayuda: string }> = [
+  { id: 'entrance', label: 'Al entrar', ayuda: 'Se reproduce una vez al abrir la página.' },
+  { id: 'loop', label: 'Continua', ayuda: 'No para mientras la página esté abierta.' },
+  { id: 'hover', label: 'Al pasar el ratón', ayuda: 'Se reproduce cuando el ratón pasa por encima.' },
+  { id: 'click', label: 'Al pulsar', ayuda: 'Se reproduce cada vez que se pulsa el elemento.' },
+];
+
+watch(() => props.element?.id, () => { borrador.value = null; });
+
+const animacion = computed(() => props.element?.animation ?? null);
+
+const ayudaMomento = computed(
+  () => MOMENTOS.find((m) => m.id === animacion.value?.trigger)?.ayuda ?? '',
+);
+
+function ponerAnimacion(cambio: Partial<ElementAnimation>): void {
+  const base: ElementAnimation = animacion.value ?? {
+    trigger: 'entrance',
+    effect: 'fade',
+    duration: 0.8,
+    delay: 0,
+  };
+  emit('patch', { animation: { ...base, ...cambio } });
+  reproducir();
+}
+
+function quitarAnimacion(): void {
+  emit('patch', { animation: null });
+}
+
+/**
+ * Muestra el efecto en el cuadrito de al lado. Se recrea el nodo cambiando la
+ * clave porque una animacion CSS ya terminada no vuelve a empezar sola.
+ */
+const ensayo = ref(0);
+function reproducir(): void {
+  ensayo.value++;
+}
+
+const claseEnsayo = computed(() =>
+  animacion.value ? ['anim', `anim-${animacion.value.effect}`, 'anim-entrance'] : [],
+);
+
+const estiloEnsayo = computed(() => ({
+  '--anim-dur': `${animacion.value?.duration ?? 0.8}s`,
+  // La espera no se respeta en el ensayo: quien pulsa "Probar" quiere verlo ya.
+  '--anim-esp': '0s',
+}));
 
 function patchProperty(key: string, value: unknown): void {
   if (!props.element) return;
@@ -439,6 +571,183 @@ const SOFT_BACKGROUNDS = ['transparent', '#F7F4EC', '#EDF2F0', '#FBF3E4', '#EFEA
 
         <p v-else class="text-[11px] leading-tight text-slate-400">
           Este elemento no lleva enlace.
+        </p>
+      </section>
+
+      <!-- Interactividad: informacion ampliada sobre el propio elemento -->
+      <section class="space-y-2 border-t border-slate-100 pt-3">
+        <h3 class="label">Interactividad</h3>
+
+        <div class="flex gap-1">
+          <button
+            v-for="modo in [
+              { id: 'ninguna', label: 'Ninguna' },
+              { id: 'tooltip', label: 'Globo' },
+              { id: 'popup', label: 'Ventana' },
+            ]"
+            :key="modo.id"
+            type="button"
+            class="flex-1 rounded-lg border px-2 py-1.5 text-xs font-medium transition"
+            :class="(infoActual?.kind ?? 'ninguna') === modo.id
+              ? 'border-brand-500 bg-brand-50 text-brand-700'
+              : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50'"
+            @click="modo.id === 'ninguna'
+              ? quitarInteraccion()
+              : ponerInteraccion({ kind: modo.id as 'tooltip' | 'popup' })"
+          >{{ modo.label }}</button>
+        </div>
+
+        <template v-if="infoActual">
+          <div class="flex gap-1">
+            <button
+              v-for="disparo in [
+                { id: 'hover', label: 'Al pasar el ratón' },
+                { id: 'click', label: 'Al pulsar' },
+              ]"
+              :key="disparo.id"
+              type="button"
+              class="flex-1 rounded-lg border px-2 py-1.5 text-[11px] font-medium transition
+                     disabled:cursor-not-allowed disabled:opacity-40"
+              :class="infoActual.trigger === disparo.id
+                ? 'border-brand-500 bg-brand-50 text-brand-700'
+                : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50'"
+              :disabled="disparo.id === 'click' && clicOcupado"
+              @click="ponerInteraccion({ trigger: disparo.id as 'hover' | 'click' })"
+            >{{ disparo.label }}</button>
+          </div>
+
+          <p v-if="clicOcupado" class="text-[11px] leading-tight text-amber-600">
+            Este elemento ya tiene un enlace, que se abre al pulsarlo. La información
+            se mostrará al pasar el ratón.
+          </p>
+
+          <input
+            type="text"
+            class="input"
+            placeholder="Título (opcional)"
+            maxlength="120"
+            :value="infoActual.title"
+            @input="ponerInteraccion({ title: ($event.target as HTMLInputElement).value })"
+          />
+
+          <textarea
+            class="input resize-y"
+            :rows="infoActual.kind === 'popup' ? 5 : 3"
+            :maxlength="topeTexto"
+            placeholder="Texto que verá quien lea el libro"
+            :value="infoActual.text"
+            @input="ponerInteraccion({ text: ($event.target as HTMLTextAreaElement).value })"
+          ></textarea>
+
+          <p class="flex items-center justify-between text-[11px] leading-tight text-slate-400">
+            <span>Texto sin formato: se muestra tal cual.</span>
+            <span :class="infoActual.text.length >= topeTexto ? 'font-semibold text-amber-600' : ''">
+              {{ infoActual.text.length }}/{{ topeTexto }}
+            </span>
+          </p>
+
+          <template v-if="infoActual.kind === 'popup'">
+            <input
+              type="url"
+              class="input"
+              placeholder="Imagen de la ventana (opcional)"
+              :value="infoActual.imageUrl ?? ''"
+              @change="ponerInteraccion({ imageUrl: ($event.target as HTMLInputElement).value.trim() || undefined })"
+            />
+            <p class="text-[11px] leading-tight text-slate-400">
+              Se abre una ventana centrada. Se cierra con su aspa o con la tecla Escape.
+            </p>
+          </template>
+          <p v-else class="text-[11px] leading-tight text-slate-400">
+            Aparece un globo junto al cursor. Para más texto o una imagen, usa una ventana.
+          </p>
+        </template>
+
+        <p v-else class="text-[11px] leading-tight text-slate-400">
+          Añade información que aparece al pasar el ratón o al pulsar, sin ocupar sitio
+          en la página.
+        </p>
+      </section>
+
+      <!-- Animacion: movimiento del elemento en el modo lectura -->
+      <section class="space-y-2 border-t border-slate-100 pt-3">
+        <div class="flex items-center justify-between">
+          <h3 class="label mb-0">Animación</h3>
+          <button
+            v-if="animacion"
+            type="button"
+            class="text-[11px] font-medium text-slate-400 hover:text-red-600"
+            @click="quitarAnimacion()"
+          >Quitar</button>
+        </div>
+
+        <div class="grid grid-cols-3 gap-1">
+          <button
+            v-for="efecto in EFECTOS"
+            :key="efecto.id"
+            type="button"
+            class="rounded-lg border px-1 py-1.5 text-[11px] font-medium transition"
+            :class="animacion?.effect === efecto.id
+              ? 'border-brand-500 bg-brand-50 text-brand-700'
+              : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50'"
+            @click="ponerAnimacion({ effect: efecto.id })"
+          >{{ efecto.label }}</button>
+        </div>
+
+        <template v-if="animacion">
+          <select
+            class="input"
+            :value="animacion.trigger"
+            @change="ponerAnimacion({ trigger: ($event.target as HTMLSelectElement).value as ElementAnimation['trigger'] })"
+          >
+            <option v-for="m in MOMENTOS" :key="m.id" :value="m.id">{{ m.label }}</option>
+          </select>
+          <p class="text-[11px] leading-tight text-slate-400">{{ ayudaMomento }}</p>
+
+          <label class="block text-[11px] text-slate-500">
+            Duración: {{ animacion.duration.toFixed(1) }} s
+            <input
+              type="range"
+              class="w-full"
+              min="0.2"
+              max="6"
+              step="0.1"
+              :value="animacion.duration"
+              @change="ponerAnimacion({ duration: Number(($event.target as HTMLInputElement).value) })"
+            />
+          </label>
+
+          <label v-if="animacion.trigger === 'entrance'" class="block text-[11px] text-slate-500">
+            Espera antes de empezar: {{ animacion.delay.toFixed(1) }} s
+            <input
+              type="range"
+              class="w-full"
+              min="0"
+              max="10"
+              step="0.1"
+              :value="animacion.delay"
+              @change="ponerAnimacion({ delay: Number(($event.target as HTMLInputElement).value) })"
+            />
+          </label>
+
+          <!-- Ensayo: se ve el efecto sin tener que irse a leer el libro -->
+          <div class="flex items-center gap-3 rounded-lg bg-slate-50 p-2">
+            <div class="grid h-12 w-12 shrink-0 place-items-center overflow-hidden">
+              <div
+                :key="ensayo"
+                class="h-8 w-8 rounded bg-brand-500"
+                :class="claseEnsayo"
+                :style="estiloEnsayo"
+              ></div>
+            </div>
+            <button type="button" class="btn-secondary flex-1 py-1 text-xs" @click="reproducir()">
+              Probar de nuevo
+            </button>
+          </div>
+        </template>
+
+        <p v-else class="text-[11px] leading-tight text-slate-400">
+          Elige un efecto para que el elemento se mueva en el modo lectura.
         </p>
       </section>
 
