@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <!--
+      Valores por defecto de la portada, escritos a mano.
+
+      La aplicacion es una SPA: useSeo() los reescribe al navegar, pero los
+      rastreadores de redes sociales no ejecutan JavaScript y solo leen esto.
+    -->
+    <title>BookStudio · Libros interactivos que el alumnado crea, escucha y comparte</title>
+    <meta
+      name="description"
+      content="Crea libros interactivos con voz, video, mapas, graficas y preguntas autocorregibles. Plataforma para centros educativos y equipos profesionales, con planes desde un docente hasta toda la institucion."
+    />
+    <meta name="author" content="BookStudio" />
+    <meta name="robots" content="index, follow" />
+    <meta name="theme-color" content="#2563eb" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="BookStudio" />
+    <meta property="og:locale" content="es_ES" />
+    <meta property="og:title" content="BookStudio · Libros interactivos que el alumnado crea, escucha y comparte" />
+    <meta
+      property="og:description"
+      content="Voz, video, mapas, graficas y preguntas que se corrigen solas. Para colegios y equipos profesionales."
+    />
+    <meta property="og:image" content="/og-image.svg" />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="BookStudio · Libros interactivos" />
+    <meta
+      name="twitter:description"
+      content="Voz, video, mapas, graficas y preguntas que se corrigen solas. Para colegios y equipos profesionales."
+    />
+    <meta name="twitter:image" content="/og-image.svg" />
+
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  </head>
+  <body class="bg-slate-50 text-slate-800 antialiased">
+    <div id="app"></div>
+
+    <noscript>
+      <div style="max-width: 40rem; margin: 3rem auto; padding: 0 1rem; font-family: system-ui, sans-serif">
+        <h1>BookStudio</h1>
+        <p>
+          Libros interactivos con voz, video, mapas, graficas y preguntas autocorregibles,
+          para centros educativos y equipos profesionales.
+        </p>
+        <p>Necesitas activar JavaScript para usar el editor.</p>
+      </div>
+    </noscript>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
