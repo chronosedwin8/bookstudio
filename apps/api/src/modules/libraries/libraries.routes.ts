@@ -12,6 +12,7 @@ import {
   createLibrarySchema,
   distributeSchema,
   joinLibrarySchema,
+  bulkPasswordSchema,
   libraryIdSchema,
   rosterSchema,
   studentSearchSchema,
@@ -178,6 +179,23 @@ librariesRouter.post(
   validate(bulkDeleteBooksSchema),
   asyncHandler(async (req, res) => {
     res.json(await service.bulkDeleteBooks(req.params.id, req.auth!.userId, req.body.bookIds));
+  }),
+);
+
+/**
+ * Misma contrasena para todo el alumnado de la biblioteca.
+ *
+ * Va aqui y no en /users porque el sujeto es la clase entera, no una cuenta: el
+ * permiso que hace falta es el de dirigir la biblioteca.
+ */
+librariesRouter.post(
+  '/:id/students/password',
+  validate(libraryIdSchema, 'params'),
+  validate(bulkPasswordSchema),
+  asyncHandler(async (req, res) => {
+    res.json({
+      result: await service.setStudentPasswords(req.params.id, req.auth!.userId, req.body.password),
+    });
   }),
 );
 

@@ -367,6 +367,7 @@ onMounted(async () => {
               <th class="px-3 py-2">Persona</th>
               <th class="px-3 py-2">Rol</th>
               <th class="px-3 py-2">Origen</th>
+              <th class="px-3 py-2">Curso</th>
               <th class="px-3 py-2 text-center">Libros</th>
               <th class="px-3 py-2">Acciones</th>
             </tr>
@@ -396,6 +397,14 @@ onMounted(async () => {
                 </span>
                 <span v-else-if="!user.hasPassword" class="rounded bg-amber-100 px-1.5 py-0.5 text-amber-700">QR</span>
                 <span v-else class="text-slate-400">manual</span>
+              </td>
+              <!-- Curso o seccion de origen: el "name" que trae Phidias ("K2D"). -->
+              <td class="px-3 py-2">
+                <span
+                  v-if="user.course"
+                  class="rounded bg-slate-100 px-1.5 py-0.5 text-xs font-semibold text-slate-600"
+                >{{ user.course }}</span>
+                <span v-else class="text-xs text-slate-400">—</span>
               </td>
               <td class="px-3 py-2 text-center tabular-nums">{{ user.bookCount }}</td>
               <td class="px-3 py-2">

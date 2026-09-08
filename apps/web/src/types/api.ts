@@ -573,6 +573,8 @@ export interface ManagedUser {
   isActive: boolean;
   externalSource: string | null;
   hasPassword: boolean;
+  /** Curso o seccion de origen: el "name" de Phidias ("K2D"). */
+  course: string | null;
   libraryCount: number;
   bookCount: number;
   createdAt: string;

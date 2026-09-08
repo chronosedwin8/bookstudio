@@ -16,6 +16,8 @@ export interface ManagedUser {
   externalSource: string | null;
   /** Los alumnos creados por QR no tienen contrasena. */
   hasPassword: boolean;
+  /** Curso o seccion de origen: el "name" de Phidias ("K2D"). null si no viene de ahi. */
+  course: string | null;
   libraryCount: number;
   bookCount: number;
   createdAt: string;
@@ -29,6 +31,7 @@ interface UserRow {
   is_active: boolean;
   external_source: string | null;
   has_password: boolean;
+  course: string | null;
   library_count: string;
   book_count: string;
   created_at: Date;
@@ -43,6 +46,7 @@ function toManagedUser(row: UserRow): ManagedUser {
     isActive: row.is_active,
     externalSource: row.external_source,
     hasPassword: row.has_password,
+    course: row.course ?? null,
     libraryCount: Number(row.library_count),
     bookCount: Number(row.book_count),
     createdAt: row.created_at.toISOString(),
@@ -70,7 +74,12 @@ export async function listUsers({ search, role, page, pageSize }: ListUsersQuery
 
   if (search) {
     values.push(`%${search}%`);
-    conditions.push(`(u.full_name ILIKE $${values.length} OR u.email ILIKE $${values.length})`);
+    // El curso entra en la busqueda: "K2D" saca la seccion entera de una vez,
+    // que es como se busca cuando hay mil cuentas.
+    conditions.push(
+      `(u.full_name ILIKE $${values.length} OR u.email ILIKE $${values.length}` +
+        ` OR u.external_group ILIKE $${values.length})`,
+    );
   }
   if (role) {
     values.push(role);
@@ -89,6 +98,9 @@ export async function listUsers({ search, role, page, pageSize }: ListUsersQuery
 
   const { rows } = await query<UserRow>(
     `SELECT u.id, u.email, u.full_name, u.role, u.is_active, u.external_source, u.created_at,
+            -- Es el "name" de la seccion en Phidias ("K2D"), que se refresca en
+            -- cada importacion porque el alumnado cambia de curso cada ano.
+            u.external_group AS course,
             (u.password_hash IS NOT NULL) AS has_password,
             (SELECT COUNT(*) FROM library_students ls WHERE ls.student_id = u.id)
               + (SELECT COUNT(*) FROM libraries l WHERE l.owner_id = u.id) AS library_count,
@@ -112,6 +124,9 @@ export async function listUsers({ search, role, page, pageSize }: ListUsersQuery
 async function loadUser(userId: string): Promise<ManagedUser> {
   const page = await query<UserRow>(
     `SELECT u.id, u.email, u.full_name, u.role, u.is_active, u.external_source, u.created_at,
+            -- Es el "name" de la seccion en Phidias ("K2D"), que se refresca en
+            -- cada importacion porque el alumnado cambia de curso cada ano.
+            u.external_group AS course,
             (u.password_hash IS NOT NULL) AS has_password,
             0 AS library_count, 0 AS book_count
      FROM users u WHERE u.id = $1`,
@@ -150,7 +165,20 @@ export async function updateUser(
   userId: string,
   actorId: string,
   input: UpdateUserInput,
+  actorRole = 'admin',
 ): Promise<ManagedUser> {
+  /*
+   * Un docente puede corregir el nombre de su alumnado, y nada mas. El rol y el
+   * alta o baja de una cuenta son decisiones del centro, no de una clase: un
+   * alumno suele estar en varias bibliotecas y desactivarlo desde una dejaria a
+   * los demas docentes sin saber por que ese alumno dejo de entrar.
+   */
+  if (actorRole !== 'admin') {
+    if (input.role !== undefined || input.isActive !== undefined) {
+      throw HttpError.forbidden('Solo la administración cambia el rol o da de baja una cuenta');
+    }
+  }
+
   // Quitarse a uno mismo el rol de admin dejaria el sistema sin quien lo gestione.
   if (userId === actorId && input.role && input.role !== 'admin') {
     throw HttpError.badRequest('No puedes cambiar tu propio rol de administrador');
@@ -253,10 +281,23 @@ export async function deleteUser(userId: string, actorId: string): Promise<Borra
  * Un docente solo puede borrar alumnado de sus propias bibliotecas. Sin esto,
  * cualquier profesor podria borrar la cuenta de un companero o de un alumno ajeno.
  */
-export async function assertPuedeBorrar(userId: string, actor: { id: string; role: string }): Promise<void> {
-  // Antes que el permiso: borrarse a uno mismo nunca tiene sentido, y sin esta linea
-  // un docente recibiria un "no es tu alumno" en vez del motivo real.
-  if (userId === actor.id) throw HttpError.badRequest('No puedes borrar tu propia cuenta');
+/**
+ * Un docente manda sobre el alumnado de sus bibliotecas, y solo sobre el.
+ *
+ * La administracion alcanza a cualquiera. Un docente alcanza a quien sea alumno
+ * Y este en alguna biblioteca suya, sea porque la dirige o porque le anadieron
+ * como docente. Nunca a otro docente ni a la administracion, aunque compartan
+ * biblioteca: lo que se puede hacer aqui (cambiar la clave, renombrar, borrar)
+ * es demasiado como para ejercerlo entre iguales.
+ */
+export async function assertPuedeGestionar(
+  userId: string,
+  actor: { id: string; role: string },
+  verbo = 'gestionar',
+): Promise<void> {
+  // Antes que el permiso: hacerselo a uno mismo nunca tiene sentido, y sin esta
+  // linea un docente recibiria un "no es tu alumno" en vez del motivo real.
+  if (userId === actor.id) throw HttpError.badRequest(`No puedes ${verbo} tu propia cuenta desde aqui`);
   if (actor.role === 'admin') return;
 
   const { rows } = await query<{ permitido: boolean }>(
@@ -270,8 +311,13 @@ export async function assertPuedeBorrar(userId: string, actor: { id: string; rol
   );
 
   if (!rows[0]?.permitido) {
-    throw HttpError.forbidden('Solo puedes borrar alumnado de tus propias bibliotecas');
+    throw HttpError.forbidden(`Solo puedes ${verbo} alumnado de tus propias bibliotecas`);
   }
+}
+
+/** Se conserva el nombre anterior: lo usa la ruta de borrado. */
+export async function assertPuedeBorrar(userId: string, actor: { id: string; role: string }): Promise<void> {
+  return assertPuedeGestionar(userId, actor, 'borrar');
 }
 
 /** Cambia la contrasena sin pedir la anterior: es una accion de administracion. */

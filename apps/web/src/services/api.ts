@@ -198,6 +198,14 @@ export const librariesApi = {
     );
     return data;
   },
+  /** Misma contrasena para todo el alumnado de la biblioteca. */
+  async setStudentPasswords(id: string, password: string) {
+    const { data } = await http.post<{ result: { changed: number; skipped: number } }>(
+      `/libraries/${id}/students/password`,
+      { password },
+    );
+    return data.result;
+  },
   async removeStudent(id: string, studentId: string) {
     await http.delete(`/libraries/${id}/students/${studentId}`);
   },

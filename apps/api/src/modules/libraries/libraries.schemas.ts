@@ -97,3 +97,13 @@ export type RosterQuery = z.infer<typeof rosterSchema>;
 export type AddStudentsInput = z.infer<typeof addStudentsSchema>;
 export type DistributeInput = z.infer<typeof distributeSchema>;
 export type BulkDeleteBooksInput = z.infer<typeof bulkDeleteBooksSchema>;
+
+/**
+ * Contrasena que se pone a toda la clase de golpe.
+ *
+ * El minimo es el mismo que en el resto de la plataforma: bajarlo aqui porque
+ * "son ninos" seria abrir la puerta grande, y estas cuentas guardan su trabajo.
+ */
+export const bulkPasswordSchema = z.object({
+  password: z.string().min(8, 'La contraseña debe tener al menos 8 caracteres').max(128),
+});

@@ -55,6 +55,50 @@ usersRouter.delete(
   }),
 );
 
+/**
+ * Cambia la contrasena de una cuenta.
+ *
+ * La administracion alcanza a cualquiera; un docente, solo al alumnado de sus
+ * bibliotecas. Es de las cosas que mas se piden: un alumno de primero olvida su
+ * clave cada dos semanas y hasta ahora habia que molestar a la administracion.
+ */
+usersRouter.post(
+  '/:id/password',
+  requireAuth,
+  requireRole('teacher', 'admin'),
+  validate(userIdSchema, 'params'),
+  validate(passwordSchema),
+  asyncHandler(async (req, res) => {
+    await service.assertPuedeGestionar(
+      req.params.id,
+      { id: req.auth!.userId, role: req.auth!.role },
+      'cambiar la contraseña de',
+    );
+    await service.resetPassword(req.params.id, req.body.password);
+    res.status(204).end();
+  }),
+);
+
+/**
+ * Corrige los datos de una cuenta. Un docente solo puede cambiar el nombre; el
+ * rol y el alta o baja los reserva el servicio a la administracion.
+ */
+usersRouter.patch(
+  '/:id',
+  requireAuth,
+  requireRole('teacher', 'admin'),
+  validate(userIdSchema, 'params'),
+  validate(updateSchema),
+  asyncHandler(async (req, res) => {
+    await service.assertPuedeGestionar(
+      req.params.id,
+      { id: req.auth!.userId, role: req.auth!.role },
+      'modificar',
+    );
+    res.json({ user: await service.updateUser(req.params.id, req.auth!.userId, req.body, req.auth!.role) });
+  }),
+);
+
 usersRouter.use(requireAuth, requireRole('admin'));
 
 usersRouter.get(
@@ -77,25 +121,6 @@ usersRouter.post(
   validate(createSchema),
   asyncHandler(async (req, res) => {
     res.status(201).json({ user: await service.createUser(req.body) });
-  }),
-);
-
-usersRouter.patch(
-  '/:id',
-  validate(userIdSchema, 'params'),
-  validate(updateSchema),
-  asyncHandler(async (req, res) => {
-    res.json({ user: await service.updateUser(req.params.id, req.auth!.userId, req.body) });
-  }),
-);
-
-usersRouter.post(
-  '/:id/password',
-  validate(userIdSchema, 'params'),
-  validate(passwordSchema),
-  asyncHandler(async (req, res) => {
-    await service.resetPassword(req.params.id, req.body.password);
-    res.status(204).end();
   }),
 );
 

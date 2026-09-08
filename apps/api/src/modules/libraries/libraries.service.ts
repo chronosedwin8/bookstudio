@@ -1,3 +1,4 @@
+import bcrypt from 'bcryptjs';
 import { query, withTransaction } from '../../db/pool.js';
 import { HttpError } from '../../lib/http-error.js';
 import type { ElementType } from '../canvas/canvas.schemas.js';
@@ -646,6 +647,58 @@ export async function bulkDeleteBooks(
  * Saca a un alumno de la biblioteca. Sus libros se quedan donde estan: borrarlos
  * seria destruir su trabajo por un cambio de matricula.
  */
+export interface CambioMasivoClaves {
+  /** A cuantas cuentas se les cambio la contrasena. */
+  changed: number;
+  /** Cuantas se dejaron fuera por no ser alumnado. */
+  skipped: number;
+}
+
+/**
+ * Pone la misma contrasena a todo el alumnado de la biblioteca.
+ *
+ * Es lo que pide septiembre: treinta cuentas nuevas y una clase entera que no
+ * recuerda nada. Se hace en una transaccion para que no queden a medias unos con
+ * la clave nueva y otros con la vieja, que es el peor de los estados posibles.
+ *
+ * Alcanza SOLO al alumnado. Si en la biblioteca hay otros docentes, sus cuentas
+ * ni se rozan: darle a un companero una contrasena que tu conoces no es lo mismo
+ * que darsela a un alumno de septimo.
+ */
+export async function setStudentPasswords(
+  libraryId: string,
+  userId: string,
+  password: string,
+): Promise<CambioMasivoClaves> {
+  await requireManager(libraryId, userId);
+
+  const { rows: miembros } = await query<{ id: string; role: string }>(
+    `SELECT u.id, u.role
+     FROM library_students ls
+     JOIN users u ON u.id = ls.student_id
+     WHERE ls.library_id = $1`,
+    [libraryId],
+  );
+
+  const alumnado = miembros.filter((m) => m.role === 'student');
+  if (!alumnado.length) {
+    throw HttpError.badRequest('Esta biblioteca no tiene alumnado al que cambiar la contraseña');
+  }
+
+  const hash = await bcrypt.hash(password, 12);
+
+  return withTransaction(async (client) => {
+    const { rowCount } = await client.query(
+      // password_is_default queda en TRUE: es una clave puesta por el centro, no
+      // elegida por cada alumno, y eso es lo que permite volver a repartirla.
+      `UPDATE users SET password_hash = $2, password_is_default = TRUE
+       WHERE id = ANY($1::uuid[])`,
+      [alumnado.map((a) => a.id), hash],
+    );
+    return { changed: rowCount ?? 0, skipped: miembros.length - alumnado.length };
+  });
+}
+
 export async function removeStudent(libraryId: string, userId: string, studentId: string): Promise<void> {
   await requireManager(libraryId, userId);
   await query('DELETE FROM library_students WHERE library_id = $1 AND student_id = $2', [libraryId, studentId]);

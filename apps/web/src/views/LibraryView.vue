@@ -265,6 +265,81 @@ async function deleteStudent(studentId: string, nombre: string): Promise<void> {
   }
 }
 
+/* --------------------------------------------------------------------------
+ * Contrasenas
+ *
+ * El motivo de que esto viva aqui y no solo en la administracion: quien se
+ * entera de que un alumno de segundo no puede entrar es su docente, en medio de
+ * la clase, y hasta ahora tenia que escribir un correo y esperar.
+ * ------------------------------------------------------------------------ */
+
+const claveOcupada = ref(false);
+
+async function cambiarClave(studentId: string, nombre: string): Promise<void> {
+  const clave = window.prompt(`Nueva contraseña para ${nombre} (mínimo 8 caracteres):`);
+  if (clave === null) return;
+  if (clave.trim().length < 8) {
+    error.value = 'La contraseña debe tener al menos 8 caracteres.';
+    return;
+  }
+
+  claveOcupada.value = true;
+  error.value = null;
+  try {
+    await usersApi.resetPassword(studentId, clave.trim());
+    notice.value = `Contraseña cambiada. Apúntala antes de cerrar: ${clave.trim()}`;
+  } catch (err) {
+    error.value = errorMessage(err);
+  } finally {
+    claveOcupada.value = false;
+  }
+}
+
+/**
+ * La misma contrasena para toda la clase.
+ *
+ * Se pide confirmacion con el numero de cuentas delante: es la unica accion de
+ * esta pantalla que toca a treinta personas a la vez, y quien la pulsa deberia
+ * ver cuantas son antes de que pase.
+ */
+async function cambiarClaveDeTodos(): Promise<void> {
+  /*
+   * El total de la biblioteca, NO las filas que se ven.
+   *
+   * La tabla se pagina de doce en doce: con 19 alumnos, `alumnado` trae 12 y el
+   * aviso decia "se cambiara la contrasena de 12 cuentas" antes de cambiar 19.
+   * Prometer menos de lo que se hace, y encima en algo irreversible, es de las
+   * peores formas de equivocarse. Se vio con una clase de verdad, no con las dos
+   * cuentas de prueba.
+   */
+  const cuantos = members.value?.students.length ?? 0;
+  if (!cuantos) return;
+
+  const clave = window.prompt(
+    `Contraseña para las ${cuantos} cuentas de alumnado de esta biblioteca (mínimo 8 caracteres).\n` +
+      'Todas quedarán con la misma; apúntala antes de continuar.',
+  );
+  if (clave === null) return;
+  if (clave.trim().length < 8) {
+    error.value = 'La contraseña debe tener al menos 8 caracteres.';
+    return;
+  }
+  if (!window.confirm(`Se cambiará la contraseña de ${cuantos} cuentas. ¿Continuar?`)) return;
+
+  claveOcupada.value = true;
+  error.value = null;
+  try {
+    const r = await librariesApi.setStudentPasswords(libraryId.value, clave.trim());
+    notice.value =
+      `Contraseña cambiada en ${r.changed} ${r.changed === 1 ? 'cuenta' : 'cuentas'}. ` +
+      `Apúntala antes de cerrar: ${clave.trim()}`;
+  } catch (err) {
+    error.value = errorMessage(err);
+  } finally {
+    claveOcupada.value = false;
+  }
+}
+
 async function removeStudent(studentId: string, nombre: string): Promise<void> {
   if (!window.confirm(`Sacar a ${nombre} de esta biblioteca? Sus libros se conservan.`)) return;
   try {
@@ -759,6 +834,18 @@ function formatDate(value: string | null): string {
               class="btn-secondary px-3 py-1.5 text-sm"
               @click="showPhidias = true"
             >🎓 Traer de Phidias</button>
+            <!-- Toda la clase con la misma clave: lo de septiembre, cuando nadie
+                 recuerda nada. Solo se ofrece si hay a quien cambiarsela. -->
+            <!-- Se ofrece si la biblioteca tiene alumnado, no si lo tiene la
+                 pagina actual: al buscar, la pagina puede quedarse vacia. -->
+            <button
+              v-if="resumen.alumnos"
+              type="button"
+              class="btn-secondary px-3 py-1.5 text-sm disabled:opacity-50"
+              :disabled="claveOcupada"
+              title="Pone la misma contraseña a todo el alumnado de esta biblioteca"
+              @click="cambiarClaveDeTodos"
+            >🔑 Contraseña para toda la clase</button>
           </div>
         </div>
 
@@ -837,6 +924,13 @@ function formatDate(value: string | null): string {
                 <td class="px-4 py-2 text-xs text-slate-500">{{ formatDate(alumno.lastActivityAt) }}</td>
                 <td class="px-4 py-2 text-right">
                   <span class="flex justify-end gap-3">
+                    <button
+                      type="button"
+                      class="text-xs font-semibold text-brand-600 hover:underline disabled:opacity-50"
+                      title="Le pone una contraseña nueva"
+                      :disabled="claveOcupada"
+                      @click="cambiarClave(alumno.studentId, alumno.studentName)"
+                    >Contraseña</button>
                     <button
                       type="button"
                       class="text-xs font-semibold text-slate-500 hover:underline"
