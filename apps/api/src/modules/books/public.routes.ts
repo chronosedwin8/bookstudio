@@ -2,8 +2,9 @@ import { Router } from 'express';
 import { asyncHandler } from '../../lib/async-handler.js';
 import { optionalAuth } from '../../middleware/auth.js';
 import { validate } from '../../middleware/validate.js';
-import { answerSchema, sharedQuestionParamsSchema, shareTokenSchema } from './books.schemas.js';
+import { answerSchema, muralQuerySchema, sharedQuestionParamsSchema, shareTokenSchema } from './books.schemas.js';
 import { answerSharedQuestion, getSharedBook } from './books.service.js';
+import { listMural } from './mural.service.js';
 
 /** Acceso de solo lectura por enlace compartido; no exige cuenta. */
 export const publicRouter = Router();
@@ -30,5 +31,17 @@ publicRouter.post(
       req.auth?.userId,
     );
     res.json({ result });
+  }),
+);
+
+/**
+ * El mural. Se sirve sin cuenta a proposito: es la vitrina publica del colegio y
+ * tiene que poder ensenarse a una familia que no entra en la plataforma.
+ */
+publicRouter.get(
+  '/mural',
+  validate(muralQuerySchema, 'query'),
+  asyncHandler(async (req, res) => {
+    res.json(await listMural(req.query as never));
   }),
 );

@@ -105,6 +105,65 @@ const videoVenenoso = conInteraccion([
 ]);
 check('una direccion no navegable no pinta iframe', !videoVenenoso.includes('javascript:alert'));
 
+// --- Botones ---
+const conBoton = bookToHtml(libro([
+  elemento({
+    type: 'button',
+    properties: {
+      label: 'Ir a la pagina 3', variant: 'solid', shape: 'pill', size: 'lg',
+      backgroundColor: '#16A34A', textColor: '#FFFFFF', borderColor: '#15803D',
+      fontFamily: 'Nunito', iconSource: 'emoji', iconChar: '➡', iconPosition: 'right',
+      linkUrl: '#pagina-3', shadow: true,
+    },
+  }),
+]));
+check('el boton viaja con su texto', conBoton.includes('Ir a la pagina 3'));
+check('con su color', conBoton.includes('background:#16A34A'));
+check('con su forma de pastilla', conBoton.includes('border-radius:999px'));
+check('y con su icono', conBoton.includes('class="bico"'));
+check('la copia lleva el estilo del boton', conBoton.includes('.btn {'));
+
+const botonMalo = bookToHtml(libro([
+  elemento({
+    type: 'button',
+    properties: { label: 'Malo', linkUrl: 'javascript:alert(1)', backgroundColor: '#2563EB' },
+  }),
+]));
+check('un enlace no navegable no se pinta', !botonMalo.includes('javascript:alert'));
+check('pero el boton si', botonMalo.includes('Malo'));
+
+const botonTravieso = bookToHtml(libro([
+  elemento({ type: 'button', properties: { label: '<script>alert(1)</script>', backgroundColor: '#2563EB' } }),
+]));
+check('la etiqueta de un boton se escapa', !botonTravieso.includes('<script>alert(1)'));
+
+// --- Mostrar y ocultar ---
+const conReglas = bookToHtml(libro([
+  elemento({ id: 'oculto', properties: { text: 'Son 42' }, actions: { key: 'respuesta', startHidden: true, rules: [] } }),
+  elemento({
+    id: 'boton', type: 'button',
+    properties: { label: 'Ver la respuesta', backgroundColor: '#2563EB' },
+    actions: { startHidden: false, rules: [{ trigger: 'click', action: 'toggle', target: 'respuesta' }] },
+  }),
+]));
+check('el nombre del objeto viaja', conReglas.includes('data-nombre="respuesta"'));
+check('y que arranca oculto', conReglas.includes('data-oculto="1"'));
+check('la regla viaja completa', conReglas.includes('data-reglas="click:toggle:respuesta"'));
+check('lo que actua se marca como pulsable', conReglas.includes('class="el actua"'));
+check('la copia lleva la clase que esconde', conReglas.includes('.escondido'));
+check('y el guion que la aplica', conReglas.includes("classList.toggle('escondido')"));
+
+const sinReglas = bookToHtml(libro([elemento({})]));
+// Con el espacio y la comilla delante: la cadena suelta aparece tambien en el
+// guion, que lee ese mismo atributo, y daba un falso fallo.
+check('un elemento sin reglas no arrastra atributos', !sinReglas.includes(' data-reglas="'));
+check('ni se marca como pulsable', !sinReglas.includes('class="el actua"'));
+
+const nombreTravieso = bookToHtml(libro([
+  elemento({ actions: { key: 'x', startHidden: false, rules: [{ trigger: 'click', action: 'show', target: 'a"onerror="alert(1)' }] } }),
+]));
+check('un objetivo con comillas no rompe su atributo', !/data-reglas="[^"]*"[a-z]/.test(nombreTravieso));
+
 // --- Un elemento sin nada no arrastra atributos vacios ---
 const pelado = bookToHtml(libro([elemento({})]));
 check('sin interaccion no se marca', !pelado.includes('class="el tiene-info"'));

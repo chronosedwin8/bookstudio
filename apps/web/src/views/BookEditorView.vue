@@ -30,6 +30,7 @@ import type {
   CanvasElement,
   ChartType,
   DistributeResult,
+  ElementActions,
   ElementAnimation,
   ElementInteraction,
   ElementType,
@@ -110,6 +111,31 @@ async function onPickIcon(icon: { name: string; paths: string[]; viewBox: string
       color: preferences.strokeColor,
       strokeWidth: 2,
       label: icon.name,
+    },
+  );
+}
+
+/**
+ * Boton nuevo, ya con aspecto de boton. Nace sin enlace: el destino se elige en
+ * el inspector, donde estan la lista de paginas del libro y el campo de la web.
+ */
+async function addButtonElement(): Promise<void> {
+  await editor.addElement(
+    'button',
+    { x: 30, y: 40, width: 34, height: 10, angle: 0 },
+    {
+      label: 'Pulsa aquí',
+      variant: 'solid',
+      shape: 'rounded',
+      size: 'md',
+      backgroundColor: '#2563EB',
+      textColor: '#FFFFFF',
+      borderColor: '#1D4ED8',
+      fontFamily: 'Nunito',
+      iconSource: 'none',
+      iconPosition: 'left',
+      linkUrl: '',
+      shadow: true,
     },
   );
 }
@@ -544,6 +570,7 @@ type InspectorPatch = {
   /** null la quita; ausente la deja como estaba. */
   interaction?: ElementInteraction | null;
   animation?: ElementAnimation | null;
+  actions?: ElementActions | null;
 };
 
 /** Memoriza los ajustes tipograficos para que el siguiente texto los herede. */
@@ -559,6 +586,16 @@ async function onInspectorPatch(payload: InspectorPatch): Promise<void> {
   }
 
   await editor.patchElement(editor.selectedElementId, payload);
+}
+
+/**
+ * Pone nombre a OTRO objeto de la pagina, el que se quiere mostrar u ocultar.
+ *
+ * El inspector edita el elemento seleccionado, pero una regla de "muestra a
+ * aquel" necesita que aquel lleve un nombre, y el nombre se guarda en aquel.
+ */
+async function onPatchOtro(payload: { elementId: string; actions: ElementActions }): Promise<void> {
+  await editor.patchElement(payload.elementId, { actions: payload.actions });
 }
 
 async function onUpdateText(id: string, value: string): Promise<void> {
@@ -945,6 +982,9 @@ async function saveTitle(): Promise<void> {
             <button v-if="puedeUsar('math')" type="button" class="btn-secondary w-full justify-start" @click="addMathElement">
               ∑ Formula
             </button>
+            <button v-if="puedeUsar('button')" type="button" class="btn-secondary w-full justify-start" @click="addButtonElement">
+              ⬢ Botón
+            </button>
           </section>
 
           <details class="space-y-1.5">
@@ -1219,9 +1259,11 @@ async function saveTitle(): Promise<void> {
           :element="editor.selectedElement"
           :is-manager="editor.isManager"
           @patch="onInspectorPatch"
+          @patch-otro="onPatchOtro"
           @move="editor.selectedElementId && editor.moveLayer(editor.selectedElementId, $event)"
           @remove="editor.selectedElementId && editor.removeElement(editor.selectedElementId)"
           :page-numbers="editor.book?.pages.map((p) => p.pageNumber) ?? []"
+          :page-elements="editor.sortedElements"
       />
       </div>
     </template>

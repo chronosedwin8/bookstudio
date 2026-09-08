@@ -6,6 +6,7 @@ import { errorMessage } from '@/services/http';
 import type {
   BookDetail,
   CanvasElement,
+  ElementActions,
   ElementAnimation,
   ElementInteraction,
   ElementType,
@@ -200,6 +201,7 @@ export const useEditorStore = defineStore('editor', () => {
       /** null la quita; ausente la deja como estaba. */
       interaction?: ElementInteraction | null;
       animation?: ElementAnimation | null;
+      actions?: ElementActions | null;
     },
   ): Promise<void> {
     if (!book.value || !currentPage.value) return;
@@ -267,6 +269,7 @@ export const useEditorStore = defineStore('editor', () => {
               properties: borrado.properties as Record<string, unknown>,
               interaction: borrado.interaction,
               animation: borrado.animation,
+              actions: borrado.actions,
             });
             vigente = recreado.id;
             book.value!.pages.find((p) => p.id === pageId)?.elements.push(recreado);

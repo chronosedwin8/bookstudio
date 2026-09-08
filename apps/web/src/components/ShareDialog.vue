@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import AlertMessage from '@/components/AlertMessage.vue';
 import { booksApi } from '@/services/api';
 import { errorMessage } from '@/services/http';
 import type { ShareVisibility } from '@/types/api';
+import { useAuthStore } from '@/stores/auth';
 
 const props = defineProps<{
   bookId: string;
@@ -20,6 +21,55 @@ const emit = defineEmits<{
   changed: [state: { visibility: ShareVisibility; token: string | null }];
   collaborative: [value: boolean];
 }>();
+
+const auth = useAuthStore();
+
+/* --------------------------------------------------------------------------
+ * Mural
+ *
+ * Es una decision distinta de la visibilidad del enlace, y por eso va aparte.
+ * Un enlace publico lo tiene solo quien lo recibe; el mural lo ve cualquiera que
+ * entre en la pagina. Que un libro se pueda abrir con enlace no significa que su
+ * autor quiera verlo en el escaparate del colegio.
+ * ------------------------------------------------------------------------ */
+
+const enMural = ref(false);
+const muralOcupado = ref(false);
+/** El alumnado no publica en el mural: lo decide quien responde de la clase. */
+const puedePublicar = computed(() => auth.user?.role === 'teacher' || auth.user?.role === 'admin');
+
+onMounted(async () => {
+  if (!puedePublicar.value) return;
+  try {
+    enMural.value = (await booksApi.muralState(props.bookId)).inMural;
+  } catch {
+    // Si no se puede consultar, el interruptor queda apagado: es lo prudente.
+    enMural.value = false;
+  }
+});
+
+async function cambiarMural(valor: boolean): Promise<void> {
+  muralOcupado.value = true;
+  error.value = null;
+  try {
+    const estado = valor
+      ? await booksApi.publishToMural(props.bookId)
+      : await booksApi.removeFromMural(props.bookId);
+    enMural.value = estado.inMural;
+    // Publicar en el mural vuelve el libro publico por enlace: sin eso el mural
+    // ensenaria portadas que nadie puede abrir. Se refleja aqui para que no
+    // parezca que el selector de arriba se quedo desfasado.
+    if (estado.inMural) {
+      visibility.value = 'public';
+      token.value = estado.shareToken;
+      emit('changed', { visibility: 'public', token: estado.shareToken });
+    }
+  } catch (err) {
+    error.value = errorMessage(err);
+  } finally {
+    muralOcupado.value = false;
+  }
+}
 
 const visibility = ref<ShareVisibility>(props.visibility);
 const token = ref<string | null>(props.token);
@@ -115,6 +165,32 @@ async function copy(): Promise<void> {
               <span class="block text-xs text-slate-500">{{ option.hint }}</span>
             </span>
           </label>
+        </div>
+
+        <!-- Mural: escaparate publico, distinto de repartir un enlace -->
+        <div v-if="puedePublicar" class="rounded-lg border border-slate-200 p-3">
+          <label class="flex cursor-pointer items-start gap-3">
+            <input
+              type="checkbox"
+              class="mt-1 h-4 w-4 rounded border-slate-300"
+              :checked="enMural"
+              :disabled="muralOcupado"
+              @change="cambiarMural(($event.target as HTMLInputElement).checked)"
+            />
+            <span class="min-w-0">
+              <span class="block text-sm font-semibold text-slate-800">Publicar en el mural</span>
+              <span class="block text-xs text-slate-500">
+                Aparecerá en
+                <RouterLink to="/mural" target="_blank" class="text-brand-600 underline">el mural</RouterLink>,
+                que cualquiera puede ver sin tener cuenta. Al publicarlo, el libro pasa
+                a abrirse con enlace público.
+              </span>
+            </span>
+          </label>
+          <p v-if="enMural" class="mt-2 rounded bg-emerald-50 px-2 py-1 text-[11px] text-emerald-700">
+            Está en el mural. Al quitarlo deja de aparecer, pero el enlace repartido
+            sigue funcionando.
+          </p>
         </div>
 
         <!-- Edición compartida: distinta de la visibilidad del enlace -->

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, nextTick, ref, watch } from 'vue';
+import ButtonRenderer from './ButtonRenderer.vue';
 import ChartRenderer from './ChartRenderer.vue';
 import EmbedRenderer from './EmbedRenderer.vue';
 import IconRenderer from './IconRenderer.vue';
@@ -13,6 +14,7 @@ import StrokeRenderer from './StrokeRenderer.vue';
 const MapWidget = defineAsyncComponent(() => import('@/components/media/MapWidget.vue'));
 import type {
   AnswerResult,
+  ButtonProperties,
   CanvasElement,
   ChartProperties,
   QuestionProperties,
@@ -39,6 +41,7 @@ const props = defineProps<{
 const emit = defineEmits<{ updateText: [value: string] }>();
 
 const text = computed(() => props.element.properties as unknown as TextProperties);
+const boton = computed(() => props.element.properties as unknown as ButtonProperties);
 const shape = computed(() => props.element.properties as unknown as ShapeProperties);
 
 const drawing = computed(() => {
@@ -265,6 +268,9 @@ const textLines = computed(() => {
     :filled="icon.filled"
     :label="icon.label"
   />
+
+  <!-- Boton -->
+  <ButtonRenderer v-else-if="element.type === 'button'" :properties="boton" :preview="preview" />
 
   <!-- Bloque de pregunta -->
   <QuestionRenderer

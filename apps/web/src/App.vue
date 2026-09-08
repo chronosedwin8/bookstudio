@@ -51,6 +51,13 @@ function handleLogout(): void {
         </RouterLink>
 
         <div class="flex items-center gap-3">
+          <!-- El mural lo ve todo el mundo, tenga cuenta o no; aqui el enlace es
+               para quien publica y quiere comprobar como ha quedado. -->
+          <RouterLink
+            :to="{ name: 'mural' }"
+            class="text-sm text-slate-600 hover:text-brand-700"
+          >Mural</RouterLink>
+
           <RouterLink
             v-if="auth.user?.role === 'admin'"
             :to="{ name: 'admin-clients' }"

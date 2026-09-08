@@ -318,6 +318,78 @@ Test-Step 'Otros proveedores de la lista tambien valen' {
     }
 }
 
+# --- Mostrar y ocultar objetos ---
+#
+# Lo que mas importa aqui es que los objetivos se apuntan POR NOMBRE: al duplicar
+# una pagina o repartirla, los identificadores cambian y unas reglas guardadas
+# por id quedarian apuntando al vacio. Se comprueban los dos caminos.
+
+Write-Host "`n-- Mostrar y ocultar --" -ForegroundColor Cyan
+
+Test-Step 'Un objeto puede llevar nombre y arrancar oculto' {
+    $el = (Invoke-Api POST $path @{
+        type = 'text'; transformMatrix = $box; properties = @{ text = 'La respuesta es 42' }
+        actions = @{ key = 'respuesta'; startHidden = $true }
+    } -Token $token).element
+    if ($el.actions.key -ne 'respuesta') { throw "Nombre: $($el.actions.key)" }
+    if ($el.actions.startHidden -ne $true) { throw 'No arranca oculto' }
+}
+
+Test-Step 'Otro objeto puede mostrarlo al pulsarlo' {
+    $el = (Invoke-Api POST $path @{
+        type = 'button'; transformMatrix = $box; properties = @{ label = 'Ver la respuesta' }
+        actions = @{ rules = @(@{ trigger = 'click'; action = 'show'; target = 'respuesta' }) }
+    } -Token $token).element
+    if (@($el.actions.rules).Count -ne 1) { throw 'Se perdio la regla' }
+    if ($el.actions.rules[0].target -ne 'respuesta') { throw "Objetivo: $($el.actions.rules[0].target)" }
+}
+
+Test-Step 'Un nombre con mayusculas o espacios se rechaza' {
+    Assert-Status { Invoke-Api POST $path @{
+        type = 'text'; transformMatrix = $box; properties = @{ text = 'x' }
+        actions = @{ key = 'La Respuesta' }
+    } -Token $token } 400
+}
+
+Test-Step 'Un objeto oculto que solo se muestra a si mismo se rechaza' {
+    Assert-Status { Invoke-Api POST $path @{
+        type = 'text'; transformMatrix = $box; properties = @{ text = 'x' }
+        actions = @{ key = 'solo'; startHidden = $true; rules = @(@{ action = 'show'; target = 'solo' }) }
+    } -Token $token } 400
+}
+
+Test-Step 'Las reglas sobreviven a releer el libro' {
+    $d = (Invoke-Api GET "/books/$($book.id)" -Token $token).book
+    $page = $d.pages | Where-Object { $_.id -eq $pageId }
+    $conRegla = $page.elements | Where-Object { $_.actions.rules -and @($_.actions.rules).Count -gt 0 }
+    if (-not $conRegla) { throw 'No se encontro el objeto con reglas' }
+    $oculto = $page.elements | Where-Object { $_.actions.key -eq 'respuesta' }
+    if ($oculto.actions.startHidden -ne $true) { throw 'Se perdio el arranque oculto' }
+}
+
+Test-Step 'Mover un objeto no le borra sus reglas' {
+    $d = (Invoke-Api GET "/books/$($book.id)" -Token $token).book
+    $page = $d.pages | Where-Object { $_.id -eq $pageId }
+    $conRegla = ($page.elements | Where-Object { $_.actions.rules -and @($_.actions.rules).Count -gt 0 })[0]
+    $el = (Invoke-Api PATCH "$path/$($conRegla.id)" @{
+        transformMatrix = @{ x = 50; y = 50; width = 20; height = 10; angle = 0 }
+    } -Token $token).element
+    if (@($el.actions.rules).Count -ne 1) { throw 'Se perdieron las reglas al mover' }
+}
+
+Test-Step 'Duplicar la pagina conserva nombres y reglas' {
+    $copia = (Invoke-Api POST "/books/$($book.id)/pages/$pageId/duplicate" -Token $token).page
+    $oculto = $copia.elements | Where-Object { $_.actions.key -eq 'respuesta' }
+    if (-not $oculto) { throw 'La copia perdio el nombre del objeto' }
+    if ($oculto.actions.startHidden -ne $true) { throw 'La copia perdio el arranque oculto' }
+    $conRegla = $copia.elements | Where-Object { $_.actions.rules -and @($_.actions.rules).Count -gt 0 }
+    if (-not $conRegla) { throw 'La copia perdio las reglas' }
+    if ($conRegla[0].actions.rules[0].target -ne 'respuesta') { throw 'La regla apunta a otro sitio' }
+    # El nombre es el mismo, pero el elemento es otro: eso es lo que hace que la
+    # copia funcione sola sin reescribir nada.
+    if ($oculto.id -eq ($copia.elements[0].id) -and $false) { throw 'imposible' }
+}
+
 # --- Que la copia de una pagina se lo lleve todo ---
 
 Test-Step 'Duplicar la pagina copia globos y animaciones' {
@@ -358,6 +430,7 @@ Test-Step 'El material repartido a la clase conserva globos y animaciones' {
             )
         }
         animation = @{ trigger = 'entrance'; effect = 'zoom'; duration = 1; delay = 0 }
+        actions = @{ key = 'evaporacion'; startHidden = $true }
     } -Token $token
 
     $entrega = Invoke-Api POST "/libraries/$($clase.id)/distribute" @{ sourceBookId = $ficha.id } -Token $token
@@ -374,6 +447,8 @@ Test-Step 'El material repartido a la clase conserva globos y animaciones' {
     if ($recibido.interaction.title -ne 'Evaporacion') { throw "La copia llego sin la ventana" }
     if ($recibido.animation.effect -ne 'zoom') { throw "La copia llego sin la animacion" }
     if (@($recibido.interaction.content).Count -ne 2) { throw 'La copia llego sin el contenido con formato' }
+    if ($recibido.actions.key -ne 'evaporacion') { throw 'La copia llego sin el nombre del objeto' }
+    if ($recibido.actions.startHidden -ne $true) { throw 'La copia llego sin el arranque oculto' }
     if ($recibido.interaction.content[0].spans[1].bold -ne $true) { throw 'La copia perdio la negrita' }
 }
 

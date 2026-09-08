@@ -27,18 +27,18 @@ const linkUrl = z
     'El enlace debe empezar por http://, https:// o ser un salto a una pagina del libro',
   );
 
+/** Catalogo de Google Fonts autoalojado en el cliente (ver assets/main.css). */
+const fontFamily = z.enum([
+  'Lato', 'Cabin', 'Noto Sans', 'Nunito', 'Poppins', 'Quicksand',
+  'Merriweather', 'Lora',
+  'Fredoka', 'Baloo 2', 'Bangers', 'Luckiest Guy',
+  'Caveat', 'Patrick Hand', 'Indie Flower',
+  'OpenDyslexic', 'Atkinson Hyperlegible',
+]);
+
 export const textPropertiesSchema = z.object({
   text: z.string().max(20_000).default(''),
-  // Catalogo de Google Fonts autoalojado en el cliente (ver assets/main.css).
-  fontFamily: z
-    .enum([
-      'Lato', 'Cabin', 'Noto Sans', 'Nunito', 'Poppins', 'Quicksand',
-      'Merriweather', 'Lora',
-      'Fredoka', 'Baloo 2', 'Bangers', 'Luckiest Guy',
-      'Caveat', 'Patrick Hand', 'Indie Flower',
-      'OpenDyslexic', 'Atkinson Hyperlegible',
-    ])
-    .default('Lato'),
+  fontFamily: fontFamily.default('Lato'),
   fontSize: z.number().int().min(24, 'El tamaño mínimo accesible es 24px').max(200).default(24),
   color: hexColor.default('#333333'),
   backgroundColor: z.union([hexColor, z.literal('transparent')]).default('transparent'),
@@ -139,6 +139,47 @@ export const videoPropertiesSchema = z.object({
  * Icono o emoji. Los trazos SVG se guardan con el elemento para que el libro siga
  * dibujandose aunque el catalogo del cliente cambie mas adelante.
  */
+/**
+ * Boton: una forma con texto, icono y enlace, pensada para navegar.
+ *
+ * Es un tipo propio y no una forma con etiqueta porque lo que lo define es el
+ * comportamiento: se pulsa y lleva a algun sitio. Como tipo propio aparece en la
+ * lista de herramientas que una biblioteca puede vetar, y quien lo lee sabe que
+ * eso se pulsa sin tener que adivinarlo por su aspecto.
+ */
+export const buttonPropertiesSchema = z.object({
+  label: z.string().max(120).default('Pulsa aqui'),
+  /**
+   * solid  relleno de color, el de siempre.
+   * soft   relleno suave, para botones secundarios.
+   * outline solo el borde.
+   * ghost  sin fondo ni borde hasta que se pasa el raton.
+   * link   se ve como un enlace de texto.
+   */
+  variant: z.enum(['solid', 'soft', 'outline', 'ghost', 'link']).default('solid'),
+  /** El redondeo va por nombre y no en pixeles: se ve igual a cualquier tamano. */
+  shape: z.enum(['rounded', 'pill', 'square']).default('rounded'),
+  size: z.enum(['sm', 'md', 'lg']).default('md'),
+  backgroundColor: hexColor.default('#2563EB'),
+  textColor: hexColor.default('#FFFFFF'),
+  borderColor: hexColor.default('#1D4ED8'),
+  fontFamily: fontFamily.default('Nunito'),
+  /**
+   * Icono opcional, con la misma forma que el elemento `icon`: o un emoji o los
+   * trazos de la biblioteca. Se reaprovecha para no mantener dos catalogos.
+   */
+  iconSource: z.enum(['none', 'emoji', 'library']).default('none'),
+  iconChar: z.string().max(16).default(''),
+  iconPaths: z.array(z.string().max(8000)).max(24).default([]),
+  iconViewBox: z.string().max(60).default('0 0 24 24'),
+  iconFilled: z.boolean().default(false),
+  iconPosition: z.enum(['left', 'right']).default('left'),
+  /** Interno (#pagina-3) o externo (https://...). Lo valida `linkUrlSchema`. */
+  linkUrl: linkUrl.default(''),
+  /** Sombra suave, para que se vea que sobresale y se puede pulsar. */
+  shadow: z.boolean().default(true),
+});
+
 export const iconPropertiesSchema = z
   .object({
     source: z.enum(['emoji', 'library']).default('library'),
@@ -289,7 +330,7 @@ export const mathPropertiesSchema = z.object({
 
 export const elementType = z.enum([
   'text', 'shape', 'drawing', 'image', 'audio', 'video',
-  'map', 'icon', 'embed', 'question', 'chart', 'math',
+  'map', 'icon', 'embed', 'question', 'chart', 'math', 'button',
 ]);
 export type ElementType = z.infer<typeof elementType>;
 
@@ -302,6 +343,7 @@ const PROPERTY_SCHEMAS = {
   video: videoPropertiesSchema,
   map: mapPropertiesSchema,
   icon: iconPropertiesSchema,
+  button: buttonPropertiesSchema,
   embed: embedPropertiesSchema,
   question: questionPropertiesSchema,
   chart: chartPropertiesSchema,
@@ -544,6 +586,79 @@ export const interactionSchema = z
     }
   });
 
+/* ---------------------------------------------------------------------------
+ * Mostrar y ocultar
+ *
+ * Un objeto puede esconder o revelar a otro de su misma pagina al pulsarlo.
+ *
+ * El objetivo se apunta POR NOMBRE y no por identificador. Al duplicar una
+ * pagina o repartirla a la clase, cada elemento recibe un id nuevo: unas reglas
+ * guardadas por id quedarian apuntando al vacio, o peor, a los elementos de la
+ * pagina original. El nombre viaja con la copia y se resuelve dentro de la
+ * propia pagina, asi que duplicar y repartir siguen funcionando sin que haya que
+ * reescribir nada en ninguno de los dos caminos.
+ * ------------------------------------------------------------------------ */
+
+/** Nombre de un objeto dentro de su pagina. Minusculas, digitos y guiones. */
+const claveObjeto = z
+  .string()
+  .trim()
+  .min(1)
+  .max(32)
+  .regex(/^[a-z0-9][a-z0-9-]*$/, 'El nombre solo admite minusculas, digitos y guiones');
+
+export const elementActionsSchema = z
+  .object({
+    /** Como le llaman las reglas de otros objetos. */
+    key: claveObjeto.optional(),
+    /**
+     * En modo lectura arranca invisible. En el editor SIEMPRE se ve: un objeto
+     * que no se puede seleccionar tampoco se puede volver a mostrar.
+     */
+    startHidden: z.boolean().default(false),
+    /** Lo que hace este objeto sobre otros. */
+    rules: z
+      .array(
+        z.object({
+          trigger: z.enum(['click', 'hover']).default('click'),
+          action: z.enum(['show', 'hide', 'toggle']).default('toggle'),
+          target: claveObjeto,
+        }),
+      )
+      .max(20)
+      .default([]),
+  })
+  .superRefine((value, ctx) => {
+    // Un objeto que se muestra a si mismo al pulsarlo no se puede pulsar cuando
+    // esta escondido: la regla no llegaria a dispararse nunca.
+    if (value.key && value.startHidden) {
+      const seRevela = value.rules.some((r) => r.target === value.key && r.action !== 'hide');
+      if (seRevela) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['rules'],
+          message: 'Un objeto que arranca oculto no puede mostrarse a si mismo: nadie podria pulsarlo.',
+        });
+      }
+    }
+
+    // Dos reglas iguales sobre el mismo objetivo no hacen nada util y confunden.
+    const vistas = new Set<string>();
+    value.rules.forEach((r, i) => {
+      const firma = `${r.trigger}|${r.target}`;
+      if (vistas.has(firma)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['rules', i],
+          message: `Ya hay otra regla sobre "${r.target}" con el mismo disparador.`,
+        });
+      }
+      vistas.add(firma);
+    });
+  });
+
+export type ElementActions = z.infer<typeof elementActionsSchema>;
+
 export const animationEffect = z.enum([
   'fade',      // aparecer suavemente
   'zoom',      // entrar creciendo
@@ -583,6 +698,7 @@ export const createElementSchema = z
     /** null lo quita; ausente lo deja como estaba. */
     interaction: interactionSchema.nullish(),
     animation: animationSchema.nullish(),
+    actions: elementActionsSchema.nullish(),
   })
   .superRefine((value, ctx) => {
     const result = PROPERTY_SCHEMAS[value.type].safeParse(value.properties);
@@ -618,6 +734,7 @@ export const updateElementSchema = z
     /** null lo quita; ausente lo deja como estaba. */
     interaction: interactionSchema.nullish(),
     animation: animationSchema.nullish(),
+    actions: elementActionsSchema.nullish(),
   })
   .refine((v) => Object.values(v).some((x) => x !== undefined), 'No hay campos para actualizar');
 

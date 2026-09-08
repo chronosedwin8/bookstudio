@@ -8,7 +8,9 @@
  * ninguna de las tres se rompe de forma visible: simplemente el libro hace algo
  * distinto de lo que su autor creia haber montado.
  */
-import { createElementSchema, interactionSchema, animationSchema } from './canvas.schemas.js';
+import {
+  createElementSchema, interactionSchema, animationSchema, elementActionsSchema,
+} from './canvas.schemas.js';
 
 let fallos = 0;
 const check = (nombre: string, ok: boolean, detalle = '') => {
@@ -257,6 +259,69 @@ check(
   'no hay animacion de salida',
   !animationSchema.safeParse({ effect: 'fade', trigger: 'exit' }).success,
 );
+
+// --- Mostrar y ocultar ---
+const acc = (v: unknown) => elementActionsSchema.safeParse(v);
+
+check('un objeto puede llevar solo nombre', acc({ key: 'respuesta' }).success);
+check('y arrancar oculto', acc({ key: 'respuesta', startHidden: true }).success);
+check(
+  'una regla basica vale',
+  acc({ rules: [{ trigger: 'click', action: 'show', target: 'respuesta' }] }).success,
+);
+check(
+  'por omision se alterna al pulsar',
+  (() => {
+    const r = acc({ rules: [{ target: 'respuesta' }] }).data?.rules?.[0];
+    return r?.trigger === 'click' && r?.action === 'toggle';
+  })(),
+);
+check('un nombre con mayusculas se rechaza', !acc({ key: 'Respuesta' }).success);
+check('un nombre con espacios se rechaza', !acc({ key: 'la respuesta' }).success);
+check('un nombre que empieza por guion se rechaza', !acc({ key: '-x' }).success);
+check('un nombre vacio se rechaza', !acc({ key: '' }).success);
+check('un nombre larguisimo se rechaza', !acc({ key: 'a'.repeat(33) }).success);
+check('guiones y digitos si valen', acc({ key: 'respuesta-2' }).success);
+check(
+  'una accion inventada se rechaza',
+  !acc({ rules: [{ action: 'explotar', target: 'x' }] }).success,
+);
+check(
+  'un disparador inventado se rechaza',
+  !acc({ rules: [{ trigger: 'doble-clic', target: 'x' }] }).success,
+);
+check('demasiadas reglas se rechazan', !acc({ rules: Array.from({ length: 21 }, () => ({ target: 'x' })) }).success);
+
+/*
+ * Estas dos evitan paginas que se quedan muertas: un objeto oculto que solo se
+ * muestra a si mismo no lo puede pulsar nadie, y dos reglas iguales sobre el
+ * mismo objetivo se anulan sin que se entienda por que.
+ */
+check(
+  'un objeto oculto no puede mostrarse a si mismo',
+  !acc({ key: 'x', startHidden: true, rules: [{ action: 'show', target: 'x' }] }).success,
+);
+check(
+  'ni alternarse a si mismo',
+  !acc({ key: 'x', startHidden: true, rules: [{ action: 'toggle', target: 'x' }] }).success,
+);
+check(
+  'pero SI puede ocultarse a si mismo si empieza visible',
+  acc({ key: 'x', startHidden: false, rules: [{ action: 'hide', target: 'x' }] }).success,
+);
+check(
+  'dos reglas iguales sobre el mismo objetivo se rechazan',
+  !acc({ rules: [{ target: 'x' }, { target: 'x' }] }).success,
+);
+check(
+  'pero una al pulsar y otra al pasar el raton conviven',
+  acc({ rules: [{ trigger: 'click', target: 'x' }, { trigger: 'hover', target: 'x' }] }).success,
+);
+check(
+  'un elemento puede llevar reglas',
+  elemento({ actions: { key: 'boton', rules: [{ action: 'show', target: 'respuesta' }] } }).success,
+);
+check('y null las quita', elemento({ actions: null }).success);
 
 // --- Convivencia con el elemento ---
 check('un elemento puede llevar las dos cosas', elemento({

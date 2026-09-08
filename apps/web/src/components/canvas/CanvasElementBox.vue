@@ -56,6 +56,9 @@ const boxStyle = computed(() => ({
 
 const interactive = computed(() => props.editable && !props.element.isLocked);
 
+/** Marca visible de "esto no lo vera el alumnado hasta que algo lo muestre". */
+const arrancaOculto = computed(() => props.element.actions?.startHidden === true);
+
 const CORNERS: Array<{ id: Corner; class: string; cursor: string }> = [
   { id: 'nw', class: '-left-1.5 -top-1.5', cursor: 'nwse-resize' },
   { id: 'ne', class: '-right-1.5 -top-1.5', cursor: 'nesw-resize' },
@@ -245,6 +248,8 @@ function onRotateStart(event: PointerEvent): void {
       interactive ? 'cursor-move' : 'cursor-default',
       selected && 'outline outline-2 outline-offset-1 outline-brand-500',
       element.isLocked && selected && 'outline-amber-500',
+      // Contorno discontinuo: se ve de un vistazo lo que el alumnado no vera.
+      arrancaOculto && !selected && 'outline-dashed outline-2 outline-offset-2 outline-slate-400',
     ]"
     :style="boxStyle"
     @pointerdown="onDragStart"
@@ -262,6 +267,19 @@ function onRotateStart(event: PointerEvent): void {
       class="absolute -left-1.5 -top-1.5 grid h-5 w-5 place-items-center rounded-full bg-amber-500 text-[10px] text-white shadow"
       title="Elemento bloqueado"
     >🔒</span>
+
+    <!--
+      Este objeto arranca oculto en el modo lectura. En el editor SIEMPRE se ve
+      (uno que no se puede seleccionar tampoco se puede volver a mostrar), asi
+      que hace falta decirlo de algun modo: sin este aviso no habia forma de
+      saber que la mitad de la pagina no la vera el alumnado.
+    -->
+    <span
+      v-if="element.actions?.startHidden"
+      class="pointer-events-none absolute -bottom-1.5 -left-1.5 grid h-5 w-5 place-items-center
+             rounded-full bg-slate-700 text-[10px] text-white shadow"
+      title="Empieza oculto: no se verá hasta que otro objeto lo muestre"
+    >🙈</span>
 
     <!-- El enlace no es pulsable mientras se edita; aquí solo se avisa de que existe. -->
     <span

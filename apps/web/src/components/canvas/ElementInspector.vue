@@ -8,6 +8,9 @@ import {
   type AnimationEffect,
   type CanvasElement,
   type ElementAnimation,
+  type ButtonProperties,
+  type ElementActionRule,
+  type ElementActions,
   type ElementInteraction,
   type RichBlock,
   type ChartProperties,
@@ -21,6 +24,8 @@ const props = defineProps<{
   isManager: boolean;
   /** Numeros de pagina del libro, para los marcadores internos. */
   pageNumbers?: number[];
+  /** Los demas objetos de esta pagina, para elegir a cual mostrar u ocultar. */
+  pageElements?: CanvasElement[];
 }>();
 
 const emit = defineEmits<{
@@ -32,14 +37,23 @@ const emit = defineEmits<{
       /** null la quita; ausente la deja como estaba. */
       interaction?: ElementInteraction | null;
       animation?: ElementAnimation | null;
+      actions?: ElementActions | null;
     },
   ];
   move: [direction: 'front' | 'forward' | 'backward' | 'back'];
   remove: [];
+  /**
+   * Cambia OTRO elemento de la pagina, no el seleccionado.
+   *
+   * Hace falta para ponerle nombre al objeto que se quiere mostrar u ocultar: la
+   * regla vive en este elemento, pero el nombre tiene que quedar guardado en el
+   * otro, que es quien lo lleva.
+   */
+  patchOtro: [payload: { elementId: string; actions: ElementActions }];
 }>();
 
 /** Tipos que admiten enlace; el resto no muestra el campo. */
-const LINKABLE = ['text', 'image', 'shape', 'icon'] as const;
+const LINKABLE = ['text', 'image', 'shape', 'icon', 'button'] as const;
 
 const canLink = computed(() => LINKABLE.includes(props.element?.type as (typeof LINKABLE)[number]));
 const linkUrl = computed(() => String(props.element?.properties.linkUrl ?? ''));
@@ -85,6 +99,179 @@ const text = computed(() => props.element?.properties as unknown as TextProperti
 const shape = computed(() => props.element?.properties as unknown as ShapeProperties | undefined);
 const question = computed(() => props.element?.properties as unknown as QuestionProperties | undefined);
 const chart = computed(() => props.element?.properties as unknown as ChartProperties | undefined);
+const boton = computed(() => props.element?.properties as unknown as ButtonProperties | undefined);
+
+/* --------------------------------------------------------------------------
+ * Mostrar y ocultar objetos
+ *
+ * Los objetivos se apuntan por NOMBRE. Aqui se elige de una lista desplegable
+ * con los objetos de la pagina, y el nombre se genera solo si el objeto elegido
+ * aun no tenia: nadie deberia tener que inventarse identificadores para que un
+ * boton destape una respuesta.
+ * ------------------------------------------------------------------------ */
+
+const acciones = computed(() => props.element?.actions ?? null);
+const reglas = computed<ElementActionRule[]>(() => acciones.value?.rules ?? []);
+
+/** Texto con el que se reconoce un objeto en la lista. */
+function describir(el: CanvasElement): string {
+  const p = el.properties as Record<string, unknown>;
+  const texto = String(p.text ?? p.label ?? p.prompt ?? p.title ?? '').trim();
+  const nombre = TIPOS[el.type] ?? el.type;
+  if (!texto) return nombre;
+  return `${nombre}: ${texto.length > 28 ? texto.slice(0, 28) + '...' : texto}`;
+}
+
+const TIPOS: Record<string, string> = {
+  text: 'Texto', shape: 'Forma', drawing: 'Dibujo', image: 'Imagen', audio: 'Audio',
+  video: 'Vídeo', map: 'Mapa', icon: 'Icono', embed: 'Incrustado', question: 'Pregunta',
+  chart: 'Gráfica', math: 'Fórmula', button: 'Botón',
+};
+
+/** Los demas objetos de la pagina; uno no puede actuar sobre si mismo. */
+const objetivos = computed(() =>
+  (props.pageElements ?? [])
+    .filter((el) => el.id !== props.element?.id)
+    .map((el) => ({ el, etiqueta: describir(el), clave: el.actions?.key ?? '' })),
+);
+
+/**
+ * Nombre para un objeto que aun no tiene. Se saca del texto que ya lleva, para
+ * que en el desplegable se lea "respuesta" y no "obj-7f3a".
+ */
+function nombrePara(el: CanvasElement, usados: Set<string>): string {
+  const p = el.properties as Record<string, unknown>;
+  const base = String(p.text ?? p.label ?? p.title ?? TIPOS[el.type] ?? 'objeto')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 24) || 'objeto';
+
+  if (!usados.has(base)) return base;
+  for (let i = 2; i < 100; i += 1) {
+    const intento = `${base}-${i}`.slice(0, 32);
+    if (!usados.has(intento)) return intento;
+  }
+  return `${base}-${Date.now().toString(36).slice(-4)}`.slice(0, 32);
+}
+
+function ponerAcciones(cambio: Partial<ElementActions>): void {
+  const base: ElementActions = acciones.value ?? { startHidden: false, rules: [] };
+  const siguiente = { ...base, ...cambio };
+  const vacio = !siguiente.key && !siguiente.startHidden && siguiente.rules.length === 0;
+  emit('patch', { actions: vacio ? null : siguiente });
+}
+
+/**
+ * Anade una regla sobre otro objeto. Si ese objeto aun no tenia nombre, se le
+ * pone: sin nombre no hay forma de apuntarle, y pedirselo a quien monta la
+ * pagina seria pedirle que entienda como esta hecho esto por dentro.
+ */
+function anadirRegla(objetivoId: string): void {
+  const destino = (props.pageElements ?? []).find((el) => el.id === objetivoId);
+  if (!destino || !props.element) return;
+
+  let clave = destino.actions?.key ?? '';
+  if (!clave) {
+    const usados = new Set(
+      (props.pageElements ?? []).map((el) => el.actions?.key).filter(Boolean) as string[],
+    );
+    clave = nombrePara(destino, usados);
+    emit('patchOtro', {
+      elementId: destino.id,
+      actions: { ...(destino.actions ?? { startHidden: false, rules: [] }), key: clave },
+    });
+  }
+
+  const yaHay = reglas.value.some((r) => r.target === clave && r.trigger === 'click');
+  if (yaHay) return;
+  ponerAcciones({ rules: [...reglas.value, { trigger: 'click', action: 'toggle', target: clave }] });
+}
+
+function cambiarRegla(indice: number, cambio: Partial<ElementActionRule>): void {
+  ponerAcciones({ rules: reglas.value.map((r, i) => (i === indice ? { ...r, ...cambio } : r)) });
+}
+
+function quitarRegla(indice: number): void {
+  ponerAcciones({ rules: reglas.value.filter((_, i) => i !== indice) });
+}
+
+/** Como se llama el objeto al que apunta una regla, para leerlo en la lista. */
+function etiquetaDe(clave: string): string {
+  return objetivos.value.find((o) => o.clave === clave)?.etiqueta ?? `«${clave}» (ya no está)`;
+}
+
+const ACCIONES: Array<{ id: ElementActionRule['action']; label: string }> = [
+  { id: 'toggle', label: 'Mostrar u ocultar' },
+  { id: 'show', label: 'Mostrar' },
+  { id: 'hide', label: 'Ocultar' },
+];
+
+/* --------------------------------------------------------------------------
+ * Boton
+ * ------------------------------------------------------------------------ */
+
+const VARIANTES: Array<{ id: ButtonProperties['variant']; label: string }> = [
+  { id: 'solid', label: 'Relleno' },
+  { id: 'soft', label: 'Suave' },
+  { id: 'outline', label: 'Contorno' },
+  { id: 'ghost', label: 'Sin fondo' },
+  { id: 'link', label: 'Enlace' },
+];
+
+const FORMAS_BOTON: Array<{ id: ButtonProperties['shape']; label: string }> = [
+  { id: 'rounded', label: 'Redondeado' },
+  { id: 'pill', label: 'Pastilla' },
+  { id: 'square', label: 'Recto' },
+];
+
+const TAMANOS: Array<{ id: ButtonProperties['size']; label: string }> = [
+  { id: 'sm', label: 'Pequeño' },
+  { id: 'md', label: 'Mediano' },
+  { id: 'lg', label: 'Grande' },
+];
+
+/** Paleta de partida; cualquier otro color se elige con el selector de al lado. */
+const COLORES_BOTON = [
+  '#2563EB', '#0EA5E9', '#16A34A', '#F59E0B',
+  '#DC2626', '#DB2777', '#7C3AED', '#0F172A',
+];
+
+/**
+ * Emojis a mano para el icono del boton. El catalogo completo vive en el dialogo
+ * de pegatinas, que se abre desde el lienzo; aqui basta con los mas usados para
+ * senalar hacia donde lleva el boton.
+ */
+const EMOJIS_BOTON = ['▶', '➡', '⬅', '⬆', '⬇', '🔗', '📄', '🏠', '❓', '⭐', '✅', '🔊'];
+
+/**
+ * Al elegir un color de relleno se ajusta tambien el borde, un poco mas oscuro.
+ * Sin esto habia que tocar dos campos para cambiar un color, y el borde claro
+ * sobre relleno oscuro se veia como un fallo.
+ */
+function oscurecer(hex: string, factor = 0.82): string {
+  const n = Number.parseInt(hex.slice(1), 16);
+  const r = Math.round(((n >> 16) & 255) * factor);
+  const g = Math.round(((n >> 8) & 255) * factor);
+  const b = Math.round((n & 255) * factor);
+  return '#' + [r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('');
+}
+
+function ponerColorBoton(hex: string): void {
+  if (!props.element) return;
+  emit('patch', {
+    properties: { ...props.element.properties, backgroundColor: hex, borderColor: oscurecer(hex) },
+  });
+}
+
+function ponerIcono(fuente: ButtonProperties['iconSource'], char = ''): void {
+  if (!props.element) return;
+  emit('patch', {
+    properties: { ...props.element.properties, iconSource: fuente, iconChar: char, iconPaths: [] },
+  });
+}
 
 /** Video y audio comparten fileUrl y duracion; el video anade portada y subtitulos. */
 const media = computed(
@@ -534,6 +721,171 @@ const SOFT_BACKGROUNDS = ['transparent', '#F7F4EC', '#EDF2F0', '#FBF3E4', '#EFEA
         <ChartInspector :chart="chart" @patch="emit('patch', { properties: $event })" />
       </section>
 
+      <!-- Boton: aspecto y contenido; el destino va en la seccion de Enlace -->
+      <section v-if="element.type === 'button' && boton" class="space-y-3 border-t border-slate-100 pt-3">
+        <div>
+          <label class="label" :for="`btn-texto-${element.id}`">Texto del botón</label>
+          <input
+            :id="`btn-texto-${element.id}`"
+            type="text"
+            class="input"
+            maxlength="120"
+            :value="boton.label"
+            @input="patchProperty('label', ($event.target as HTMLInputElement).value)"
+          />
+        </div>
+
+        <div>
+          <span class="label">Estilo</span>
+          <div class="grid grid-cols-3 gap-1">
+            <button
+              v-for="v in VARIANTES"
+              :key="v.id"
+              type="button"
+              class="rounded-lg border px-1 py-1.5 text-[11px] font-medium transition"
+              :class="boton.variant === v.id
+                ? 'border-brand-500 bg-brand-50 text-brand-700'
+                : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50'"
+              @click="patchProperty('variant', v.id)"
+            >{{ v.label }}</button>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <span class="label">Bordes</span>
+            <select
+              class="input py-1 text-xs"
+              :value="boton.shape"
+              @change="patchProperty('shape', ($event.target as HTMLSelectElement).value)"
+            >
+              <option v-for="f in FORMAS_BOTON" :key="f.id" :value="f.id">{{ f.label }}</option>
+            </select>
+          </div>
+          <div>
+            <span class="label">Tamaño del texto</span>
+            <select
+              class="input py-1 text-xs"
+              :value="boton.size"
+              @change="patchProperty('size', ($event.target as HTMLSelectElement).value)"
+            >
+              <option v-for="t in TAMANOS" :key="t.id" :value="t.id">{{ t.label }}</option>
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <span class="label">Color</span>
+          <div class="flex flex-wrap gap-1">
+            <button
+              v-for="c in COLORES_BOTON"
+              :key="c"
+              type="button"
+              class="h-7 w-7 rounded-lg border-2 transition"
+              :class="boton.backgroundColor.toLowerCase() === c.toLowerCase()
+                ? 'border-slate-800' : 'border-white shadow-sm'"
+              :style="{ backgroundColor: c }"
+              :title="c"
+              @click="ponerColorBoton(c)"
+            ></button>
+            <label class="grid h-7 w-7 cursor-pointer place-items-center rounded-lg border border-slate-300 text-[10px] text-slate-500">
+              <input
+                type="color"
+                class="sr-only"
+                :value="boton.backgroundColor"
+                @change="ponerColorBoton(($event.target as HTMLInputElement).value.toUpperCase())"
+              />
+              +
+            </label>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-2">
+          <label class="text-[11px] text-slate-500">
+            Color del texto
+            <input
+              type="color"
+              class="mt-0.5 h-7 w-full cursor-pointer rounded border border-slate-300"
+              :value="boton.textColor"
+              @change="patchProperty('textColor', ($event.target as HTMLInputElement).value.toUpperCase())"
+            />
+          </label>
+          <label class="text-[11px] text-slate-500">
+            Color del borde
+            <input
+              type="color"
+              class="mt-0.5 h-7 w-full cursor-pointer rounded border border-slate-300"
+              :value="boton.borderColor"
+              @change="patchProperty('borderColor', ($event.target as HTMLInputElement).value.toUpperCase())"
+            />
+          </label>
+        </div>
+
+        <div>
+          <span class="label">Tipografía</span>
+          <select
+            class="input py-1 text-xs"
+            :value="boton.fontFamily"
+            @change="patchProperty('fontFamily', ($event.target as HTMLSelectElement).value)"
+          >
+            <optgroup v-for="grupo in FONT_GROUPS" :key="grupo.label" :label="grupo.label">
+              <option v-for="f in grupo.fonts" :key="f" :value="f">{{ f }}</option>
+            </optgroup>
+          </select>
+        </div>
+
+        <div>
+          <span class="label">Icono</span>
+          <div class="mb-1 flex flex-wrap gap-1">
+            <button
+              type="button"
+              class="h-7 rounded-lg border px-2 text-[11px] transition"
+              :class="boton.iconSource === 'none'
+                ? 'border-brand-500 bg-brand-50 text-brand-700'
+                : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50'"
+              @click="ponerIcono('none')"
+            >Sin icono</button>
+            <button
+              v-for="e in EMOJIS_BOTON"
+              :key="e"
+              type="button"
+              class="h-7 w-7 rounded-lg border text-sm transition"
+              :class="boton.iconSource === 'emoji' && boton.iconChar === e
+                ? 'border-brand-500 bg-brand-50'
+                : 'border-slate-300 bg-white hover:bg-slate-50'"
+              @click="ponerIcono('emoji', e)"
+            >{{ e }}</button>
+          </div>
+          <div v-if="boton.iconSource !== 'none'" class="flex gap-1">
+            <button
+              v-for="lado in [{ id: 'left', label: 'Icono a la izquierda' }, { id: 'right', label: 'A la derecha' }]"
+              :key="lado.id"
+              type="button"
+              class="flex-1 rounded-lg border px-2 py-1 text-[11px] transition"
+              :class="boton.iconPosition === lado.id
+                ? 'border-brand-500 bg-brand-50 text-brand-700'
+                : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50'"
+              @click="patchProperty('iconPosition', lado.id)"
+            >{{ lado.label }}</button>
+          </div>
+        </div>
+
+        <label class="flex items-center gap-2 text-xs text-slate-600">
+          <input
+            type="checkbox"
+            class="h-4 w-4 rounded border-slate-300"
+            :checked="boton.shadow"
+            @change="patchProperty('shadow', ($event.target as HTMLInputElement).checked)"
+          />
+          Sombra
+        </label>
+
+        <p class="text-[11px] leading-tight text-slate-400">
+          El destino del botón se elige abajo, en <strong>Enlace</strong>: otra página
+          de este libro o una dirección web.
+        </p>
+      </section>
+
       <!-- Enlace: se abre al pulsar el elemento en el modo lectura -->
       <section v-if="canLink" class="space-y-2">
         <h3 class="label">Enlace</h3>
@@ -662,6 +1014,82 @@ const SOFT_BACKGROUNDS = ['transparent', '#F7F4EC', '#EDF2F0', '#FBF3E4', '#EFEA
         <p v-else class="text-[11px] leading-tight text-slate-400">
           Añade información que aparece al pasar el ratón o al pulsar, sin ocupar sitio
           en la página.
+        </p>
+      </section>
+
+      <!-- Mostrar y ocultar: este objeto actua sobre otros de la misma pagina -->
+      <section class="space-y-2 border-t border-slate-100 pt-3">
+        <h3 class="label">Mostrar y ocultar</h3>
+
+        <label class="flex items-start gap-2 text-xs text-slate-600">
+          <input
+            type="checkbox"
+            class="mt-0.5 h-4 w-4 rounded border-slate-300"
+            :checked="acciones?.startHidden ?? false"
+            @change="ponerAcciones({ startHidden: ($event.target as HTMLInputElement).checked })"
+          />
+          <span>
+            Empieza oculto
+            <span class="block text-[11px] leading-tight text-slate-400">
+              En el modo lectura no se ve hasta que otro objeto lo muestre. Aquí en el
+              editor se sigue viendo, para poder trabajarlo.
+            </span>
+          </span>
+        </label>
+
+        <div v-if="reglas.length" class="space-y-2">
+          <div
+            v-for="(regla, i) in reglas"
+            :key="i"
+            class="rounded-lg border border-slate-200 p-2"
+          >
+            <div class="mb-1 flex items-center justify-between gap-2">
+              <p class="min-w-0 truncate text-[11px] font-semibold text-slate-600">
+                {{ etiquetaDe(regla.target) }}
+              </p>
+              <button
+                type="button"
+                class="shrink-0 rounded px-1 text-slate-400 hover:bg-red-50 hover:text-red-600"
+                title="Quitar"
+                @click="quitarRegla(i)"
+              >✕</button>
+            </div>
+            <div class="grid grid-cols-2 gap-1">
+              <select
+                class="input py-1 text-[11px]"
+                :value="regla.action"
+                @change="cambiarRegla(i, { action: ($event.target as HTMLSelectElement).value as ElementActionRule['action'] })"
+              >
+                <option v-for="a in ACCIONES" :key="a.id" :value="a.id">{{ a.label }}</option>
+              </select>
+              <select
+                class="input py-1 text-[11px]"
+                :value="regla.trigger"
+                @change="cambiarRegla(i, { trigger: ($event.target as HTMLSelectElement).value as 'click' | 'hover' })"
+              >
+                <option value="click">Al pulsar</option>
+                <option value="hover">Al pasar el ratón</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <select
+          v-if="objetivos.length"
+          class="input py-1 text-xs"
+          :value="''"
+          @change="anadirRegla(($event.target as HTMLSelectElement).value)"
+        >
+          <option value="">Añadir un objeto al que afectar...</option>
+          <option v-for="o in objetivos" :key="o.el.id" :value="o.el.id">{{ o.etiqueta }}</option>
+        </select>
+        <p v-else class="text-[11px] leading-tight text-slate-400">
+          Esta página no tiene otros objetos sobre los que actuar.
+        </p>
+
+        <p v-if="!reglas.length" class="text-[11px] leading-tight text-slate-400">
+          Al pulsar este objeto puedes hacer que otro aparezca o desaparezca. Sirve
+          para respuestas que se destapan, pistas y capas.
         </p>
       </section>
 

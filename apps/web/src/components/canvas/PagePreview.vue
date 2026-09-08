@@ -26,6 +26,14 @@ const props = defineProps<{
    * al posarse volveria a entrar desde cero y daria un respingo.
    */
   enVuelo?: boolean;
+  /**
+   * Respeta "empieza oculto" aunque no sea el modo lectura.
+   *
+   * Lo usa la vista de impresion: sin esto, imprimir una ficha para repartirla
+   * en papel salia con las respuestas puestas, porque en papel no hay nada que
+   * pulsar y se pintaba todo.
+   */
+  respetarOcultos?: boolean;
 }>();
 
 /** Salto a otra pagina del propio libro, desde un marcador. */
@@ -86,6 +94,7 @@ function interaccionDe(element: CanvasElement): ElementInteraction | null {
 }
 
 function alEntrar(element: CanvasElement, event: MouseEvent): void {
+  dispararReglas(element, 'hover');
   const info = interaccionDe(element);
   if (info?.trigger === 'hover') activa.value = { interaction: info, x: event.clientX, y: event.clientY };
 }
@@ -107,6 +116,7 @@ function alSalir(element: CanvasElement): void {
 }
 
 function alPulsar(element: CanvasElement, event: MouseEvent): void {
+  dispararReglas(element, 'click');
   const destino = paginaDestino(element);
   if (destino !== null && props.interactive) emit('irAPagina', destino);
 
@@ -122,7 +132,7 @@ function alPulsar(element: CanvasElement, event: MouseEvent): void {
 /** Un elemento con informacion o con animacion al pulsar responde al teclado. */
 function esFocalizable(element: CanvasElement): boolean {
   if (!props.interactive || linkOf(element)) return false;
-  return Boolean(element.interaction) || element.animation?.trigger === 'click';
+  return Boolean(element.interaction) || element.animation?.trigger === 'click' || actuaAlPulsar(element);
 }
 
 /**
@@ -146,6 +156,90 @@ function alEnfocar(element: CanvasElement, event: FocusEvent): void {
   if (!info) return;
   const caja = (event.target as HTMLElement).getBoundingClientRect();
   activa.value = { interaction: info, x: caja.left + caja.width / 2, y: caja.bottom };
+}
+
+/* --------------------------------------------------------------------------
+ * Mostrar y ocultar objetos
+ *
+ * Un objeto puede esconder o revelar a otro de su misma pagina al pulsarlo.
+ * Los objetivos se apuntan por nombre, y el nombre se busca SOLO entre los
+ * elementos de esta pagina: dos paginas duplicadas comparten nombres y no deben
+ * interferir entre ellas.
+ * ------------------------------------------------------------------------ */
+
+/**
+ * Nombres que estan escondidos ahora mismo.
+ *
+ * Se guarda lo escondido y no lo visible porque lo normal es que casi todo se
+ * vea: asi el conjunto arranca con lo poco que nace oculto y se queda pequeno.
+ */
+const ocultos = ref(new Set<string>());
+
+/** Donde tiene sentido esconder: al leer, y al imprimir si se pide. */
+const aplicaOcultos = computed(() => props.interactive === true || props.respetarOcultos === true);
+
+/** Arranca escondiendo lo que su autor marco como oculto. */
+function reiniciarVisibilidad(): void {
+  if (!aplicaOcultos.value) {
+    ocultos.value = new Set();
+    return;
+  }
+  const inicial = new Set<string>();
+  for (const el of props.elements) {
+    const clave = el.actions?.key;
+    if (clave && el.actions?.startHidden) inicial.add(clave);
+  }
+  ocultos.value = inicial;
+}
+
+reiniciarVisibilidad();
+// Al cambiar de pagina se vuelve al estado de partida: si no, una pagina que se
+// revisita apareceria con lo que alguien destapo hace media hora.
+watch(() => props.elements, reiniciarVisibilidad);
+watch(aplicaOcultos, reiniciarVisibilidad);
+
+function estaVisible(element: CanvasElement): boolean {
+  if (!aplicaOcultos.value) return true; // en el editor y en las miniaturas, todo
+  const clave = element.actions?.key;
+  return !clave || !ocultos.value.has(clave);
+}
+
+/** Nombres que existen de verdad en esta pagina; el resto no se toca. */
+const clavesDeLaPagina = computed(() => {
+  const claves = new Set<string>();
+  for (const el of props.elements) if (el.actions?.key) claves.add(el.actions.key);
+  return claves;
+});
+
+/**
+ * Aplica las reglas de un objeto. Una regla que apunta a un nombre que ya no
+ * existe (porque borraron el objeto) se ignora en silencio: romper la pagina
+ * entera por una regla huerfana seria peor que no hacer nada.
+ */
+function dispararReglas(element: CanvasElement, disparador: 'click' | 'hover'): void {
+  const reglas = props.interactive ? (element.actions?.rules ?? []) : [];
+  if (!reglas.length) return;
+
+  const siguiente = new Set(ocultos.value);
+  let cambio = false;
+
+  for (const regla of reglas) {
+    if (regla.trigger !== disparador) continue;
+    if (!clavesDeLaPagina.value.has(regla.target)) continue;
+
+    if (regla.action === 'show') siguiente.delete(regla.target);
+    else if (regla.action === 'hide') siguiente.add(regla.target);
+    else if (siguiente.has(regla.target)) siguiente.delete(regla.target);
+    else siguiente.add(regla.target);
+    cambio = true;
+  }
+
+  if (cambio) ocultos.value = siguiente;
+}
+
+/** Si el objeto hace algo al pulsarlo: para el cursor y para el teclado. */
+function actuaAlPulsar(element: CanvasElement): boolean {
+  return Boolean(props.interactive && element.actions?.rules?.some((r) => r.trigger === 'click'));
 }
 
 // --- Animacion ---
@@ -188,6 +282,7 @@ function animarAlPulsar(element: CanvasElement): void {
 
 /** Enter equivale al clic para quien navega sin raton. */
 function alPulsarTeclado(element: CanvasElement, event: KeyboardEvent): void {
+  dispararReglas(element, 'click');
   const destino = paginaDestino(element);
   if (destino !== null && props.interactive) emit('irAPagina', destino);
 
@@ -215,10 +310,11 @@ function alTerminarAnimacion(element: CanvasElement): void {
       <component
         :is="linkOf(element) ? 'a' : 'div'"
         v-for="element in sorted"
+        v-show="estaVisible(element)"
         :key="element.id"
         class="absolute"
         :class="[
-          linkOf(element) || paginaDestino(element) !== null ? 'cursor-pointer' : '',
+          linkOf(element) || paginaDestino(element) !== null || actuaAlPulsar(element) ? 'cursor-pointer' : '',
           interactive && element.interaction ? 'cursor-help' : '',
         ]"
         :href="linkOf(element) ?? undefined"

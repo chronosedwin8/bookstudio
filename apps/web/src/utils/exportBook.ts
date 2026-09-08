@@ -201,6 +201,44 @@ function elementHtml(element: CanvasElement): string {
     case 'math':
       inner = `<code class="mat">${escapeHtml(String(p.latex ?? ''))}</code>`;
       break;
+    case 'button': {
+      /*
+       * El boton se pinta con los colores que le puso su autor. El enlace lo
+       * envuelve mas abajo, con el mismo camino que el resto de elementos, asi
+       * que aqui solo hay que dibujarlo.
+       */
+      const RADIO: Record<string, string> = { rounded: '.75rem', pill: '999px', square: '.125rem' };
+      const TAM: Record<string, string> = { sm: '26cqh', md: '34cqh', lg: '44cqh' };
+      const fondo = String(p.backgroundColor ?? '#2563EB');
+      const relleno = p.variant === 'solid' ? fondo
+        : p.variant === 'soft' ? `${fondo}22`
+        : 'transparent';
+      const texto = p.variant === 'solid' ? String(p.textColor ?? '#FFFFFF') : fondo;
+      const borde = p.variant === 'solid' || p.variant === 'outline'
+        ? `2px solid ${String(p.borderColor ?? fondo)}`
+        : '2px solid transparent';
+      const css = [
+        `background:${relleno}`,
+        `color:${texto}`,
+        `border:${borde}`,
+        `border-radius:${RADIO[String(p.shape)] ?? RADIO.rounded}`,
+        `font-size:${TAM[String(p.size)] ?? TAM.md}`,
+        `font-family:'${String(p.fontFamily ?? 'Nunito')}',sans-serif`,
+        p.variant === 'link' ? 'text-decoration:underline' : '',
+        p.shadow && (p.variant === 'solid' || p.variant === 'soft')
+          ? 'box-shadow:0 2px 6px rgba(15,23,42,.18)' : '',
+      ].filter(Boolean).join(';');
+
+      const icono = p.iconSource === 'emoji' && p.iconChar
+        ? `<span class="bico">${escapeHtml(String(p.iconChar))}</span>`
+        : '';
+      const etiqueta = `<span>${escapeHtml(String(p.label ?? ''))}</span>`;
+      inner =
+        `<div class="btncaja"><div class="btn" style="${escapeHtml(css)}">` +
+        (p.iconPosition === 'right' ? etiqueta + icono : icono + etiqueta) +
+        `</div></div>`;
+      break;
+    }
     case 'question': {
       const options = (Array.isArray(p.options) ? (p.options as Array<Record<string, unknown>>) : [])
         .map((option) => `<li>${escapeHtml(String(option.text ?? ''))}</li>`)
@@ -243,7 +281,23 @@ function elementHtml(element: CanvasElement): string {
       (safeUrl(info.imageUrl) ? ` data-info-img="${escapeHtml(safeUrl(info.imageUrl)!)}"` : '')
     : '';
 
-  return `<div class="el${info ? ' tiene-info' : ''}"${extra}${wrapperStyle}>${inner}</div>`;
+  /*
+   * Mostrar y ocultar. El nombre y las reglas viajan en atributos y los aplica
+   * el guion de abajo. Los objetivos se apuntan por nombre y se resuelven dentro
+   * de la propia pagina, igual que en la plataforma.
+   */
+  const acc = element.actions;
+  const reglas = (acc?.rules ?? []).filter((r) => r.target);
+  const accAttrs =
+    (acc?.key ? ` data-nombre="${escapeHtml(acc.key)}"` : '') +
+    (acc?.startHidden ? ' data-oculto="1"' : '') +
+    (reglas.length
+      ? ` data-reglas="${escapeHtml(reglas.map((r) => `${r.trigger}:${r.action}:${r.target}`).join('|'))}"`
+      : '');
+
+  const pulsable = reglas.some((r) => r.trigger === 'click') ? ' actua' : '';
+
+  return `<div class="el${info ? ' tiene-info' : ''}${pulsable}"${extra}${accAttrs}${wrapperStyle}>${inner}</div>`;
 }
 
 /**
@@ -351,6 +405,11 @@ export function bookToHtml(book: BookDetail): string {
          font-size:11px; padding:2px 6px; }
   .emo { font-size:88cqmin; line-height:1; }
   .lnk { display:block; width:100%; height:100%; text-decoration:none; color:inherit; }
+  .btncaja { width:100%; height:100%; container-type:size; }
+  .btn { display:flex; width:100%; height:100%; align-items:center; justify-content:center;
+         gap:.4em; padding:0 .9em; font-weight:600; line-height:1.1; overflow:hidden;
+         text-align:center; box-sizing:border-box; }
+  .bico { flex:none; }
   .mapa, .mat { display:grid; place-items:center; width:100%; height:100%; text-align:center;
                 background:#f1f5f9; border-radius:.3rem; color:#0f172a; text-decoration:none; }
   .mat { font-family:ui-monospace, monospace; font-size:clamp(10px,6cqmin,28px); padding:.4rem; }
@@ -374,6 +433,8 @@ export function bookToHtml(book: BookDetail): string {
                         border-radius:0; margin:0; }
   }
   .tiene-info { cursor:help; }
+  .actua { cursor:pointer; }
+  .escondido { display:none !important; }
   #globo { position:fixed; z-index:60; max-width:19rem; display:none; pointer-events:none;
            background:rgba(15,23,42,.96); color:#fff; border-radius:.75rem; overflow:hidden;
            font-size:13px; line-height:1.35; box-shadow:0 12px 32px rgba(0,0,0,.4); }
@@ -504,6 +565,40 @@ export function bookToHtml(book: BookDetail): string {
     });
     el.addEventListener('mousemove', colocarGlobo);
     el.addEventListener('mouseleave', function () { globo.style.display = 'none'; });
+  });
+
+  /*
+   * Mostrar y ocultar objetos. Cada pagina se resuelve por su cuenta: dos
+   * paginas duplicadas comparten nombres y no deben interferir entre ellas.
+   */
+  Array.prototype.forEach.call(document.querySelectorAll('.pg'), function (pagina) {
+    var porNombre = {};
+    Array.prototype.forEach.call(pagina.querySelectorAll('[data-nombre]'), function (el) {
+      porNombre[el.getAttribute('data-nombre')] = el;
+    });
+
+    Array.prototype.forEach.call(pagina.querySelectorAll('[data-oculto]'), function (el) {
+      el.classList.add('escondido');
+    });
+
+    function aplicar(el, disparador) {
+      var crudo = el.getAttribute('data-reglas');
+      if (!crudo) return;
+      crudo.split('|').forEach(function (texto) {
+        var partes = texto.split(':');
+        if (partes[0] !== disparador) return;
+        var destino = porNombre[partes[2]];
+        if (!destino) return; // el objetivo ya no existe: no se hace nada
+        if (partes[1] === 'show') destino.classList.remove('escondido');
+        else if (partes[1] === 'hide') destino.classList.add('escondido');
+        else destino.classList.toggle('escondido');
+      });
+    }
+
+    Array.prototype.forEach.call(pagina.querySelectorAll('[data-reglas]'), function (el) {
+      el.addEventListener('click', function () { aplicar(el, 'click'); });
+      el.addEventListener('mouseenter', function () { aplicar(el, 'hover'); });
+    });
   });
 
   var paginas = Array.prototype.slice.call(document.querySelectorAll('.pg'));

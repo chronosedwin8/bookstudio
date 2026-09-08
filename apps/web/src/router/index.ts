@@ -98,6 +98,12 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/views/JoinLibraryView.vue'),
   },
   {
+    // El mural se ve sin cuenta: es la vitrina publica del colegio.
+    path: '/mural',
+    name: 'mural',
+    component: () => import('@/views/MuralView.vue'),
+  },
+  {
     // Enlace compartido: accesible sin sesion, la API decide que exige cada libro.
     path: '/leer/:token',
     name: 'book-shared',

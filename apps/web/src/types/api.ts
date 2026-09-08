@@ -219,7 +219,60 @@ export interface DistributeResult {
 export type LayoutFormat = 'portrait' | 'square' | 'landscape';
 export type ElementType =
   | 'text' | 'shape' | 'drawing' | 'image' | 'audio' | 'video'
-  | 'map' | 'icon' | 'embed' | 'question' | 'chart' | 'math';
+  | 'map' | 'icon' | 'embed' | 'question' | 'chart' | 'math' | 'button';
+
+/** Boton del lienzo: se pulsa y lleva a otra pagina del libro o a una web. */
+export interface ButtonProperties {
+  label: string;
+  variant: 'solid' | 'soft' | 'outline' | 'ghost' | 'link';
+  shape: 'rounded' | 'pill' | 'square';
+  size: 'sm' | 'md' | 'lg';
+  backgroundColor: string;
+  textColor: string;
+  borderColor: string;
+  fontFamily: FontFamily;
+  iconSource: 'none' | 'emoji' | 'library';
+  iconChar: string;
+  iconPaths: string[];
+  iconViewBox: string;
+  iconFilled: boolean;
+  iconPosition: 'left' | 'right';
+  linkUrl: string;
+  shadow: boolean;
+}
+
+/** Un libro en el mural publico. */
+export interface MuralBook {
+  id: string;
+  title: string;
+  layoutFormat: LayoutFormat;
+  /** Con esto se abre: /compartido/{shareToken}. */
+  shareToken: string;
+  authorName: string | null;
+  libraryName: string | null;
+  pageCount: number;
+  publishedAt: string;
+  cover: {
+    backgroundColor: string;
+    backgroundPattern: string | null;
+    elements: CanvasElement[];
+  } | null;
+}
+
+export interface MuralPage {
+  items: MuralBook[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
+/** Si un libro esta en el mural, visto desde el editor. */
+export interface MuralState {
+  inMural: boolean;
+  publishedAt: string | null;
+  shareToken: string | null;
+}
 
 export type ChartType = 'bar' | 'column' | 'line' | 'area' | 'pie' | 'doughnut';
 
@@ -426,6 +479,29 @@ export interface ElementAnimation {
   delay: number;
 }
 
+/**
+ * Mostrar y ocultar objetos.
+ *
+ * El objetivo se apunta POR NOMBRE (`target`) y no por identificador: al
+ * duplicar una pagina o repartirla a la clase cada elemento recibe un id nuevo,
+ * y unas reglas guardadas por id quedarian apuntando al vacio. El nombre viaja
+ * con la copia y se resuelve dentro de su propia pagina.
+ */
+export interface ElementActionRule {
+  trigger: 'click' | 'hover';
+  action: 'show' | 'hide' | 'toggle';
+  /** Nombre del objeto sobre el que actua, dentro de la misma pagina. */
+  target: string;
+}
+
+export interface ElementActions {
+  /** Como le llaman las reglas de otros objetos. */
+  key?: string;
+  /** En modo lectura arranca invisible. En el editor siempre se ve. */
+  startHidden: boolean;
+  rules: ElementActionRule[];
+}
+
 export interface CanvasElement {
   id: string;
   pageId: string;
@@ -439,6 +515,8 @@ export interface CanvasElement {
   interaction: ElementInteraction | null;
   /** null cuando el elemento no se anima. */
   animation: ElementAnimation | null;
+  /** Nombre del objeto y que muestra u oculta al pulsarlo; null si nada. */
+  actions: ElementActions | null;
   updatedAt: string;
 }
 

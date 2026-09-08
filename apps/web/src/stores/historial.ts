@@ -104,6 +104,7 @@ export const NOMBRE_TIPO: Record<ElementType, string> = {
   question: 'pregunta',
   chart: 'gráfica',
   math: 'fórmula',
+  button: 'botón',
 };
 
 export const describirElemento = (el: { type: ElementType }): string =>

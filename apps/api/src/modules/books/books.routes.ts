@@ -21,6 +21,7 @@ import {
   updatePageSchema,
 } from './books.schemas.js';
 import * as service from './books.service.js';
+import * as mural from './mural.service.js';
 import * as grades from './grades.service.js';
 import * as activity from './activity.service.js';
 
@@ -78,6 +79,34 @@ booksRouter.put(
   asyncHandler(async (req, res) => {
     const book = await service.setCollaborative(req.params.id, req.auth!.userId, req.body.collaborative);
     res.json({ book });
+  }),
+);
+
+/*
+ * El mural. Publicar aqui es una decision aparte de compartir por enlace: un
+ * enlace lo tiene solo quien lo recibe, y el mural lo ve cualquiera que entre.
+ */
+booksRouter.get(
+  '/:id/mural',
+  validate(bookIdSchema, 'params'),
+  asyncHandler(async (req, res) => {
+    res.json({ mural: await mural.estadoMural(req.params.id, req.auth!.userId) });
+  }),
+);
+
+booksRouter.post(
+  '/:id/mural',
+  validate(bookIdSchema, 'params'),
+  asyncHandler(async (req, res) => {
+    res.json({ mural: await mural.publicarEnMural(req.params.id, req.auth!.userId) });
+  }),
+);
+
+booksRouter.delete(
+  '/:id/mural',
+  validate(bookIdSchema, 'params'),
+  asyncHandler(async (req, res) => {
+    res.json({ mural: await mural.retirarDelMural(req.params.id, req.auth!.userId) });
   }),
 );
 

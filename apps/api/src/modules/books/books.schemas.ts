@@ -120,3 +120,10 @@ export type ListBooksQuery = z.infer<typeof listBooksQuerySchema>;
 export type CreatePageInput = z.infer<typeof createPageSchema>;
 export type UpdatePageInput = z.infer<typeof updatePageSchema>;
 export type GradeSchemaInput = z.infer<typeof gradeSchema>;
+
+/** Consulta del mural publico. */
+export const muralQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).max(500).optional(),
+  pageSize: z.coerce.number().int().min(1).max(48).optional(),
+  search: z.string().max(120).optional(),
+});

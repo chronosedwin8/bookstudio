@@ -4,7 +4,7 @@ import { HttpError } from '../../lib/http-error.js';
 import { getAccess } from '../libraries/libraries.service.js';
 import { TRIAL_LIMITS } from '../auth/trial.service.js';
 import { EDITOR_TOOLS, sanitizeTools } from '../canvas/tools.js';
-import type { ElementAnimation, ElementInteraction } from '../canvas/canvas.schemas.js';
+import type { ElementActions, ElementAnimation, ElementInteraction } from '../canvas/canvas.schemas.js';
 import {
   parseProperties,
   type CreateElementInput,
@@ -33,6 +33,8 @@ export interface CanvasElement {
   interaction: ElementInteraction | null;
   /** Animacion en modo lectura; null si no tiene. */
   animation: ElementAnimation | null;
+  /** Nombre del objeto y que muestra u oculta al pulsarlo; null si nada. */
+  actions: ElementActions | null;
   updatedAt: string;
 }
 
@@ -139,7 +141,7 @@ function toBook(row: BookRow): Book {
             ? {
                 backgroundColor: row.cover_background,
                 backgroundPattern: row.cover_pattern ?? null,
-                elements: row.cover_elements ?? [],
+                elements: sanitizeCover(row.cover_elements),
               }
             : null,
         }
@@ -447,6 +449,7 @@ export async function listBooks(userId: string, filters: ListBooksQuery): Promis
                     'transformMatrix', ce.transform_matrix, 'properties', ce.properties,
                     'isLocked', ce.is_locked, 'opacity', ce.opacity,
                     'interaction', ce.interaction, 'animation', ce.animation,
+                    'actions', ce.actions,
                     'updatedAt', ce.updated_at
                   ) ORDER BY ce.z_index
                 ),
@@ -481,6 +484,7 @@ interface ElementRow {
   opacity: string;
   interaction: ElementInteraction | null;
   animation: ElementAnimation | null;
+  actions: ElementActions | null;
   updated_at: Date;
 }
 
@@ -496,6 +500,7 @@ function toElement(row: ElementRow): CanvasElement {
     opacity: Number(row.opacity),
     interaction: row.interaction ?? null,
     animation: row.animation ?? null,
+    actions: row.actions ?? null,
     updatedAt: row.updated_at.toISOString(),
   };
 }
@@ -545,6 +550,27 @@ function sanitizeQuestion(properties: Record<string, unknown>): Record<string, u
 }
 
 /**
+ * Limpia los elementos de una PORTADA.
+ *
+ * Las portadas se arman en SQL, con `ce.properties` tal cual, y por ahi no pasa
+ * `loadPages`, que es quien quita las soluciones a quien solo lee. Una pregunta
+ * en la primera pagina viajaba entera: la opcion correcta, la guia de respuesta
+ * del docente y hasta lo que hubiera escrito un alumno. En el mural eso sale a
+ * internet abierto y sin cuenta.
+ *
+ * Una portada es una miniatura: no hay nada que responder ahi, asi que se quita
+ * todo lo que tenga que ver con respuestas, siempre y para todo el mundo.
+ */
+export function sanitizeCover(elements: CanvasElement[] | null | undefined): CanvasElement[] {
+  return (elements ?? []).map((element) => {
+    if (element.type !== 'question') return element;
+    const { expectedAnswer: _guia, studentAnswer: _suya, answeredAt: _cuando, ...resto } =
+      element.properties as Record<string, unknown>;
+    return { ...element, properties: sanitizeQuestion(resto) };
+  });
+}
+
+/**
  * Paginas del libro con sus elementos ya agrupados y ordenados por capa.
  * `revealAnswers` solo es cierto para quien puede editar el libro.
  */
@@ -557,7 +583,7 @@ async function loadPages(bookId: string, revealAnswers: boolean): Promise<Page[]
     ),
     query<ElementRow>(
       `SELECT ce.id, ce.page_id, ce.type, ce.z_index, ce.transform_matrix, ce.properties,
-              ce.is_locked, ce.opacity, ce.interaction, ce.animation, ce.updated_at
+              ce.is_locked, ce.opacity, ce.interaction, ce.animation, ce.actions, ce.updated_at
        FROM canvas_elements ce
        JOIN pages p ON p.id = ce.page_id
        WHERE p.book_id = $1
@@ -935,9 +961,10 @@ export async function addPage(bookId: string, userId: string, input: CreatePageI
       const properties = parseProperties(element.type, element.properties);
       const created = await client.query<ElementRow>(
         `INSERT INTO canvas_elements
-           (page_id, type, z_index, transform_matrix, properties, is_locked, opacity, interaction, animation)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9::jsonb)
-         RETURNING id, page_id, type, z_index, transform_matrix, properties, is_locked, opacity, interaction, animation, updated_at`,
+           (page_id, type, z_index, transform_matrix, properties, is_locked, opacity,
+            interaction, animation, actions)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9::jsonb, $10::jsonb)
+         RETURNING id, page_id, type, z_index, transform_matrix, properties, is_locked, opacity, interaction, animation, actions, updated_at`,
         [
           page.id,
           element.type,
@@ -948,6 +975,7 @@ export async function addPage(bookId: string, userId: string, input: CreatePageI
           element.opacity,
           element.interaction ? JSON.stringify(element.interaction) : null,
           element.animation ? JSON.stringify(element.animation) : null,
+          element.actions ? JSON.stringify(element.actions) : null,
         ],
       );
       elements.push(toElement(created.rows[0]));
@@ -1004,11 +1032,13 @@ export async function duplicatePage(bookId: string, pageId: string, userId: stri
     // Los elementos se copian en bloque conservando capas, bloqueo y opacidad.
     const elements = await client.query<ElementRow>(
       `INSERT INTO canvas_elements
-         (page_id, type, z_index, transform_matrix, properties, is_locked, opacity, interaction, animation)
-       SELECT $1, type, z_index, transform_matrix, properties, is_locked, opacity, interaction, animation
+         (page_id, type, z_index, transform_matrix, properties, is_locked, opacity,
+          interaction, animation, actions)
+       SELECT $1, type, z_index, transform_matrix, properties, is_locked, opacity,
+              interaction, animation, actions
        FROM canvas_elements WHERE page_id = $2
        ORDER BY z_index
-       RETURNING id, page_id, type, z_index, transform_matrix, properties, is_locked, opacity, interaction, animation, updated_at`,
+       RETURNING id, page_id, type, z_index, transform_matrix, properties, is_locked, opacity, interaction, animation, actions, updated_at`,
       [copy.id, pageId],
     );
 
@@ -1147,9 +1177,10 @@ export async function createElement(
 
     const inserted = await client.query<ElementRow>(
       `INSERT INTO canvas_elements
-         (page_id, type, z_index, transform_matrix, properties, is_locked, opacity, interaction, animation)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9::jsonb)
-       RETURNING id, page_id, type, z_index, transform_matrix, properties, is_locked, opacity, interaction, animation, updated_at`,
+         (page_id, type, z_index, transform_matrix, properties, is_locked, opacity,
+          interaction, animation, actions)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9::jsonb, $10::jsonb)
+       RETURNING id, page_id, type, z_index, transform_matrix, properties, is_locked, opacity, interaction, animation, actions, updated_at`,
       [
         pageId,
         input.type,
@@ -1160,6 +1191,7 @@ export async function createElement(
         input.opacity,
         input.interaction ? JSON.stringify(input.interaction) : null,
         input.animation ? JSON.stringify(input.animation) : null,
+        input.actions ? JSON.stringify(input.actions) : null,
       ],
     );
 
@@ -1230,10 +1262,14 @@ export async function updateElement(
       values.push(input.animation ? JSON.stringify(input.animation) : null);
       sets.push(`animation = $${values.length}::jsonb`);
     }
+    if (input.actions !== undefined) {
+      values.push(input.actions ? JSON.stringify(input.actions) : null);
+      sets.push(`actions = $${values.length}::jsonb`);
+    }
 
     const updated = await client.query<ElementRow>(
       `UPDATE canvas_elements SET ${sets.join(', ')} WHERE id = $1 AND page_id = $2
-       RETURNING id, page_id, type, z_index, transform_matrix, properties, is_locked, opacity, interaction, animation, updated_at`,
+       RETURNING id, page_id, type, z_index, transform_matrix, properties, is_locked, opacity, interaction, animation, actions, updated_at`,
       values,
     );
 
@@ -1298,7 +1334,7 @@ export async function reorderLayers(
     await touchBook(client, bookId);
 
     const refreshed = await client.query<ElementRow>(
-      `SELECT id, page_id, type, z_index, transform_matrix, properties, is_locked, opacity, interaction, animation, updated_at
+      `SELECT id, page_id, type, z_index, transform_matrix, properties, is_locked, opacity, interaction, animation, actions, updated_at
        FROM canvas_elements WHERE page_id = $1 ORDER BY z_index`,
       [pageId],
     );

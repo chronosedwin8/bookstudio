@@ -122,9 +122,16 @@ async function copiarPaginas(
     );
 
     await client.query(
+      /*
+       * Las reglas de mostrar y ocultar apuntan por nombre, no por id, asi que
+       * la copia de cada alumno funciona con solo llevarse la columna: los
+       * nombres se resuelven dentro de su propia pagina.
+       */
       `INSERT INTO canvas_elements
-         (page_id, type, z_index, transform_matrix, properties, is_locked, opacity, interaction, animation)
-       SELECT $1, type, z_index, transform_matrix, properties, is_locked, opacity, interaction, animation
+         (page_id, type, z_index, transform_matrix, properties, is_locked, opacity,
+          interaction, animation, actions)
+       SELECT $1, type, z_index, transform_matrix, properties, is_locked, opacity,
+              interaction, animation, actions
        FROM canvas_elements WHERE page_id = $2
        ORDER BY z_index`,
       [insertada.rows[0].id, pagina.id],

@@ -19,6 +19,15 @@ const ASPECT = { square: 1, portrait: 3 / 4, landscape: 4 / 3 } as const;
 /** Ancho fijo en px: al imprimir, la hoja se ajusta con la regla @page. */
 const PAGE_WIDTH = 900;
 
+/**
+ * Que hacer con los objetos que "empiezan ocultos".
+ *
+ * Por omision NO se imprimen, que es lo prudente: quien imprime una ficha suele
+ * ser para repartirla, y llevarse las respuestas puestas es el fallo que duele.
+ * Quien quiera la hoja de soluciones lo desmarca.
+ */
+const mostrarOcultos = ref(false);
+
 /** window no esta expuesto en la plantilla de Vue; se envuelve. */
 const print = () => window.print();
 
@@ -53,6 +62,10 @@ onMounted(async () => {
             {{ book.pages.length }} páginas · en el dialogo elige "Guardar como PDF"
           </p>
         </div>
+        <label class="flex items-center gap-2 text-sm text-slate-600">
+          <input v-model="mostrarOcultos" type="checkbox" class="h-4 w-4 rounded border-slate-300" />
+          Incluir los objetos que empiezan ocultos (hoja de soluciones)
+        </label>
         <button type="button" class="btn-primary" @click="print">Imprimir o guardar en PDF</button>
       </div>
 
@@ -68,6 +81,7 @@ onMounted(async () => {
             :elements="page.elements"
             :aspect-ratio="ASPECT[book.layoutFormat]"
             :width="PAGE_WIDTH"
+            :respetar-ocultos="!mostrarOcultos"
           />
         </div>
       </div>

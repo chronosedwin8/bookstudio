@@ -40,8 +40,11 @@ import type {
   Candidate,
   ClassView,
   DistributeResult,
+  ElementActions,
   ElementAnimation,
   ElementInteraction,
+  MuralPage,
+  MuralState,
   ElementType,
   Grade,
   GradeBook,
@@ -355,6 +358,7 @@ export const booksApi = {
       isLocked?: boolean;
       interaction?: ElementInteraction | null;
       animation?: ElementAnimation | null;
+      actions?: ElementActions | null;
     },
   ) {
     const { data } = await http.post<{ element: CanvasElement }>(`/books/${bookId}/pages/${pageId}/elements`, payload);
@@ -373,6 +377,7 @@ export const booksApi = {
       /** null la quita; ausente la deja como estaba. */
       interaction?: ElementInteraction | null;
       animation?: ElementAnimation | null;
+      actions?: ElementActions | null;
     },
   ) {
     const { data } = await http.patch<{ element: CanvasElement }>(
@@ -381,6 +386,20 @@ export const booksApi = {
     );
     return data.element;
   },
+  /** Estado del libro en el mural publico. */
+  async muralState(bookId: string) {
+    const { data } = await http.get<{ mural: MuralState }>(`/books/${bookId}/mural`);
+    return data.mural;
+  },
+  async publishToMural(bookId: string) {
+    const { data } = await http.post<{ mural: MuralState }>(`/books/${bookId}/mural`);
+    return data.mural;
+  },
+  async removeFromMural(bookId: string) {
+    const { data } = await http.delete<{ mural: MuralState }>(`/books/${bookId}/mural`);
+    return data.mural;
+  },
+
   async deleteElement(bookId: string, pageId: string, elementId: string) {
     await http.delete(`/books/${bookId}/pages/${pageId}/elements/${elementId}`);
   },
@@ -790,5 +809,13 @@ export const clientsApi = {
   async updateCharge(id: string, payload: { status?: 'emitida' | 'anulada'; notes?: string; dueDate?: string | null }) {
     const { data } = await http.patch<{ charge: Charge }>(`/clients/charges/${id}`, payload);
     return data.charge;
+  },
+};
+
+/** Mural publico: se consulta sin cuenta, como lo vera cualquier visitante. */
+export const muralApi = {
+  async list(params: { page?: number; pageSize?: number; search?: string } = {}) {
+    const { data } = await http.get<MuralPage>('/public/mural', { params });
+    return data;
   },
 };

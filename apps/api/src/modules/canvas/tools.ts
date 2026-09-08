@@ -30,6 +30,7 @@ export const EDITOR_TOOLS: Tool[] = [
   { id: 'drawing', label: 'Dibujo a mano', hint: 'Trazos libres con el lapiz.' },
   { id: 'shape', label: 'Formas', hint: 'Rectangulos, circulos, flechas y demas.' },
   { id: 'icon', label: 'Iconos y pegatinas', hint: 'Simbolos y adhesivos del catalogo.' },
+  { id: 'button', label: 'Botones', hint: 'Botones con enlace a otra pagina del libro o a una web.' },
   { id: 'audio', label: 'Audio', hint: 'Grabar la voz e insertar sonidos de la biblioteca.' },
   { id: 'video', label: 'Video', hint: 'Grabar con la camara y grabar la pantalla.' },
   { id: 'map', label: 'Mapas', hint: 'Mapas interactivos con marcadores.' },
