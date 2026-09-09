@@ -53,6 +53,15 @@ export const useEditorStore = defineStore('editor', () => {
     () => sortedElements.value.find((el) => el.id === selectedElementId.value) ?? null,
   );
 
+  /**
+   * Elemento que debe abrirse para escribir nada mas crearse.
+   *
+   * Lo pone quien inserta un texto y lo consume la caja del lienzo. Sin esto
+   * habia que crear el texto, buscarlo y hacer doble clic encima antes de poder
+   * escribir la primera letra.
+   */
+  const editingElementId = ref<string | null>(null);
+
   const historial = crearHistorial();
 
   function replaceElement(updated: CanvasElement): void {
@@ -187,6 +196,22 @@ export const useEditorStore = defineStore('editor', () => {
       });
     }
     return created ?? undefined;
+  }
+
+  /**
+   * Cambia el elemento SOLO en memoria, sin guardar ni tocar el historial.
+   *
+   * Lo usa el inspector mientras se teclea: el lienzo tiene que reflejar cada
+   * letra al momento, pero guardar en cada pulsacion serian treinta peticiones
+   * para escribir una frase y treinta pasos de "deshacer", uno por letra. Quien
+   * llame a esto se compromete a llamar despues a `patchElement` para guardarlo.
+   */
+  function patchElementLocal(elementId: string, properties: Record<string, unknown>): void {
+    const page = currentPage.value;
+    if (!page) return;
+    const index = page.elements.findIndex((el) => el.id === elementId);
+    if (index === -1) return;
+    page.elements[index] = { ...page.elements[index], properties } as CanvasElement;
   }
 
   /** Aplica el cambio en local y luego persiste; ante error recarga para no dejar estado divergente. */
@@ -435,6 +460,7 @@ export const useEditorStore = defineStore('editor', () => {
     currentPage,
     selectedElementId,
     selectedIds,
+    editingElementId,
     selectedElement,
     selectedElements,
     sortedElements,
@@ -452,6 +478,7 @@ export const useEditorStore = defineStore('editor', () => {
     removeSelection,
     addElement,
     patchElement,
+    patchElementLocal,
     removeElement,
     moveLayer,
     addPage,

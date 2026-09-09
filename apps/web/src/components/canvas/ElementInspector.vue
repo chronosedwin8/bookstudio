@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import ChartInspector from './ChartInspector.vue';
 import InteractionContentDialog from './InteractionContentDialog.vue';
 import QuestionInspector from './QuestionInspector.vue';
@@ -50,7 +50,56 @@ const emit = defineEmits<{
    * otro, que es quien lo lleva.
    */
   patchOtro: [payload: { elementId: string; actions: ElementActions }];
+  /**
+   * Cambio que hay que ver YA en el lienzo, sin guardar todavia.
+   *
+   * Va aparte de `patch` porque no es lo mismo: `patch` guarda y deja un paso de
+   * "deshacer", y eso en cada tecla serian treinta peticiones y treinta pasos
+   * para escribir una frase.
+   */
+  patchVivo: [payload: { elementId: string; properties: Record<string, unknown> }];
+  /** Guarda de verdad, nombrando el elemento: al soltarlo puede que ya no sea el seleccionado. */
+  patchElemento: [payload: { elementId: string; properties: Record<string, unknown> }];
 }>();
+
+/**
+ * Escritura en vivo.
+ *
+ * Cada tecla se refleja al momento en el lienzo; el guardado espera a que se
+ * deje de teclear. Asi se ve lo que se escribe mientras se escribe, y al
+ * servidor y al historial les llega una sola vez.
+ */
+let temporizadorVivo: ReturnType<typeof setTimeout> | undefined;
+let porGuardar: { elementId: string; properties: Record<string, unknown> } | undefined;
+
+/** Manda al servidor lo que estuviera esperando, si es que habia algo. */
+function guardarPendiente(): void {
+  clearTimeout(temporizadorVivo);
+  temporizadorVivo = undefined;
+  if (!porGuardar) return;
+  emit('patchElemento', porGuardar);
+  porGuardar = undefined;
+}
+
+function patchPropertyVivo(key: string, value: unknown): void {
+  if (!props.element) return;
+  const elementId = props.element.id;
+  const properties = { ...props.element.properties, [key]: value };
+  emit('patchVivo', { elementId, properties });
+
+  porGuardar = { elementId, properties };
+  clearTimeout(temporizadorVivo);
+  temporizadorVivo = setTimeout(guardarPendiente, 450);
+}
+
+/*
+ * Al cambiar de elemento o al cerrarse el panel hay que guardar lo pendiente en
+ * el acto. Si se tirara, el lienzo seguiria mostrando un texto que el servidor
+ * nunca llego a recibir, y al recargar reapareceria el de antes.
+ */
+watch(() => props.element?.id, guardarPendiente);
+
+onBeforeUnmount(guardarPendiente);
 
 /** Tipos que admiten enlace; el resto no muestra el campo. */
 const LINKABLE = ['text', 'image', 'shape', 'icon', 'button'] as const;
@@ -503,12 +552,17 @@ const SOFT_BACKGROUNDS = ['transparent', '#F7F4EC', '#EDF2F0', '#FBF3E4', '#EFEA
       <section v-if="element.type === 'text' && text" class="space-y-3 border-t border-slate-100 pt-3">
         <div>
           <label class="label" :for="`text-${element.id}`">Contenido</label>
+          <!--
+            @input, no @change: con @change habia que salir del campo para ver el
+            texto en la pagina, asi que se escribia a ciegas. El guardado se
+            retrasa hasta que se deja de teclear.
+          -->
           <textarea
             :id="`text-${element.id}`"
             rows="4"
             class="input"
             :value="text.text"
-            @change="patchProperty('text', ($event.target as HTMLTextAreaElement).value)"
+            @input="patchPropertyVivo('text', ($event.target as HTMLTextAreaElement).value)"
           />
         </div>
 

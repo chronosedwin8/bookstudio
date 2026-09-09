@@ -236,6 +236,8 @@ export const booksApi = {
       isTemplate?: 'true' | 'false';
       /** personal = libros fuera de clase; library = libros de bibliotecas. */
       scope?: 'all' | 'personal' | 'library';
+      /** Solo la administracion: los libros de todo el colegio, no los propios. */
+      all?: 'true';
     } = {},
   ) {
     const { data } = await http.get<{ books: Book[] }>('/books', { params });

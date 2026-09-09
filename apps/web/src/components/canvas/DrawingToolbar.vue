@@ -21,11 +21,22 @@ const STROKE_COLORS = ['#333333', '#E11D48', '#F59E0B', '#16A34A', '#2563EB', '#
       <div class="grid grid-cols-3 gap-1">
         <button
           type="button"
-          class="btn-secondary px-0 py-1.5 text-xs"
+          class="btn-secondary grid place-items-center px-0 py-1.5"
           :class="tool === 'select' && 'bg-brand-50 text-brand-700'"
           title="Seleccionar"
+          aria-label="Seleccionar"
           @click="emit('update:tool', 'select')"
-        >⬚</button>
+        >
+          <svg viewBox="0 0 24 24" class="h-4 w-4" aria-hidden="true">
+            <path
+              d="M5 3l14 8.5-6.2 1.3 3 6.2-2.6 1.2-3-6.2-4.2 4.6z"
+              fill="currentColor"
+              stroke="currentColor"
+              stroke-width="1.2"
+              stroke-linejoin="round"
+            />
+          </svg>
+        </button>
         <button
           type="button"
           class="btn-secondary px-0 py-1.5 text-xs"

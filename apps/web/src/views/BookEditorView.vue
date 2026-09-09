@@ -258,6 +258,8 @@ async function addTextElement(): Promise<void> {
     color: preferences.textColor,
     backgroundColor: preferences.textBackground,
   });
+  // Recien insertado se abre para escribir: nadie inserta un texto para mirarlo.
+  editor.editingElementId = editor.selectedElementId;
 }
 
 /**
@@ -1183,6 +1185,7 @@ async function saveTitle(): Promise<void> {
               :editable="editor.canEdit"
               :tool="tool"
               :onion-elements="onionElements"
+              :auto-edit-id="editor.editingElementId"
               :selected-ids="editor.selectedIds"
               @select="(id, additive) => editor.select(id, additive)"
               @select-many="editor.selectMany($event)"
@@ -1201,39 +1204,68 @@ async function saveTitle(): Promise<void> {
             @dragover.prevent
             @drop.prevent="resetDrag"
           >
-            <button
+            <!--
+              Un contenedor por hoja: dentro van la miniatura y el aspa de borrar.
+              El aspa no puede ir DENTRO del boton de la miniatura (un boton
+              dentro de otro es marcado invalido), asi que son hermanos y el
+              contenedor es quien lleva el arrastre.
+            -->
+            <div
               v-for="(page, index) in editor.book.pages"
               :key="page.id"
-              type="button"
-              class="relative shrink-0 overflow-hidden rounded border-2 bg-white transition"
+              class="group relative shrink-0"
               :class="[
-                index === editor.currentPageIndex ? 'border-brand-600' : 'border-slate-300 hover:border-slate-400',
-                dropIndex === index && dragIndex !== index && 'ring-2 ring-brand-400 ring-offset-1',
+                dropIndex === index && dragIndex !== index && 'ring-2 ring-brand-400 ring-offset-1 rounded',
                 dragIndex === index && 'opacity-40',
-                editor.canEdit && 'cursor-grab active:cursor-grabbing',
               ]"
-              :title="index === 0 ? 'Portada' : `Página ${page.pageNumber}`"
               :draggable="editor.canEdit"
-              @click="editor.goToPage(index)"
               @dragstart="onPageDragStart(index, $event)"
               @dragover.prevent="onPageDragOver(index)"
               @dragleave="dropIndex === index && (dropIndex = null)"
               @drop.prevent="onPageDrop(index)"
               @dragend="resetDrag"
             >
-              <div class="overflow-hidden" :style="{ width: '58px', aspectRatio: `${editor.aspectRatio}` }">
-                <PagePreview
-                  :background-color="page.backgroundColor"
-                  :background-pattern="page.backgroundPattern"
-                  :elements="page.elements"
-                  :aspect-ratio="editor.aspectRatio"
-                  :width="58"
-                />
-              </div>
-              <span
-                class="absolute bottom-0 right-0 rounded-tl bg-slate-900/70 px-1 text-[10px] font-bold text-white"
-              >{{ index === 0 ? '★' : page.pageNumber }}</span>
-            </button>
+              <button
+                type="button"
+                class="block overflow-hidden rounded border-2 bg-white transition"
+                :class="[
+                  index === editor.currentPageIndex ? 'border-brand-600' : 'border-slate-300 hover:border-slate-400',
+                  editor.canEdit && 'cursor-grab active:cursor-grabbing',
+                ]"
+                :title="index === 0 ? 'Portada' : `Página ${page.pageNumber}`"
+                @click="editor.goToPage(index)"
+              >
+                <div class="overflow-hidden" :style="{ width: '58px', aspectRatio: `${editor.aspectRatio}` }">
+                  <PagePreview
+                    :background-color="page.backgroundColor"
+                    :background-pattern="page.backgroundPattern"
+                    :elements="page.elements"
+                    :aspect-ratio="editor.aspectRatio"
+                    :width="58"
+                  />
+                </div>
+                <span
+                  class="absolute bottom-0 right-0 rounded-tl bg-slate-900/70 px-1 text-[10px] font-bold text-white"
+                >{{ index === 0 ? '★' : page.pageNumber }}</span>
+              </button>
+
+              <!--
+                Aparece al pasar el raton, y siempre en pantallas tactiles, donde
+                no hay "pasar el raton" que valga. La ultima hoja no se borra: un
+                libro sin paginas no se puede editar.
+              -->
+              <button
+                v-if="editor.canEdit && editor.book.pages.length > 1"
+                type="button"
+                class="absolute -right-1.5 -top-1.5 grid h-5 w-5 place-items-center rounded-full border border-white
+                       bg-slate-700 text-[11px] leading-none text-white opacity-0 shadow transition
+                       hover:bg-red-600 focus-visible:opacity-100 group-hover:opacity-100
+                       [@media(hover:none)]:opacity-100"
+                :title="index === 0 ? 'Eliminar la portada' : `Eliminar la página ${page.pageNumber}`"
+                :aria-label="index === 0 ? 'Eliminar la portada' : `Eliminar la página ${page.pageNumber}`"
+                @click.stop="onRemovePage(page.id)"
+              >&times;</button>
+            </div>
 
             <button
               v-if="editor.canEdit"
@@ -1259,6 +1291,8 @@ async function saveTitle(): Promise<void> {
           :element="editor.selectedElement"
           :is-manager="editor.isManager"
           @patch="onInspectorPatch"
+          @patch-vivo="editor.patchElementLocal($event.elementId, $event.properties)"
+          @patch-elemento="editor.patchElement($event.elementId, { properties: $event.properties })"
           @patch-otro="onPatchOtro"
           @move="editor.selectedElementId && editor.moveLayer(editor.selectedElementId, $event)"
           @remove="editor.selectedElementId && editor.removeElement(editor.selectedElementId)"

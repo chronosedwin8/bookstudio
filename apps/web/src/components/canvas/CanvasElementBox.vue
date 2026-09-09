@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import ElementRenderer from './ElementRenderer.vue';
 import type { CanvasElement, TransformMatrix } from '@/types/api';
 
@@ -10,6 +10,8 @@ const props = defineProps<{
   /** Lado del lienzo en px, necesario para convertir desplazamiento de raton a porcentaje. */
   canvasWidth: number;
   canvasHeight: number;
+  /** Texto recien insertado: se abre para escribir sin que nadie lo pida. */
+  autoEdit?: boolean;
   /** Hay varios elementos seleccionados: arrastrar mueve todo el grupo. */
   grouped?: boolean;
   /** Desplazamiento visual mientras se arrastra el grupo, en % de pagina. */
@@ -29,6 +31,19 @@ const emit = defineEmits<{
 }>();
 
 const editingText = ref(false);
+
+/*
+ * Un texto recien insertado se abre solo para escribir. Se mira en cuanto se
+ * monta y cada vez que cambia, porque el elemento puede existir en el lienzo
+ * antes de que llegue la orden.
+ */
+watch(
+  () => props.autoEdit,
+  (abrir) => {
+    if (abrir && interactive.value && props.element.type === 'text') editingText.value = true;
+  },
+  { immediate: true },
+);
 
 function onDoubleClick(): void {
   if (interactive.value && props.element.type === 'text') editingText.value = true;

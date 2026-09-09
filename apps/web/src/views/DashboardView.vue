@@ -45,7 +45,9 @@ const booksByLibrary = computed(() => {
 async function loadBooks(): Promise<void> {
   loadingBooks.value = true;
   try {
-    allBooks.value = await booksApi.list();
+    // En modo administracion los estantes tienen que traer los libros de las
+    // bibliotecas que se estan viendo, que no son las propias.
+    allBooks.value = await booksApi.list(libraries.verTodo ? { all: 'true' } : {});
   } catch (err) {
     formError.value = errorMessage(err);
   } finally {
@@ -81,6 +83,15 @@ async function removePersonalBook(book: Book): Promise<void> {
   } catch (err) {
     formError.value = errorMessage(err);
   }
+}
+
+/**
+ * El interruptor de administracion cambia que bibliotecas se ven, y con ellas
+ * que libros hay que traer para llenar sus estantes.
+ */
+async function alternarVerTodo(): Promise<void> {
+  await libraries.alternarVerTodo();
+  await loadBooks();
 }
 
 onMounted(async () => {
@@ -236,7 +247,7 @@ async function removeLibrary(id: string, name: string): Promise<void> {
           type="checkbox"
           class="h-3.5 w-3.5 rounded"
           :checked="libraries.verTodo"
-          @change="libraries.alternarVerTodo()"
+          @change="alternarVerTodo()"
         />
         Ver las bibliotecas de todo el colegio
         <span v-if="libraries.verTodo" class="rounded bg-amber-100 px-1.5 py-0.5 text-amber-800">

@@ -17,7 +17,7 @@ const props = defineProps<{
 </script>
 
 <template>
-  <div class="icon-box grid h-full w-full place-items-center overflow-hidden">
+  <div class="icon-box grid h-full w-full place-items-center">
     <!-- El emoji escala con el contenedor gracias a la unidad de viewport del padre. -->
     <span
       v-if="source === 'emoji'"
@@ -58,7 +58,15 @@ const props = defineProps<{
   container-type: size;
 }
 
+/*
+ * 72, no 88: el glifo de un emoji incluye sus propios margenes laterales y a 88
+ * se salia por la derecha del recuadro, que ademas lo recortaba. Con 72 cabe
+ * entero en cualquiera de las fuentes de emoji de Windows, Mac y Android.
+ */
 .emoji-fit {
-  font-size: 88cqmin;
+  font-size: 72cqmin;
+  /* Que nunca lo recorte el recuadro, pase lo que pase con la fuente. */
+  overflow: visible;
+  text-align: center;
 }
 </style>

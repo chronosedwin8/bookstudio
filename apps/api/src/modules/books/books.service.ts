@@ -372,14 +372,21 @@ export async function createBook(userId: string, role: string, input: CreateBook
 export async function listBooks(userId: string, filters: ListBooksQuery): Promise<Book[]> {
   if (filters.libraryId) await getAccess(filters.libraryId, userId);
 
-  const values: unknown[] = [userId, filters.all === 'true'];
+  const values: unknown[] = [userId, filters.all === 'true', Boolean(filters.libraryId)];
 
   /*
    * Con el interruptor de la administracion, las dos reglas de visibilidad se
    * levantan de golpe. Solo surte efecto para quien tiene rol `admin`: el
    * parametro por si solo no abre nada.
+   *
+   * $3 es "se pidio UNA biblioteca concreta". Ahi la administracion tambien lo ve
+   * todo, sin necesidad del interruptor: `getAccess` ya la ha dejado entrar como
+   * propietaria unas lineas mas arriba, y no tenia sentido que viera la
+   * biblioteca pero ninguno de sus libros. En el listado sin filtro se sigue
+   * exigiendo el interruptor, porque ahi abrirlo por defecto le volcaria encima
+   * los libros de todo el colegio.
    */
-  const ADMIN = `($2 AND EXISTS (SELECT 1 FROM users adm WHERE adm.id = $1 AND adm.role = 'admin'))`;
+  const ADMIN = `(($2 OR $3) AND EXISTS (SELECT 1 FROM users adm WHERE adm.id = $1 AND adm.role = 'admin'))`;
 
   // Un libro es visible si pertenece a una biblioteca del usuario o si es su libro personal.
   // Con EXISTS en vez de JOIN no hacen falta DISTINCT (que ademas no admite columnas json).

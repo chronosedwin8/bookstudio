@@ -104,6 +104,12 @@ Check 've los libros de todos con el interruptor' (@($librosTodo | Where-Object 
 $librosExtrano = (Llamar GET '/books?all=true' $null $tokenExtrano).books
 Check 'y un extrano sigue sin verlos' (@($librosExtrano | Where-Object { $_.id -eq $libroAlumno.id }).Count -eq 0)
 
+# Al abrir una biblioteca ajena hay que ver sus libros. Sin esto se daba el caso
+# raro de ver la biblioteca entera pero con los estantes vacios.
+$librosDeLaClase = (Llamar GET "/books?libraryId=$($clase.id)" $null $tokenAdmin).books
+Check 'al abrir una biblioteca ajena ve sus libros' (@($librosDeLaClase | Where-Object { $_.id -eq $libroAlumno.id }).Count -eq 1) "$(@($librosDeLaClase).Count) libros"
+Check 'un extrano no ve los libros de esa biblioteca' ((Codigo GET "/books?libraryId=$($clase.id)" $null $tokenExtrano) -eq 403) "$(Codigo GET "/books?libraryId=$($clase.id)" $null $tokenExtrano)"
+
 Write-Host "`n== 6. Herramientas del editor por biblioteca ==" -ForegroundColor Cyan
 
 $catalogo = (Llamar GET '/libraries/tools' $null $tokenDoc).tools

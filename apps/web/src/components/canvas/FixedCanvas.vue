@@ -18,6 +18,8 @@ const props = defineProps<{
   tool?: 'select' | 'draw' | 'fill';
   /** Elementos de la pagina anterior mostrados en semitransparencia para calcar. */
   onionElements?: CanvasElement[];
+  /** Texto recien insertado: se abre para escribir sin tener que buscarlo. */
+  autoEditId?: string | null;
 }>();
 
 const emit = defineEmits<{
@@ -253,6 +255,7 @@ function onWheel(event: WheelEvent): void {
             :offset-x="offsetFor(element.id)?.x"
             :offset-y="offsetFor(element.id)?.y"
             :editable="editable"
+            :auto-edit="autoEditId === element.id"
             :canvas-width="renderedWidth"
             :canvas-height="renderedHeight"
             @select="(id, additive) => emit('select', id, additive)"
