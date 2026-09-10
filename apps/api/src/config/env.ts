@@ -52,6 +52,18 @@ const envSchema = z.object({
     .default('false')
     .transform((v) => ['1', 'true', 'si', 'yes'].includes(v.trim().toLowerCase())),
 
+  /*
+   * Ilustraciones educativas.
+   *
+   * 'mock' no llama a nadie: la escena se compone leyendo el texto en el propio
+   * servidor. Es el modo por omision a proposito, no un apano de desarrollo, para
+   * que la funcion no cueste dinero por uso ni dependa de que otra API este viva.
+   * 'ia' solo se activa de verdad si ademas hay clave.
+   */
+  ILLUSTRATION_AI_MODE: z.enum(['mock', 'ia']).default('mock'),
+  ANTHROPIC_API_KEY: z.string().default(''),
+  ILLUSTRATION_AI_MODEL: z.string().default('claude-opus-5'),
+
   // Entrada con la cuenta del colegio (Microsoft Entra ID). Vacio = apagada.
   ENTRA_TENANT_ID: z.string().default(''),
   ENTRA_CLIENT_ID: z.string().default(''),

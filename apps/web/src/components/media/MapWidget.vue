@@ -26,6 +26,55 @@ const pinIcon = L.divIcon({
   iconAnchor: [9, 9],
 });
 
+/*
+ * De donde salen las teselas.
+ *
+ * OpenStreetMap pide en su politica de uso que no se tire de sus servidores como
+ * si fueran un servicio gratuito para aplicaciones, y cuando les llega demasiado
+ * de una misma red devuelven baldosas de "Access blocked" en vez del mapa. Por eso
+ * el primero de la lista es CARTO, que si esta pensado para esto, y OpenStreetMap
+ * queda de reserva. Ambos dibujan los mismos datos: la cartografia es de
+ * OpenStreetMap en los dos casos, y asi se acredita.
+ */
+const FUENTES = [
+  {
+    url: 'https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png',
+    maxZoom: 20,
+    atribucion:
+      '&copy; colaboradores de <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+  },
+  {
+    url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+    maxZoom: 19,
+    atribucion: '&copy; colaboradores de <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+  },
+];
+
+let capa: L.TileLayer | undefined;
+
+/**
+ * Pone las teselas de una fuente y, si fallan, pasa a la siguiente.
+ *
+ * Se cuentan los fallos en lugar de saltar al primero: una baldosa suelta puede
+ * fallar por la red del centro sin que el proveedor este caido, y no seria motivo
+ * para cambiar de mapa a mitad.
+ */
+function ponerTeselas(indice: number): void {
+  if (!map || !FUENTES[indice]) return;
+  const fuente = FUENTES[indice];
+  let fallos = 0;
+
+  capa?.remove();
+  capa = L.tileLayer(fuente.url, { maxZoom: fuente.maxZoom, attribution: fuente.atribucion });
+
+  capa.on('tileerror', () => {
+    fallos += 1;
+    if (fallos === 3 && FUENTES[indice + 1]) ponerTeselas(indice + 1);
+  });
+
+  capa.addTo(map);
+}
+
 onMounted(() => {
   if (!host.value) return;
 
@@ -41,10 +90,7 @@ onMounted(() => {
     attributionControl: true,
   });
 
-  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 19,
-    attribution: '&copy; colaboradores de <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-  }).addTo(map);
+  ponerTeselas(0);
 
   if (props.showMarker) marker = L.marker([props.latitude, props.longitude], { icon: pinIcon }).addTo(map);
 
@@ -69,6 +115,8 @@ watch(
 );
 
 onBeforeUnmount(() => {
+  capa?.remove();
+  capa = undefined;
   map?.remove();
   map = undefined;
 });

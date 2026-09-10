@@ -244,5 +244,51 @@ if (destino) {
   console.log(`\nDocumento de muestra en ${destino}`);
 }
 
+// ---------------------------------------------------------------- ilustraciones
+
+/*
+ * La ilustracion si viaja dibujada, al contrario que la grafica, que se exporta
+ * como tabla de datos: una escena contada con palabras no se entiende, se mira.
+ */
+console.log('\n-- Ilustracion educativa --');
+
+const conIlustracion = bookToHtml(
+  libro([
+    elemento({
+      type: 'illustration',
+      properties: {
+        escena: {
+          fondo: 'library',
+          distribucion: 'single',
+          tema: 'nature',
+          personajes: [{ papel: 'student', pose: 'reading', emocion: 'focused', posicion: 'center' }],
+          objetos: [],
+          descripcion: 'Una estudiante leyendo',
+        },
+        prompt: 'Una estudiante leyendo',
+      },
+    }),
+  ]),
+);
+
+check('la ilustracion viaja dibujada', conIlustracion.includes('<svg'));
+check('y sigue siendo vectorial (no una imagen incrustada)', !conIlustracion.includes('data:image'));
+check('con su texto alternativo', conIlustracion.includes('Una estudiante leyendo'));
+check('y anunciada como una sola imagen', /role="img"/.test(conIlustracion));
+// Solo el dibujo: el resto de la copia si lleva su propio JavaScript, que es legitimo
+const soloSvg = conIlustracion.slice(
+  conIlustracion.indexOf('<svg'),
+  conIlustracion.indexOf('</svg>') + 6,
+);
+check('sin scripts dentro del dibujo', !/<script|foreignObject|on[a-z]+=/i.test(soloSvg));
+check('ni recursos traidos de fuera', !/https?:\/\/(?!www\.w3\.org)/i.test(soloSvg));
+
+// Una escena rota no puede tumbar la exportacion del libro entero
+const conEscenaRota = bookToHtml(
+  libro([elemento({ type: 'illustration', properties: { escena: { fondo: 'marte' }, prompt: '<b>x</b>' } })]),
+);
+check('una escena rota no rompe la copia', conEscenaRota.includes('<svg'));
+check('y el texto del usuario sigue escapado', !conEscenaRota.includes('<b>x</b>'));
+
 console.log(fallos === 0 ? '\nTodo correcto' : `\n${fallos} comprobacion(es) fallidas`);
 process.exit(fallos === 0 ? 0 : 1);

@@ -55,6 +55,7 @@ function finishTextEdit(value: string): void {
 }
 
 type Corner = 'nw' | 'ne' | 'se' | 'sw';
+type Side = 'n' | 's' | 'e' | 'w';
 
 const draft = ref<TransformMatrix | null>(null);
 const transform = computed(() => draft.value ?? props.element.transformMatrix);
@@ -80,6 +81,38 @@ const CORNERS: Array<{ id: Corner; class: string; cursor: string }> = [
   { id: 'se', class: '-bottom-1.5 -right-1.5', cursor: 'nwse-resize' },
   { id: 'sw', class: '-bottom-1.5 -left-1.5', cursor: 'nesw-resize' },
 ];
+
+/**
+ * Tiradores de los lados: estiran en un solo sentido.
+ *
+ * Las esquinas conservan la proporcion, que es lo que casi siempre se quiere con
+ * una foto. Pero para ensanchar un rectangulo hacia los lados hacia falta
+ * arrastrar una esquina con Shift, y eso no lo adivina nadie: quien no conoce el
+ * atajo acaba creyendo que la forma no se puede deformar. Con un tirador en cada
+ * lado se ve, se agarra y no hay que saber ningun truco.
+ *
+ * Son alargados a proposito, no redondos como los de las esquinas: la forma del
+ * tirador ya dice hacia donde tira.
+ */
+const SIDES: Array<{ id: Side; class: string; cursor: string; eje: 'x' | 'y'; nombre: string }> = [
+  { id: 'n', class: 'left-1/2 -top-1.5 -translate-x-1/2 h-2.5 w-5', cursor: 'ns-resize', eje: 'y', nombre: 'Estirar por arriba' },
+  { id: 's', class: 'left-1/2 -bottom-1.5 -translate-x-1/2 h-2.5 w-5', cursor: 'ns-resize', eje: 'y', nombre: 'Estirar por abajo' },
+  { id: 'w', class: 'top-1/2 -left-1.5 -translate-y-1/2 h-5 w-2.5', cursor: 'ew-resize', eje: 'x', nombre: 'Estirar por la izquierda' },
+  { id: 'e', class: 'top-1/2 -right-1.5 -translate-y-1/2 h-5 w-2.5', cursor: 'ew-resize', eje: 'x', nombre: 'Estirar por la derecha' },
+];
+
+/**
+ * En un objeto pequeno los ocho tiradores se pisan unos a otros y no se puede
+ * agarrar ninguno. Por debajo de este tamano solo se dejan las esquinas, que son
+ * las que permiten agrandarlo hasta que quepan los demas.
+ */
+const HUECO_MINIMO_PX = 46;
+
+const ladosVisibles = computed(() => {
+  const anchoPx = (props.element.transformMatrix.width / 100) * props.canvasWidth;
+  const altoPx = (props.element.transformMatrix.height / 100) * props.canvasHeight;
+  return SIDES.filter((lado) => (lado.eje === 'x' ? altoPx : anchoPx) >= HUECO_MINIMO_PX);
+});
 
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
 
@@ -216,6 +249,35 @@ function onResizeStart(event: PointerEvent, corner: Corner): void {
   });
 }
 
+/**
+ * Estira desde un lado, en un solo sentido y sin conservar la proporcion.
+ *
+ * Es lo que se espera al agarrar el borde de algo: ensancharlo o alargarlo. El
+ * lado opuesto se queda quieto, que es lo que hace que el objeto crezca hacia
+ * donde se tira y no desde el centro.
+ */
+function onResizeSideStart(event: PointerEvent, side: Side): void {
+  const start = { ...props.element.transformMatrix };
+  const horizontal = side === 'e' || side === 'w';
+
+  // El borde que no se mueve
+  const anchorX = side === 'w' ? start.x + start.width : start.x;
+  const anchorY = side === 'n' ? start.y + start.height : start.y;
+  const signo = side === 'e' || side === 's' ? 1 : -1;
+
+  startGesture(event, (rawDx, rawDy) => {
+    const { dx, dy } = unrotate(rawDx, rawDy, start.angle);
+
+    if (horizontal) {
+      const width = clamp(start.width + signo * dx, 3, 200);
+      return { ...start, width, x: signo === 1 ? anchorX : anchorX - width };
+    }
+
+    const height = clamp(start.height + signo * dy, 3, 200);
+    return { ...start, height, y: signo === 1 ? anchorY : anchorY - height };
+  });
+}
+
 function onRotateStart(event: PointerEvent): void {
   if (!interactive.value) return;
   event.preventDefault();
@@ -313,6 +375,23 @@ function onRotateStart(event: PointerEvent): void {
         :style="{ cursor: corner.cursor }"
         :aria-label="`Redimensionar desde ${corner.id}`"
         @pointerdown.stop="onResizeStart($event, corner.id)"
+      />
+
+      <!--
+        Los lados estiran en un solo sentido, sin tener que pulsar nada. Antes
+        eso solo se conseguia con Shift sobre una esquina, y quien no lo sabia
+        daba por hecho que la forma no se podia deformar.
+      -->
+      <button
+        v-for="lado in ladosVisibles"
+        :key="lado.id"
+        type="button"
+        class="absolute rounded-sm border-2 border-white bg-brand-600 shadow"
+        :class="lado.class"
+        :style="{ cursor: lado.cursor }"
+        :aria-label="lado.nombre"
+        :title="lado.nombre"
+        @pointerdown.stop="onResizeSideStart($event, lado.id)"
       />
 
       <button

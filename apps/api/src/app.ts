@@ -19,6 +19,7 @@ import { phidiasRouter } from './modules/phidias/phidias.routes.js';
 import { clientsRouter } from './modules/clients/clients.routes.js';
 import { magnificRouter } from './modules/magnific/magnific.routes.js';
 import { quizzesRouter } from './modules/quizzes/quizzes.routes.js';
+import { illustrationsRouter } from './modules/illustrations/illustrations.routes.js';
 import { usersRouter } from './modules/users/users.routes.js';
 import { STORAGE_ROOT } from './modules/media/uploads.service.js';
 
@@ -56,6 +57,14 @@ export function createApp() {
       // sirve Vite, asi que la cabecera no llegaria a aplicarse: se desactiva para no
       // romper las pruebas por HTTP en la red local.
       contentSecurityPolicy: isProduction ? { directives: CSP_DIRECTIVES } : false,
+      /*
+       * Helmet manda `no-referrer` por defecto, y con eso OpenStreetMap devuelve
+       * teselas de "Access blocked": su politica de uso exige saber quien pide los
+       * mapas. `strict-origin-when-cross-origin` (lo que ya hacen los navegadores
+       * por su cuenta) manda solo el origen, https://bookstudio.uk, y nunca la
+       * ruta: basta para identificarnos sin contar por donde navega nadie.
+       */
+      referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
     }),
   );
   app.use(cors({ origin: corsOrigin, credentials: true }));
@@ -93,6 +102,7 @@ export function createApp() {
   app.use('/api/users', usersRouter);
   app.use('/api/phidias', phidiasRouter);
   app.use('/api/quizzes', quizzesRouter);
+  app.use('/api/illustrations', illustrationsRouter);
   app.use('/api/magnific', magnificRouter);
   app.use('/api/clients', clientsRouter);
   // El webhook de Mercado Pago vive dentro y se salta requireAuth a proposito.

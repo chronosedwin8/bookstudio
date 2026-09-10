@@ -219,7 +219,8 @@ export interface DistributeResult {
 export type LayoutFormat = 'portrait' | 'square' | 'landscape';
 export type ElementType =
   | 'text' | 'shape' | 'drawing' | 'image' | 'audio' | 'video'
-  | 'map' | 'icon' | 'embed' | 'question' | 'chart' | 'math' | 'button';
+  | 'map' | 'icon' | 'embed' | 'question' | 'chart' | 'math' | 'button'
+  | 'illustration';
 
 /** Boton del lienzo: se pulsa y lleva a otra pagina del libro o a una web. */
 export interface ButtonProperties {

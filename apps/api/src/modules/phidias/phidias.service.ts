@@ -155,6 +155,8 @@ export interface SectionStudent {
   /** Id del alumno en Phidias. */
   id: number;
   fullName: string;
+  /** Solo los apellidos, tal y como los da Phidias: por ahi se ordena la lista. */
+  lastName: string;
   email: string;
   /** Ya tiene cuenta en BookStudio. */
   hasAccount: boolean;
@@ -182,10 +184,32 @@ export async function listSectionStudents(sectionId: number): Promise<SectionStu
     .map((student) => ({
       id: student.id,
       fullName: fullNameOf(student),
+      lastName: (student.lastname ?? '').replace(/\s+/g, ' ').trim(),
       email: student.email!.trim().toLowerCase(),
       hasAccount: conCuenta.has(student.email!.trim().toLowerCase()),
     }))
-    .sort((a, b) => a.fullName.localeCompare(b.fullName, 'es'));
+    .sort(porApellido);
+}
+
+/**
+ * Orden de lista de clase: por apellidos, y a igualdad de apellidos por nombre.
+ *
+ * Phidias entrega el apellido en su propio campo, asi que no hay que adivinar
+ * donde acaba el nombre. Es lo unico que funciona con apellidos de varias
+ * palabras: partir "ABEL DAVID LEON VAN HEYL" por el ultimo espacio daria
+ * "HEYL", y por los dos ultimos, "VAN HEYL", y ninguna de las dos es su apellido.
+ *
+ * `sensitivity: 'base'` hace que las tildes no descoloquen (LEON y LEÓN van
+ * juntos), que es como se alfabetiza en espanol.
+ */
+export function porApellido(
+  a: { lastName: string; fullName: string },
+  b: { lastName: string; fullName: string },
+): number {
+  const opciones: Intl.CollatorOptions = { sensitivity: 'base' };
+  const apellidos = a.lastName.localeCompare(b.lastName, 'es', opciones);
+  if (apellidos !== 0) return apellidos;
+  return a.fullName.localeCompare(b.fullName, 'es', opciones);
 }
 
 /**

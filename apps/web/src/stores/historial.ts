@@ -93,6 +93,7 @@ export function crearHistorial() {
 /** Nombre legible de cada tipo, para describir lo que se deshace. */
 export const NOMBRE_TIPO: Record<ElementType, string> = {
   text: 'texto',
+  illustration: 'ilustración',
   shape: 'forma',
   drawing: 'dibujo',
   image: 'imagen',

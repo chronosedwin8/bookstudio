@@ -4,6 +4,7 @@ import ButtonRenderer from './ButtonRenderer.vue';
 import ChartRenderer from './ChartRenderer.vue';
 import EmbedRenderer from './EmbedRenderer.vue';
 import IconRenderer from './IconRenderer.vue';
+import IllustrationRenderer from './IllustrationRenderer.vue';
 import MathRenderer from './MathRenderer.vue';
 import QuestionRenderer from './QuestionRenderer.vue';
 import ShapeRenderer from './ShapeRenderer.vue';
@@ -107,6 +108,10 @@ const embed = computed(() => {
 
 const question = computed(() => props.element.properties as unknown as QuestionProperties);
 const chart = computed(() => props.element.properties as unknown as ChartProperties);
+const ilustracion = computed(() => {
+  const p = props.element.properties as Record<string, unknown>;
+  return { escena: p.escena as Record<string, unknown> | null, prompt: String(p.prompt ?? '') };
+});
 
 const math = computed(() => {
   const p = props.element.properties;
@@ -318,6 +323,13 @@ const textLines = computed(() => {
     :title="embed.title"
     :ask-before-loading="embed.askBeforeLoading"
     :preview="preview"
+  />
+
+  <!-- Ilustración educativa: se dibuja desde la escena, no se guarda ningún SVG -->
+  <IllustrationRenderer
+    v-else-if="element.type === 'illustration'"
+    :escena="ilustracion.escena"
+    :prompt="ilustracion.prompt"
   />
 
   <!-- Imagen con atribución Creative Commons -->

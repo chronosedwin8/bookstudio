@@ -1,5 +1,13 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
+import {
+  FONDOS,
+  NOMBRES as NOMBRES_ILUSTRACION,
+  POSES,
+  TEMAS,
+  es,
+} from '@/utils/ilustracion/catalogo';
+import { normalizarEscena, type Escena } from '@/utils/ilustracion/escena';
 import ChartInspector from './ChartInspector.vue';
 import InteractionContentDialog from './InteractionContentDialog.vue';
 import QuestionInspector from './QuestionInspector.vue';
@@ -60,6 +68,15 @@ const emit = defineEmits<{
   patchVivo: [payload: { elementId: string; properties: Record<string, unknown> }];
   /** Guarda de verdad, nombrando el elemento: al soltarlo puede que ya no sea el seleccionado. */
   patchElemento: [payload: { elementId: string; properties: Record<string, unknown> }];
+  /**
+   * Devolverle a la imagen su proporcion original.
+   *
+   * Lo resuelve quien conoce la forma de la pagina, que este panel no tiene por
+   * que saber.
+   */
+  ajustarAImagen: [];
+  /** Volver a describir la ilustracion con otras palabras. */
+  rehacerIlustracion: [];
 }>();
 
 /**
@@ -100,6 +117,40 @@ function patchPropertyVivo(key: string, value: unknown): void {
 watch(() => props.element?.id, guardarPendiente);
 
 onBeforeUnmount(guardarPendiente);
+
+/**
+ * La escena de una ilustracion, si el elemento seleccionado es una.
+ *
+ * Se normaliza al leerla para que el panel nunca muestre un valor que el dibujo
+ * no sepa pintar, aunque la fila venga de una version anterior del catalogo.
+ */
+const ilustracion = computed(() => {
+  if (props.element?.type !== 'illustration') return null;
+  const p = props.element.properties as Record<string, unknown>;
+  return {
+    escena: normalizarEscena(p.escena, String(p.prompt ?? '')),
+    prompt: String(p.prompt ?? ''),
+  };
+});
+
+/** Cambia la escena y guarda; el dibujo se rehace solo, sin llamar a nadie. */
+function cambiarEscena(parte: Partial<Escena>): void {
+  if (!props.element || !ilustracion.value) return;
+  emit('patch', {
+    properties: {
+      ...props.element.properties,
+      escena: { ...ilustracion.value.escena, ...parte },
+    },
+  });
+}
+
+function cambiarPose(indice: number, pose: string): void {
+  if (!ilustracion.value || !es.pose(pose)) return;
+  const personajes = ilustracion.value.escena.personajes.map((p, i) =>
+    i === indice ? { ...p, pose } : p,
+  );
+  cambiarEscena({ personajes });
+}
 
 /** Tipos que admiten enlace; el resto no muestra el campo. */
 const LINKABLE = ['text', 'image', 'shape', 'icon', 'button'] as const;
@@ -530,6 +581,91 @@ const SOFT_BACKGROUNDS = ['transparent', '#F7F4EC', '#EDF2F0', '#FBF3E4', '#EFEA
           :value="element.opacity"
           @input="emit('patch', { opacity: Number(($event.target as HTMLInputElement).value) })"
         />
+      </section>
+
+      <!--
+        Ilustracion educativa.
+
+        El ambiente y los colores se cambian sin volver a describir nada: el
+        dibujo se recompone al vuelo desde la escena guardada, que es
+        deterministica. Solo "Describirla de nuevo" vuelve a analizar el texto.
+      -->
+      <section v-if="element.type === 'illustration' && ilustracion" class="space-y-3">
+        <h3 class="label">Ilustración</h3>
+
+        <p v-if="ilustracion.prompt" class="rounded bg-slate-50 px-2 py-1.5 text-xs italic text-slate-600">
+          “{{ ilustracion.prompt }}”
+        </p>
+
+        <div>
+          <p class="label">Ambiente</p>
+          <div class="grid grid-cols-2 gap-1">
+            <button
+              v-for="f in FONDOS"
+              :key="f"
+              type="button"
+              class="btn-secondary px-0 py-1 text-[11px]"
+              :class="ilustracion.escena.fondo === f && 'bg-brand-50 text-brand-700'"
+              @click="cambiarEscena({ fondo: f })"
+            >{{ NOMBRES_ILUSTRACION.fondo[f] }}</button>
+          </div>
+        </div>
+
+        <div>
+          <p class="label">Colores</p>
+          <div class="grid grid-cols-2 gap-1">
+            <button
+              v-for="t in TEMAS"
+              :key="t"
+              type="button"
+              class="btn-secondary px-0 py-1 text-[11px]"
+              :class="ilustracion.escena.tema === t && 'bg-brand-50 text-brand-700'"
+              @click="cambiarEscena({ tema: t })"
+            >{{ NOMBRES_ILUSTRACION.tema[t] }}</button>
+          </div>
+        </div>
+
+        <div>
+          <p class="label">Quién aparece</p>
+          <ul class="space-y-1">
+            <li
+              v-for="(p, i) in ilustracion.escena.personajes"
+              :key="i"
+              class="flex items-center gap-1"
+            >
+              <select
+                class="input flex-1 py-1 text-xs"
+                :value="p.pose"
+                @change="cambiarPose(i, ($event.target as HTMLSelectElement).value)"
+              >
+                <option v-for="pose in POSES" :key="pose" :value="pose">
+                  {{ NOMBRES_ILUSTRACION.papel[p.papel] }} · {{ NOMBRES_ILUSTRACION.pose[pose] }}
+                </option>
+              </select>
+            </li>
+          </ul>
+        </div>
+
+        <button type="button" class="btn-secondary w-full justify-center text-xs" @click="emit('rehacerIlustracion')">
+          Describirla de nuevo
+        </button>
+      </section>
+
+      <!--
+        Imagen: recuperar su proporcion.
+
+        Sirve para las que se pusieron antes de que la insercion respetara la
+        forma de la pagina y quedaron con la caja aplastada, y tambien para
+        cuando alguien estira una imagen sin querer.
+      -->
+      <section v-if="element.type === 'image'">
+        <h3 class="label">Imagen</h3>
+        <button type="button" class="btn-secondary w-full justify-center text-xs" @click="emit('ajustarAImagen')">
+          Ajustar a la proporcion de la imagen
+        </button>
+        <p class="mt-1 text-[11px] leading-tight text-slate-400">
+          Le devuelve su forma original para que no se vea recortada.
+        </p>
       </section>
 
       <!-- Bloqueo (solo docentes) -->

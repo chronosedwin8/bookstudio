@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { illustrationPropertiesSchema } from '../illustrations/illustrations.schemas.js';
 import { EMBED_PROVIDER_NAMES, resolveEmbed } from './embeds.js';
 
 const hexColor = z.string().regex(/^#[0-9A-Fa-f]{6}$/, 'Color hexadecimal invalido');
@@ -331,6 +332,7 @@ export const mathPropertiesSchema = z.object({
 export const elementType = z.enum([
   'text', 'shape', 'drawing', 'image', 'audio', 'video',
   'map', 'icon', 'embed', 'question', 'chart', 'math', 'button',
+  'illustration',
 ]);
 export type ElementType = z.infer<typeof elementType>;
 
@@ -348,6 +350,7 @@ const PROPERTY_SCHEMAS = {
   question: questionPropertiesSchema,
   chart: chartPropertiesSchema,
   math: mathPropertiesSchema,
+  illustration: illustrationPropertiesSchema,
 } as const;
 
 /** Valida `properties` contra el esquema del `type` declarado; rechaza mezclas invalidas. */

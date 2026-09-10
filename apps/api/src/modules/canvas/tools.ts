@@ -38,6 +38,11 @@ export const EDITOR_TOOLS: Tool[] = [
   { id: 'question', label: 'Preguntas', hint: 'Bloques de pregunta, incluidas las abiertas.' },
   { id: 'chart', label: 'Graficas', hint: 'Graficos de barras, lineas y sectores.' },
   { id: 'math', label: 'Formulas', hint: 'Expresiones matematicas.' },
+  {
+    id: 'illustration',
+    label: 'Ilustraciones educativas',
+    hint: 'Escenas de aula dibujadas a partir de una descripcion.',
+  },
 ];
 
 const IDS = new Set<string>(EDITOR_TOOLS.map((t) => t.id));

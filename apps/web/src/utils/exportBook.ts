@@ -5,6 +5,9 @@
  * resultado es un unico .html con su CSS y su JS dentro: se abre con doble clic, sin
  * servidor y sin BookStudio, que es justo lo que pide "sacarlos del aplicativo".
  */
+import { dibujarEscena } from './ilustracion/dibujo';
+import { normalizarEscena, resumirEscena } from './ilustracion/escena';
+import { svgCompleto } from './ilustracion/primitivas';
 import { paperStyle } from './papers';
 import { SHAPES, type ShapeName } from './shapes';
 import type { BookDetail, CanvasElement, Page, RichBlock, RichSpan } from '@/types/api';
@@ -198,6 +201,17 @@ function elementHtml(element: CanvasElement): string {
     case 'chart':
       inner = chartSvgPlaceholder(element);
       break;
+    case 'illustration': {
+      /*
+       * Aqui si va el SVG entero, y no un sustituto como en las graficas: una
+       * ilustracion contada con palabras no se entiende, se mira. Se compone con
+       * el mismo dibujo que usa el editor, asi que el libro exportado se ve
+       * exactamente igual que en pantalla y sigue siendo vectorial al imprimirlo.
+       */
+      const escena = normalizarEscena(p.escena, String(p.prompt ?? ''));
+      inner = svgCompleto(dibujarEscena(escena), resumirEscena(escena), resumirEscena(escena));
+      break;
+    }
     case 'math':
       inner = `<code class="mat">${escapeHtml(String(p.latex ?? ''))}</code>`;
       break;

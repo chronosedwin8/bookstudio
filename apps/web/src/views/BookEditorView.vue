@@ -15,6 +15,7 @@ import MapSearchDialog from '@/components/media/MapSearchDialog.vue';
 import EmbedDialog from '@/components/media/EmbedDialog.vue';
 import MediaSearchDialog from '@/components/media/MediaSearchDialog.vue';
 import ChartTypeDialog from '@/components/media/ChartTypeDialog.vue';
+import IllustrationDialog from '@/components/media/IllustrationDialog.vue';
 import QuestionBlockDialog from '@/components/media/QuestionBlockDialog.vue';
 import SoundLibraryDialog from '@/components/media/SoundLibraryDialog.vue';
 import MagnificDialog from '@/components/media/MagnificDialog.vue';
@@ -39,6 +40,8 @@ import type {
 } from '@/types/api';
 import { MIN_SCORE, recognize, type Candidate } from '@/utils/recognize';
 import { downloadBookHtml } from '@/utils/exportBook';
+import { cajaMidiendo, cajaParaImagen } from '@/utils/encajarImagen';
+import type { Escena } from '@/utils/ilustracion/escena';
 import { PAPER_CATALOGUE, PAPER_GROUPS, paperStyle } from '@/utils/papers';
 import { SHAPES, ratioOf, type ShapeName } from '@/utils/shapes';
 import type { QuestionBlock } from '@/utils/questions';
@@ -55,6 +58,7 @@ const tool = ref<'select' | 'draw' | 'fill'>('select');
 const onionSkin = ref(false);
 const dialog = ref<
   | 'none'
+  | 'illustration'
   | 'image'
   | 'gif'
   | 'map'
@@ -165,6 +169,53 @@ async function onPickSound(result: MediaResult, withAttribution: boolean): Promi
 }
 
 /** Grafica nueva con datos de ejemplo, para que se vea algo desde el primer momento. */
+/**
+ * Ilustracion educativa recien descrita.
+ *
+ * Se guarda la escena, no el dibujo: son cuatro datos en vez de un SVG entero, y
+ * asi la ilustracion se redibuja sola (y mejor) cuando mejore el dibujo. El
+ * lienzo mide 800x500, de ahi la proporcion de la caja.
+ */
+/**
+ * Cuando se pide "describirla de nuevo" se reabre el mismo dialogo, pero lo que
+ * salga sustituye a la ilustracion que ya estaba en vez de anadir otra.
+ */
+const rehaciendoIlustracion = ref<string | null>(null);
+
+function onRehacerIlustracion(): void {
+  if (editor.selectedElement?.type !== 'illustration') return;
+  rehaciendoIlustracion.value = editor.selectedElement.id;
+  dialog.value = 'illustration';
+}
+
+async function onPickIllustration(payload: {
+  escena: Escena;
+  prompt: string;
+  illustrationId?: string;
+}): Promise<void> {
+  dialog.value = 'none';
+
+  const propiedades = {
+    escena: payload.escena,
+    prompt: payload.prompt,
+    ...(payload.illustrationId ? { illustrationId: payload.illustrationId } : {}),
+  };
+
+  const rehacer = rehaciendoIlustracion.value;
+  rehaciendoIlustracion.value = null;
+  if (rehacer) {
+    await editor.patchElement(rehacer, { properties: propiedades });
+    return;
+  }
+
+  const width = 60;
+  await editor.addElement(
+    'illustration',
+    { x: 20, y: 18, width, height: heightForRatio(width, 800 / 500), angle: 0 },
+    propiedades,
+  );
+}
+
 async function onPickChart(chartType: ChartType): Promise<void> {
   dialog.value = 'none';
   await editor.addElement(
@@ -263,28 +314,34 @@ async function addTextElement(): Promise<void> {
 }
 
 /**
- * Imagen recien generada. Llega ya guardada por el servidor, asi que solo hay
- * que colocarla; no se sabe su proporcion de antemano, se usa la de la forma
- * elegida por defecto y quien la inserta la ajusta arrastrando.
+ * Imagen recien generada. Llega ya guardada por el servidor; se mide antes de
+ * colocarla para que entre con su propia proporcion y no salga recortada.
  */
 async function onPickGenerada(payload: { fileUrl: string; altText: string }): Promise<void> {
   dialog.value = 'none';
+  const caja = await cajaMidiendo(payload.fileUrl, editor.aspectRatio);
   await editor.addElement(
     'image',
-    { x: 15, y: 15, width: 45, height: 45, angle: 0 },
+    { x: 15, y: 15, ...caja, angle: 0 },
     { fileUrl: payload.fileUrl, altText: payload.altText },
   );
 }
 
 async function onPickImage(result: MediaResult, withAttribution: boolean): Promise<void> {
   dialog.value = 'none';
-  // Conserva la proporcion original de la imagen dentro de un ancho fijo del lienzo.
-  const width = 45;
-  const ratio = result.width && result.height ? result.height / result.width : 0.75;
+  /*
+   * El banco ya dice cuanto mide la imagen; lo que faltaba era contar la forma de
+   * la pagina. Un 45% de ancho y un 45% de alto solo miden lo mismo en una pagina
+   * cuadrada, y por eso las verticales salian recortadas en los libros apaisados.
+   */
+  const caja = cajaParaImagen(
+    result.width && result.height ? { width: result.width, height: result.height } : null,
+    editor.aspectRatio,
+  );
 
   await editor.addElement(
     'image',
-    { x: 15, y: 15, width, height: Math.min(width * ratio, 80), angle: 0 },
+    { x: 15, y: 15, ...caja, angle: 0 },
     {
       fileUrl: result.url,
       altText: result.title,
@@ -351,9 +408,10 @@ async function onPaste(event: ClipboardEvent): Promise<void> {
   const texto = datos.getData('text/plain').trim();
   if (/^https?:\/\/\S+\.(png|jpe?g|gif|webp|avif)(\?\S*)?$/i.test(texto)) {
     event.preventDefault();
+    const caja = await cajaMidiendo(texto, editor.aspectRatio);
     await editor.addElement(
       'image',
-      { x: 15, y: 15, width: 45, height: 34, angle: 0 },
+      { x: 15, y: 15, ...caja, angle: 0 },
       { fileUrl: texto, altText: 'Imagen pegada' },
     );
   }
@@ -378,9 +436,11 @@ async function uploadAndInsert(dataUrl: string, durationSeconds: number, altText
         { fileUrl: file.fileUrl, durationSeconds },
       );
     } else {
+      // Se mide con la direccion ya servida: es la misma imagen que se vera.
+      const caja = await cajaMidiendo(file.fileUrl, editor.aspectRatio);
       await editor.addElement(
         'image',
-        { x: 15, y: 15, width: 45, height: 34, angle: 0 },
+        { x: 15, y: 15, ...caja, angle: 0 },
         { fileUrl: file.fileUrl, altText },
       );
     }
@@ -503,6 +563,26 @@ function exportPdf(): void {
 async function onPickTemplate(template: PageTemplate): Promise<void> {
   showTemplates.value = false;
   await editor.addPageFromTemplate(template);
+}
+
+/**
+ * Le devuelve a una imagen ya colocada su proporcion original.
+ *
+ * Se conserva el ancho y se recalcula el alto, que es lo que la gente espera al
+ * pedir que una imagen "se vea entera": la imagen se queda donde esta y crece o
+ * mengua hacia abajo.
+ */
+async function onAjustarAImagen(): Promise<void> {
+  const element = editor.selectedElement;
+  if (!element || element.type !== 'image') return;
+
+  const url = String((element.properties as Record<string, unknown>).fileUrl ?? '');
+  if (!url) return;
+
+  const caja = await cajaMidiendo(url, editor.aspectRatio, element.transformMatrix.width);
+  await editor.patchElement(element.id, {
+    transformMatrix: { ...element.transformMatrix, ...caja },
+  });
 }
 
 async function onRemovePage(pageId: string): Promise<void> {
@@ -981,6 +1061,14 @@ async function saveTitle(): Promise<void> {
             <button v-if="puedeUsar('chart')" type="button" class="btn-secondary w-full justify-start" @click="dialog = 'chart'">
               📊 Gráfica
             </button>
+            <button
+              v-if="puedeUsar('illustration')"
+              type="button"
+              class="btn-secondary w-full justify-start"
+              @click="dialog = 'illustration'"
+            >
+              🎨 Ilustración educativa
+            </button>
             <button v-if="puedeUsar('math')" type="button" class="btn-secondary w-full justify-start" @click="addMathElement">
               ∑ Formula
             </button>
@@ -1293,6 +1381,8 @@ async function saveTitle(): Promise<void> {
           @patch="onInspectorPatch"
           @patch-vivo="editor.patchElementLocal($event.elementId, $event.properties)"
           @patch-elemento="editor.patchElement($event.elementId, { properties: $event.properties })"
+          @ajustar-a-imagen="onAjustarAImagen"
+          @rehacer-ilustracion="onRehacerIlustracion"
           @patch-otro="onPatchOtro"
           @move="editor.selectedElementId && editor.moveLayer(editor.selectedElementId, $event)"
           @remove="editor.selectedElementId && editor.removeElement(editor.selectedElementId)"
@@ -1372,6 +1462,12 @@ async function saveTitle(): Promise<void> {
     <SoundLibraryDialog v-if="dialog === 'sound'" @close="dialog = 'none'" @pick="onPickSound" />
 
     <ChartTypeDialog v-if="dialog === 'chart'" @close="dialog = 'none'" @pick="onPickChart" />
+
+    <IllustrationDialog
+      v-if="dialog === 'illustration'"
+      @close="dialog = 'none'; rehaciendoIlustracion = null"
+      @pick="onPickIllustration"
+    />
 
     <QuestionBlockDialog v-if="dialog === 'question'" @close="dialog = 'none'" @pick="onPickQuestion" />
 

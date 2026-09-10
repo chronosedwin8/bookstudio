@@ -829,3 +829,25 @@ export const muralApi = {
     return data;
   },
 };
+
+/** Ilustraciones educativas: el servidor decide QUE aparece, el navegador lo dibuja. */
+export const illustrationsApi = {
+  async estado() {
+    const { data } = await http.get<{ modo: string; iaActiva: boolean }>('/illustrations/estado');
+    return data;
+  },
+  async analizar(payload: { texto: string; tema?: string; fondo?: string; personajes?: number }) {
+    const { data } = await http.post<{
+      ilustracion: { id: string; prompt: string; escena: Record<string, unknown>; origen: string };
+      reutilizada: boolean;
+      aviso?: string;
+    }>('/illustrations/analizar', payload);
+    return data;
+  },
+  async guardar(payload: { prompt: string; escena: Record<string, unknown> }) {
+    const { data } = await http.post<{
+      ilustracion: { id: string; prompt: string; escena: Record<string, unknown> };
+    }>('/illustrations', payload);
+    return data.ilustracion;
+  },
+};
