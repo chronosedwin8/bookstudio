@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue';
 import ElementRenderer from './ElementRenderer.vue';
 import type { CanvasElement, TransformMatrix } from '@/types/api';
+import type { Tabla } from '@/utils/tablas';
 
 const props = defineProps<{
   element: CanvasElement;
@@ -23,6 +24,7 @@ const emit = defineEmits<{
   select: [id: string, additive: boolean];
   commit: [id: string, transform: TransformMatrix];
   updateText: [id: string, value: string];
+  updateTable: [id: string, tabla: Tabla];
   /** Arrastre de grupo en curso; el lienzo lo refleja en todos los seleccionados. */
   groupDrag: [dx: number, dy: number];
   groupCommit: [dx: number, dy: number];
@@ -45,9 +47,27 @@ watch(
   { immediate: true },
 );
 
+/*
+ * Doble clic para escribir dentro.
+ *
+ * Vale para el texto y para la tabla. Hace falta este paso intermedio porque
+ * arrastrar el elemento empieza en `pointerdown` y ahi se cancela el evento por
+ * omision, con lo que un doble clic nunca llegaria a la celda. Al entrar en modo
+ * edicion el arrastre se desactiva y los clics pasan al contenido.
+ */
 function onDoubleClick(): void {
-  if (interactive.value && props.element.type === 'text') editingText.value = true;
+  if (!interactive.value) return;
+  if (props.element.type === 'text' || props.element.type === 'table') editingText.value = true;
 }
+
+// Al dejar de estar seleccionado se sale de la edicion: si no, la tabla se
+// quedaria editable por detras y el elemento no se podria volver a arrastrar.
+watch(
+  () => props.selected,
+  (sigue) => {
+    if (!sigue) editingText.value = false;
+  },
+);
 
 function finishTextEdit(value: string): void {
   editingText.value = false;
@@ -159,11 +179,35 @@ function startGesture(
   target.addEventListener('pointercancel', end);
 }
 
+/**
+ * Doble clic detectado a mano.
+ *
+ * El navegador no lo entrega: arrastrar empieza en `pointerdown` y ahi se llama
+ * a `preventDefault()`, lo que suprime los eventos de raton derivados, `dblclick`
+ * incluido. Por eso el doble clic para escribir dentro de un texto no llegaba
+ * nunca a dispararse, aunque el manejador estuviera puesto.
+ *
+ * Se mira el tiempo y la distancia entre dos pulsaciones: si son seguidas y en
+ * el mismo sitio, es un doble clic y no un arrastre.
+ */
+const MS_DOBLE_CLIC = 350;
+const PX_DOBLE_CLIC = 6;
+let ultimaPulsacion = { t: 0, x: 0, y: 0 };
+
 function onDragStart(event: PointerEvent): void {
   const additive = event.shiftKey || event.ctrlKey || event.metaKey;
   emit('select', props.element.id, additive);
   // Con Shift solo se anade o quita de la seleccion; no se arrastra.
   if (additive) return;
+
+  const ahora = event.timeStamp || performance.now();
+  const cerca = Math.hypot(event.clientX - ultimaPulsacion.x, event.clientY - ultimaPulsacion.y) <= PX_DOBLE_CLIC;
+  if (ahora - ultimaPulsacion.t <= MS_DOBLE_CLIC && cerca) {
+    ultimaPulsacion = { t: 0, x: 0, y: 0 };
+    onDoubleClick();
+    return;
+  }
+  ultimaPulsacion = { t: ahora, x: event.clientX, y: event.clientY };
 
   if (props.grouped) {
     dragGroup(event);
@@ -337,6 +381,7 @@ function onRotateStart(event: PointerEvent): void {
       :editing-text="editingText"
       :selected="selected"
       @update-text="finishTextEdit"
+      @update-table="emit('updateTable', props.element.id, $event)"
     />
 
     <span

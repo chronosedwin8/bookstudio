@@ -5,6 +5,8 @@ import ChartRenderer from './ChartRenderer.vue';
 import EmbedRenderer from './EmbedRenderer.vue';
 import IconRenderer from './IconRenderer.vue';
 import IllustrationRenderer from './IllustrationRenderer.vue';
+import TableRenderer from './TableRenderer.vue';
+import type { Tabla } from '@/utils/tablas';
 import MathRenderer from './MathRenderer.vue';
 import QuestionRenderer from './QuestionRenderer.vue';
 import ShapeRenderer from './ShapeRenderer.vue';
@@ -39,7 +41,11 @@ const props = defineProps<{
   checkAnswer?: (elementId: string, answer: string[]) => Promise<AnswerResult>;
 }>();
 
-const emit = defineEmits<{ updateText: [value: string] }>();
+const emit = defineEmits<{
+  updateText: [value: string];
+  /** Una celda de la tabla que acaba de cambiar. */
+  updateTable: [tabla: Tabla];
+}>();
 
 const text = computed(() => props.element.properties as unknown as TextProperties);
 const boton = computed(() => props.element.properties as unknown as ButtonProperties);
@@ -323,6 +329,14 @@ const textLines = computed(() => {
     :title="embed.title"
     :ask-before-loading="embed.askBeforeLoading"
     :preview="preview"
+  />
+
+  <!-- Tabla: una <table> de verdad, para que se anuncie y se exporte como tal -->
+  <TableRenderer
+    v-else-if="element.type === 'table'"
+    :tabla="element.properties as never"
+    :editable="Boolean(editingText)"
+    @cambiar="emit('updateTable', $event)"
   />
 
   <!-- Ilustración educativa: se dibuja desde la escena, no se guarda ningún SVG -->

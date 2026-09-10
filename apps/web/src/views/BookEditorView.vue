@@ -16,6 +16,7 @@ import EmbedDialog from '@/components/media/EmbedDialog.vue';
 import MediaSearchDialog from '@/components/media/MediaSearchDialog.vue';
 import ChartTypeDialog from '@/components/media/ChartTypeDialog.vue';
 import IllustrationDialog from '@/components/media/IllustrationDialog.vue';
+import TableDialog from '@/components/media/TableDialog.vue';
 import QuestionBlockDialog from '@/components/media/QuestionBlockDialog.vue';
 import SoundLibraryDialog from '@/components/media/SoundLibraryDialog.vue';
 import MagnificDialog from '@/components/media/MagnificDialog.vue';
@@ -42,6 +43,7 @@ import { MIN_SCORE, recognize, type Candidate } from '@/utils/recognize';
 import { downloadBookHtml } from '@/utils/exportBook';
 import { cajaMidiendo, cajaParaImagen } from '@/utils/encajarImagen';
 import type { Escena } from '@/utils/ilustracion/escena';
+import type { Tabla } from '@/utils/tablas';
 import { PAPER_CATALOGUE, PAPER_GROUPS, paperStyle } from '@/utils/papers';
 import { SHAPES, ratioOf, type ShapeName } from '@/utils/shapes';
 import type { QuestionBlock } from '@/utils/questions';
@@ -58,6 +60,7 @@ const tool = ref<'select' | 'draw' | 'fill'>('select');
 const onionSkin = ref(false);
 const dialog = ref<
   | 'none'
+  | 'table'
   | 'illustration'
   | 'image'
   | 'gif'
@@ -585,6 +588,26 @@ async function onAjustarAImagen(): Promise<void> {
   });
 }
 
+/**
+ * Tabla recien elegida. El alto sale de las filas que tenga: una tabla de ocho
+ * filas metida en el alto de una de dos saldria ilegible.
+ */
+async function onPickTable(tabla: Tabla): Promise<void> {
+  dialog.value = 'none';
+  const width = Math.min(85, 26 + tabla.celdas[0].length * 12);
+  const alto = Math.min(75, 8 + tabla.celdas.length * 7);
+  await editor.addElement(
+    'table',
+    { x: 10, y: 16, width, height: alto, angle: 0 },
+    { ...tabla } as unknown as Record<string, unknown>,
+  );
+}
+
+/** Una celda editada en el lienzo: se guarda la tabla entera, que es el elemento. */
+async function onUpdateTable(id: string, tabla: Tabla): Promise<void> {
+  await editor.patchElement(id, { properties: { ...tabla } as unknown as Record<string, unknown> });
+}
+
 async function onRemovePage(pageId: string): Promise<void> {
   if (!window.confirm('Eliminar esta pagina y todo su contenido?')) return;
   await editor.deletePage(pageId);
@@ -1061,6 +1084,9 @@ async function saveTitle(): Promise<void> {
             <button v-if="puedeUsar('chart')" type="button" class="btn-secondary w-full justify-start" @click="dialog = 'chart'">
               📊 Gráfica
             </button>
+            <button v-if="puedeUsar('table')" type="button" class="btn-secondary w-full justify-start" @click="dialog = 'table'">
+              &#9638; Tabla
+            </button>
             <button
               v-if="puedeUsar('illustration')"
               type="button"
@@ -1281,6 +1307,7 @@ async function saveTitle(): Promise<void> {
               @move-selection="(dx, dy) => editor.moveSelection(dx, dy)"
               @commit="(id, t) => editor.patchElement(id, { transformMatrix: t })"
               @update-text="onUpdateText"
+              @update-table="onUpdateTable"
               @stroke="onStroke"
               @fill="onFill"
             />
@@ -1462,6 +1489,8 @@ async function saveTitle(): Promise<void> {
     <SoundLibraryDialog v-if="dialog === 'sound'" @close="dialog = 'none'" @pick="onPickSound" />
 
     <ChartTypeDialog v-if="dialog === 'chart'" @close="dialog = 'none'" @pick="onPickChart" />
+
+    <TableDialog v-if="dialog === 'table'" @close="dialog = 'none'" @pick="onPickTable" />
 
     <IllustrationDialog
       v-if="dialog === 'illustration'"

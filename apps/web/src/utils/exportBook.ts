@@ -7,6 +7,7 @@
  */
 import { dibujarEscena } from './ilustracion/dibujo';
 import { normalizarEscena, resumirEscena } from './ilustracion/escena';
+import { normalizarTabla } from './tablas';
 import { svgCompleto } from './ilustracion/primitivas';
 import { paperStyle } from './papers';
 import { SHAPES, type ShapeName } from './shapes';
@@ -201,6 +202,49 @@ function elementHtml(element: CanvasElement): string {
     case 'chart':
       inner = chartSvgPlaceholder(element);
       break;
+    case 'table': {
+      /*
+       * La tabla viaja como <table> de verdad, no como una imagen ni una
+       * rejilla de divs: asi se puede copiar, se lee con lector de pantalla y
+       * al imprimir el libro sigue siendo una tabla.
+       */
+      const t = normalizarTabla(p);
+      const linea = `1px solid ${t.colorAcento}44`;
+      const filas = t.celdas
+        .map((fila, i) => {
+          const fondo = t.diseno === 'rayas' && (t.filaCabecera ? i - 1 : i) % 2 === 1
+            ? `background:${t.colorAcento}0f;`
+            : '';
+          const celdas = fila
+            .map((celda, j) => {
+              const cabecera = (t.filaCabecera && i === 0) || (t.columnaCabecera && j === 0);
+              const etiqueta = cabecera ? 'th' : 'td';
+              const fondoCabecera = cabecera && t.diseno === 'tarjeta'
+                ? `background:${t.colorAcento};color:#fff;`
+                : cabecera && (t.diseno === 'rayas' || t.diseno === 'cuadricula')
+                  ? `background:${t.colorAcento}1a;`
+                  : '';
+              const borde = t.diseno === 'cuadricula'
+                ? `border:${linea};`
+                : t.diseno === 'minimal'
+                  ? (cabecera ? `border-bottom:2px solid ${t.colorAcento};` : '')
+                  : `border-bottom:${linea};`;
+              return `<${etiqueta} style="padding:.35em .5em;${borde}${fondoCabecera}">${escapeHtml(celda)}</${etiqueta}>`;
+            })
+            .join('');
+          return `<tr style="${fondo}">${celdas}</tr>`;
+        })
+        .join('');
+
+      const marco = t.diseno === 'tarjeta'
+        ? `border:${linea};border-radius:.6em;overflow:hidden;`
+        : '';
+      inner =
+        `<table style="width:100%;height:100%;border-collapse:collapse;table-layout:fixed;` +
+        `color:${t.colorTexto};text-align:${t.alineacion};font-size:${t.fontSize}px;${marco}">` +
+        `<tbody>${filas}</tbody></table>`;
+      break;
+    }
     case 'illustration': {
       /*
        * Aqui si va el SVG entero, y no un sustituto como en las graficas: una

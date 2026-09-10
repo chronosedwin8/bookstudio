@@ -5,6 +5,7 @@ import DrawingLayer from './DrawingLayer.vue';
 import ElementRenderer from './ElementRenderer.vue';
 import { paperStyle } from '@/utils/papers';
 import type { CanvasElement, Page, TransformMatrix } from '@/types/api';
+import type { Tabla } from '@/utils/tablas';
 
 const props = defineProps<{
   page: Page;
@@ -29,6 +30,7 @@ const emit = defineEmits<{
   moveSelection: [dx: number, dy: number];
   commit: [id: string, transform: TransformMatrix];
   updateText: [id: string, value: string];
+  updateTable: [id: string, tabla: Tabla];
   stroke: [
     payload: {
       points: Array<{ x: number; y: number }>;
@@ -261,6 +263,7 @@ function onWheel(event: WheelEvent): void {
             @select="(id, additive) => emit('select', id, additive)"
             @commit="(id, t) => emit('commit', id, t)"
             @update-text="(id, v) => emit('updateText', id, v)"
+            @update-table="(id, t) => emit('updateTable', id, t)"
             @group-drag="onGroupDrag"
             @group-commit="onGroupCommit"
             @select-only="emit('selectOnly', $event)"

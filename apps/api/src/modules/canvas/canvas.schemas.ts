@@ -62,12 +62,50 @@ export const textPropertiesSchema = z.object({
 
 /** Debe coincidir con el catalogo de apps/web/src/utils/shapes.ts. */
 export const shapeName = z.enum([
-  'rectangle', 'square', 'ellipse', 'oval', 'triangle', 'right-triangle',
-  'diamond', 'pentagon', 'hexagon', 'octagon',
-  'line', 'dashed-line', 'arrow', 'arrow-line', 'dashed-arrow', 'double-arrow', 'chevron',
-  'speech-bubble', 'thought-bubble',
-  'star', 'burst', 'heart', 'cloud', 'moon', 'lightning', 'cross', 'banner', 'bookmark',
+  'rectangle', 'square', 'ellipse', 'oval',
+  'triangle', 'right-triangle', 'diamond', 'pentagon',
+  'hexagon', 'octagon', 'line', 'dashed-line',
+  'arrow', 'arrow-line', 'dashed-arrow', 'double-arrow',
+  'chevron', 'speech-bubble', 'thought-bubble', 'star',
+  'burst', 'heart', 'cloud', 'moon',
+  'lightning', 'cross', 'banner', 'bookmark',
+  'flujo-proceso', 'flujo-subproceso', 'flujo-decision', 'flujo-inicio',
+  'flujo-datos', 'flujo-documento', 'flujo-multidocumento', 'flujo-base-datos',
+  'flujo-almacenamiento', 'flujo-entrada-manual', 'flujo-operacion-manual', 'flujo-preparacion',
+  'flujo-pantalla', 'flujo-retardo', 'flujo-conector', 'flujo-fuera-pagina',
+  'disp-monitor', 'disp-portatil', 'disp-tablet', 'disp-movil',
+  'disp-torre', 'disp-teclado', 'disp-raton', 'disp-impresora',
+  'disp-servidor', 'disp-disco', 'disp-usb', 'disp-camara',
+  'red-router', 'red-switch', 'red-cortafuegos', 'red-wifi',
+  'red-antena', 'red-globo', 'red-escudo', 'red-enlace',
+  'mental-central', 'mental-nodo', 'mental-rama', 'mental-rama-punteada',
+  'cubo', 'ortoedro', 'piramide', 'cilindro',
+  'cono', 'esfera', 'prisma', 'senal-stop',
+  'senal-precaucion', 'senal-peligro-electrico', 'senal-prohibido', 'senal-informacion',
+  'senal-correcto', 'senal-incorrecto', 'clip-sol', 'clip-arbol',
+  'clip-casa', 'clip-coche', 'clip-libro', 'clip-bombilla',
+  'clip-reloj', 'clip-hoja', 'clip-gota', 'clip-bandera',
+  'clip-lapiz', 'clip-cohete',
 ]);
+
+/**
+ * Tabla del lienzo.
+ *
+ * Se guardan las celdas y el nombre de un diseno, nunca marcado. El tope de
+ * 20x10 no es arbitrario: por encima de eso la tabla deja de leerse en una
+ * pagina y ademas cada celda viaja en el JSON del elemento.
+ */
+export const tablePropertiesSchema = z.object({
+  celdas: z.array(z.array(z.string().max(300)).max(10)).min(1).max(20),
+  filaCabecera: z.boolean().default(true),
+  columnaCabecera: z.boolean().default(false),
+  diseno: z.enum(['lineas', 'rayas', 'cuadricula', 'minimal', 'tarjeta']).default('lineas'),
+  colorAcento: hexColor.default('#2563EB'),
+  colorTexto: hexColor.default('#1E293B'),
+  fontSize: z.number().min(8).max(48).default(14),
+  alineacion: z.enum(['left', 'center', 'right']).default('left'),
+  linkUrl: linkUrl.default(''),
+});
 
 export const shapePropertiesSchema = z.object({
   shape: shapeName.default('rectangle'),
@@ -332,7 +370,7 @@ export const mathPropertiesSchema = z.object({
 export const elementType = z.enum([
   'text', 'shape', 'drawing', 'image', 'audio', 'video',
   'map', 'icon', 'embed', 'question', 'chart', 'math', 'button',
-  'illustration',
+  'illustration', 'table',
 ]);
 export type ElementType = z.infer<typeof elementType>;
 
@@ -351,6 +389,7 @@ const PROPERTY_SCHEMAS = {
   chart: chartPropertiesSchema,
   math: mathPropertiesSchema,
   illustration: illustrationPropertiesSchema,
+  table: tablePropertiesSchema,
 } as const;
 
 /** Valida `properties` contra el esquema del `type` declarado; rechaza mezclas invalidas. */

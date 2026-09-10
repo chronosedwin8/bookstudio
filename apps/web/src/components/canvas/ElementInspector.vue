@@ -8,6 +8,22 @@ import {
   es,
 } from '@/utils/ilustracion/catalogo';
 import { normalizarEscena, type Escena } from '@/utils/ilustracion/escena';
+import { GRUPOS_FORMULAS } from '@/utils/formulas';
+import {
+  ALINEACIONES,
+  anadirColumna,
+  anadirFila,
+  columnasDe,
+  DISENOS,
+  filasDe,
+  MAX_COLUMNAS,
+  MAX_FILAS,
+  NOMBRES_DISENO,
+  normalizarTabla,
+  quitarColumna,
+  quitarFila,
+  type Tabla,
+} from '@/utils/tablas';
 import ChartInspector from './ChartInspector.vue';
 import InteractionContentDialog from './InteractionContentDialog.vue';
 import QuestionInspector from './QuestionInspector.vue';
@@ -150,6 +166,21 @@ function cambiarPose(indice: number, pose: string): void {
     i === indice ? { ...p, pose } : p,
   );
   cambiarEscena({ personajes });
+}
+
+/**
+ * La tabla del elemento seleccionado, ya normalizada.
+ *
+ * Se normaliza al leerla para que el panel no muestre nunca un valor que el
+ * dibujo no sepa pintar, aunque la fila venga de una version anterior.
+ */
+const tabla = computed(() =>
+  props.element?.type === 'table' ? normalizarTabla(props.element.properties) : null,
+);
+
+/** Guarda la tabla entera: es lo que es el elemento. */
+function cambiarTabla(nueva: Tabla): void {
+  emit('patch', { properties: { ...nueva } as unknown as Record<string, unknown> });
 }
 
 /** Tipos que admiten enlace; el resto no muestra el campo. */
@@ -531,17 +562,6 @@ function patchProperty(key: string, value: unknown): void {
 
 // El catalogo vive en types/api.ts para no duplicarlo con el enum del backend.
 
-/** Plantillas de formula habituales en primaria y secundaria. */
-const MATH_SAMPLES = [
-  { label: 'Fraccion', latex: '\frac{a}{b}' },
-  { label: 'Potencia', latex: 'x^{2}' },
-  { label: 'Raiz', latex: '\sqrt{x}' },
-  { label: 'Ecuacion', latex: 'ax^2 + bx + c = 0' },
-  { label: 'Pitagoras', latex: 'a^2 + b^2 = c^2' },
-  { label: 'Sumatorio', latex: '\sum_{i=1}^{n} i' },
-  { label: 'Integral', latex: '\int_{a}^{b} f(x)\,dx' },
-  { label: 'Matriz', latex: '\begin{pmatrix} a & b \\ c & d \end{pmatrix}' },
-] as const;
 // Tonos hueso y opalo recomendados para reducir el contraste excesivo.
 const SOFT_BACKGROUNDS = ['transparent', '#F7F4EC', '#EDF2F0', '#FBF3E4', '#EFEAF6', '#FFFFFF'] as const;
 </script>
@@ -875,6 +895,129 @@ const SOFT_BACKGROUNDS = ['transparent', '#F7F4EC', '#EDF2F0', '#FBF3E4', '#EFEA
         >Abrir el archivo en otra pestaña</a>
       </section>
 
+      <!--
+        Tabla.
+
+        Filas y columnas se anaden y se quitan desde aqui; el texto de las celdas
+        se escribe en la propia pagina con doble clic, que es donde se ve lo que
+        se esta escribiendo.
+      -->
+      <section v-if="element.type === 'table' && tabla" class="space-y-3">
+        <h3 class="label">Tabla | {{ filasDe(tabla) }} x {{ columnasDe(tabla) }}</h3>
+
+        <p class="rounded bg-slate-50 px-2 py-1.5 text-[11px] leading-tight text-slate-500">
+          Haz doble clic en una celda de la página para escribir. El tabulador pasa a la siguiente.
+        </p>
+
+        <div>
+          <p class="label">Filas</p>
+          <div class="grid grid-cols-2 gap-1">
+            <button
+              type="button"
+              class="btn-secondary py-1 text-xs"
+              :disabled="filasDe(tabla) >= MAX_FILAS"
+              @click="cambiarTabla(anadirFila(tabla))"
+            >Añadir</button>
+            <button
+              type="button"
+              class="btn-secondary py-1 text-xs"
+              :disabled="filasDe(tabla) <= 1"
+              @click="cambiarTabla(quitarFila(tabla, filasDe(tabla) - 1))"
+            >Quitar</button>
+          </div>
+        </div>
+
+        <div>
+          <p class="label">Columnas</p>
+          <div class="grid grid-cols-2 gap-1">
+            <button
+              type="button"
+              class="btn-secondary py-1 text-xs"
+              :disabled="columnasDe(tabla) >= MAX_COLUMNAS"
+              @click="cambiarTabla(anadirColumna(tabla))"
+            >Añadir</button>
+            <button
+              type="button"
+              class="btn-secondary py-1 text-xs"
+              :disabled="columnasDe(tabla) <= 1"
+              @click="cambiarTabla(quitarColumna(tabla, columnasDe(tabla) - 1))"
+            >Quitar</button>
+          </div>
+        </div>
+
+        <div>
+          <p class="label">Diseño</p>
+          <div class="grid grid-cols-2 gap-1">
+            <button
+              v-for="d in DISENOS"
+              :key="d"
+              type="button"
+              class="btn-secondary px-0 py-1 text-[11px]"
+              :class="tabla.diseno === d && 'bg-brand-50 text-brand-700'"
+              @click="cambiarTabla({ ...tabla, diseno: d })"
+            >{{ NOMBRES_DISENO[d] }}</button>
+          </div>
+        </div>
+
+        <div class="space-y-1">
+          <label class="flex items-center gap-2 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              class="h-4 w-4 rounded"
+              :checked="tabla.filaCabecera"
+              @change="cambiarTabla({ ...tabla, filaCabecera: ($event.target as HTMLInputElement).checked })"
+            />
+            Primera fila como cabecera
+          </label>
+          <label class="flex items-center gap-2 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              class="h-4 w-4 rounded"
+              :checked="tabla.columnaCabecera"
+              @change="cambiarTabla({ ...tabla, columnaCabecera: ($event.target as HTMLInputElement).checked })"
+            />
+            Primera columna como cabecera
+          </label>
+        </div>
+
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="label" :for="`tabla-acento-${element.id}`">Color</label>
+            <input
+              :id="`tabla-acento-${element.id}`"
+              type="color"
+              class="h-8 w-full cursor-pointer rounded border border-slate-300"
+              :value="tabla.colorAcento"
+              @input="cambiarTabla({ ...tabla, colorAcento: ($event.target as HTMLInputElement).value })"
+            />
+          </div>
+          <div>
+            <label class="label" :for="`tabla-texto-${element.id}`">Texto</label>
+            <input
+              :id="`tabla-texto-${element.id}`"
+              type="color"
+              class="h-8 w-full cursor-pointer rounded border border-slate-300"
+              :value="tabla.colorTexto"
+              @input="cambiarTabla({ ...tabla, colorTexto: ($event.target as HTMLInputElement).value })"
+            />
+          </div>
+        </div>
+
+        <div>
+          <p class="label">Alineación</p>
+          <div class="grid grid-cols-3 gap-1">
+            <button
+              v-for="a in ALINEACIONES"
+              :key="a"
+              type="button"
+              class="btn-secondary px-0 py-1 text-xs"
+              :class="tabla.alineacion === a && 'bg-brand-50 text-brand-700'"
+              @click="cambiarTabla({ ...tabla, alineacion: a })"
+            >{{ a === 'left' ? 'Izquierda' : a === 'center' ? 'Centro' : 'Derecha' }}</button>
+          </div>
+        </div>
+      </section>
+
       <!-- Formula matemática -->
       <section v-if="element.type === 'math'">
         <label class="label" :for="`latex-${element.id}`">Formula (LaTeX)</label>
@@ -884,15 +1027,25 @@ const SOFT_BACKGROUNDS = ['transparent', '#F7F4EC', '#EDF2F0', '#FBF3E4', '#EFEA
           :value="String(element.properties.latex ?? '')"
           @change="patchProperty('latex', ($event.target as HTMLTextAreaElement).value)"
         />
-        <div class="mt-1.5 flex flex-wrap gap-1">
-          <button
-            v-for="sample in MATH_SAMPLES"
-            :key="sample.latex"
-            type="button"
-            class="rounded border border-slate-300 px-1.5 py-0.5 text-[11px] text-slate-600 hover:bg-slate-50"
-            :title="sample.latex"
-            @click="patchProperty('latex', sample.latex)"
-          >{{ sample.label }}</button>
+        <!--
+          Cincuenta formulas no caben en una fila de botones, asi que van por
+          materia y en una zona que se desplaza: se buscan por donde uno las
+          buscaria, no leyendo una lista larga.
+        -->
+        <div class="mt-1.5 max-h-56 space-y-2 overflow-y-auto rounded border border-slate-200 p-2">
+          <div v-for="grupo in GRUPOS_FORMULAS" :key="grupo.label">
+            <p class="mb-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">{{ grupo.label }}</p>
+            <div class="flex flex-wrap gap-1">
+              <button
+                v-for="formula in grupo.formulas"
+                :key="formula.latex"
+                type="button"
+                class="rounded border border-slate-300 px-1.5 py-0.5 text-[11px] text-slate-600 transition hover:border-brand-400 hover:bg-brand-50"
+                :title="formula.latex"
+                @click="patchProperty('latex', formula.latex)"
+              >{{ formula.label }}</button>
+            </div>
+          </div>
         </div>
         <label class="mt-2 flex items-center gap-2 text-sm text-slate-700">
           <input
