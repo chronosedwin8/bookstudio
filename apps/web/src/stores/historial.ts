@@ -36,11 +36,59 @@ export function crearHistorial() {
   const siguienteDeshacer = computed(() => pasados.value.at(-1)?.descripcion ?? null);
   const siguienteRehacer = computed(() => futuros.value.at(-1)?.descripcion ?? null);
 
+  /**
+   * Mientras se recoge, los pasos no van al historial: se apartan aqui para
+   * juntarlos en uno solo.
+   */
+  let recogiendo: PasoHistorial[] | null = null;
+
   function registrar(paso: PasoHistorial): void {
     if (aplicando.value) return;
+    if (recogiendo) {
+      recogiendo.push(paso);
+      return;
+    }
     pasados.value = [...pasados.value.slice(-(LIMITE - 1)), paso];
     // Un cambio nuevo invalida lo que habia por delante: es una rama abandonada.
     futuros.value = [];
+  }
+
+  /**
+   * Junta en un solo paso todo lo que ocurra dentro.
+   *
+   * Hace falta porque varias operaciones son una sola cosa para quien las hace y
+   * varias para el programa: mover tres elementos con las flechas son tres
+   * guardados, y borrar una seleccion de cinco son cinco borrados. Sin esto,
+   * deshacer una vez movia uno solo y habia que pulsar Ctrl+Z tantas veces como
+   * elementos, lo que no se parece en nada a lo que uno espera.
+   *
+   * Al deshacer se recorre al reves, que es el unico orden que reconstruye el
+   * estado anterior cuando los pasos dependen entre si.
+   */
+  async function agrupar<T>(descripcion: string, fn: () => Promise<T>): Promise<T> {
+    // Anidar agrupaciones no aporta nada: manda la de fuera
+    if (recogiendo || aplicando.value) return fn();
+
+    const recogidos: PasoHistorial[] = [];
+    recogiendo = recogidos;
+    try {
+      return await fn();
+    } finally {
+      recogiendo = null;
+      if (recogidos.length === 1) {
+        registrar({ ...recogidos[0], descripcion });
+      } else if (recogidos.length > 1) {
+        registrar({
+          descripcion,
+          deshacer: async () => {
+            for (const paso of [...recogidos].reverse()) await paso.deshacer();
+          },
+          rehacer: async () => {
+            for (const paso of recogidos) await paso.rehacer();
+          },
+        });
+      }
+    }
   }
 
   async function deshacer(): Promise<string | null> {
@@ -84,6 +132,7 @@ export function crearHistorial() {
     siguienteRehacer,
     aplicando,
     registrar,
+    agrupar,
     deshacer,
     rehacer,
     limpiar,

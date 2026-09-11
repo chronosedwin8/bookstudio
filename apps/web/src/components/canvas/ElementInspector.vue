@@ -91,6 +91,8 @@ const emit = defineEmits<{
    * que saber.
    */
   ajustarAImagen: [];
+  /** Duplicar lo seleccionado, sin tocar el portapapeles. */
+  duplicar: [];
   /** Volver a describir la ilustracion con otras palabras. */
   rehacerIlustracion: [];
 }>();
@@ -588,6 +590,22 @@ const SOFT_BACKGROUNDS = ['transparent', '#F7F4EC', '#EDF2F0', '#FBF3E4', '#EFEA
           <button type="button" class="btn-secondary px-0 py-1.5 text-xs" title="Bajar una" @click="emit('move', 'backward')">↓</button>
           <button type="button" class="btn-secondary px-0 py-1.5 text-xs" title="Enviar al fondo" @click="emit('move', 'back')">⤓</button>
         </div>
+      </section>
+
+      <!--
+        Duplicar.
+
+        Ctrl+D y Ctrl+C ya funcionan, pero un atajo que nadie ve es un atajo que
+        el alumnado no usa: el mismo motivo por el que las formas llevan tiradores
+        en los lados y no solo Shift.
+      -->
+      <section>
+        <button
+          type="button"
+          class="btn-secondary w-full justify-center text-xs"
+          title="Duplicar (Ctrl+D)"
+          @click="emit('duplicar')"
+        >Duplicar</button>
       </section>
 
       <!-- Opacidad -->

@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
 import { booksApi } from '@/services/api';
-import { crearHistorial, describirElemento } from './historial';
+import { crearHistorial, describirElemento, NOMBRE_TIPO } from './historial';
 import { errorMessage } from '@/services/http';
 import type {
   BookDetail,
@@ -21,6 +21,25 @@ export const ASPECT_RATIOS = {
   square: 1,
   landscape: 4 / 3,
 } as const;
+
+/** Lo que se copia de un elemento: todo menos donde vivia. */
+export type ElementoCopiado = Pick<
+  CanvasElement,
+  'type' | 'transformMatrix' | 'properties' | 'opacity' | 'isLocked' | 'interaction' | 'animation' | 'actions'
+>;
+
+/**
+ * Lo que se deja en el portapapeles del sistema al copiar objetos.
+ *
+ * La marca sirve para distinguir "esto lo copie de BookStudio" de cualquier otro
+ * texto que la persona tuviera copiado: sin ella, pegar dentro del lienzo no
+ * podria saber si lo que hay es un objeto o el correo de alguien.
+ */
+export interface PortapapelesBookStudio {
+  __bookstudio: 'elementos';
+  version: 1;
+  elementos: ElementoCopiado[];
+}
 
 export const useEditorStore = defineStore('editor', () => {
   const book = ref<BookDetail | null>(null);
@@ -63,6 +82,28 @@ export const useEditorStore = defineStore('editor', () => {
   const editingElementId = ref<string | null>(null);
 
   const historial = crearHistorial();
+
+  /*
+   * Que id tiene ahora un elemento que ya existia.
+   *
+   * Deshacer un borrado no devuelve el elemento: crea uno igual, y el servidor le
+   * da un id nuevo. Los pasos del historial anteriores a ese borrado siguen
+   * apuntando al id viejo, asi que al seguir deshaciendo se pedia al servidor un
+   * elemento inexistente y saltaba un error. Aqui se apunta la equivalencia y
+   * todo el historial la consulta antes de tocar nada.
+   */
+  const equivalencias = new Map<string, string>();
+
+  function idVigente(id: string): string {
+    let actual = id;
+    // En cadena: un elemento puede borrarse y recuperarse varias veces
+    const vistos = new Set<string>();
+    while (equivalencias.has(actual) && !vistos.has(actual)) {
+      vistos.add(actual);
+      actual = equivalencias.get(actual)!;
+    }
+    return actual;
+  }
 
   function replaceElement(updated: CanvasElement): void {
     const page = book.value?.pages.find((p) => p.id === updated.pageId);
@@ -126,24 +167,34 @@ export const useEditorStore = defineStore('editor', () => {
     const targets = selectedElements.value.filter((el) => !el.isLocked);
     if (!targets.length) return;
 
-    await Promise.all(
-      targets.map((element) => {
-        const t = element.transformMatrix;
-        return patchElement(element.id, {
-          transformMatrix: {
-            ...t,
-            x: Math.min(120, Math.max(-20, t.x + dx)),
-            y: Math.min(120, Math.max(-20, t.y + dy)),
-          },
-        });
-      }),
-    );
+    // Un solo paso de deshacer: mover tres cosas a la vez es una accion, no tres
+    const que = targets.length === 1 ? `mover ${describirElemento(targets[0])}` : `mover ${targets.length} elementos`;
+    await historial.agrupar(que, async () => {
+      await Promise.all(
+        targets.map((element) => {
+          const t = element.transformMatrix;
+          return patchElement(element.id, {
+            transformMatrix: {
+              ...t,
+              x: Math.min(120, Math.max(-20, t.x + dx)),
+              y: Math.min(120, Math.max(-20, t.y + dy)),
+            },
+          });
+        }),
+      );
+    });
   }
 
   /** Elimina todos los elementos seleccionados que no esten bloqueados. */
   async function removeSelection(): Promise<void> {
-    const targets = selectedElements.value.filter((el) => !el.isLocked).map((el) => el.id);
-    for (const id of targets) await removeElement(id);
+    const elegidos = selectedElements.value.filter((el) => !el.isLocked);
+    if (!elegidos.length) return;
+
+    const que = elegidos.length === 1 ? `borrar ${describirElemento(elegidos[0])}` : `borrar ${elegidos.length} elementos`;
+    await historial.agrupar(que, async () => {
+      for (const el of elegidos) await removeElement(el.id);
+    });
+
     selectedIds.value = [];
     selectedElementId.value = null;
   }
@@ -214,6 +265,140 @@ export const useEditorStore = defineStore('editor', () => {
     page.elements[index] = { ...page.elements[index], properties } as CanvasElement;
   }
 
+  /* ------------------------------------------------------------------------
+   * Copiar y pegar objetos
+   *
+   * Lo copiado se guarda aqui Y en el portapapeles del sistema. Lo primero es lo
+   * que hace que funcione siempre; lo segundo permite copiar un objeto de un
+   * libro y pegarlo en otro, o en otra pestana.
+   *
+   * En el portapapeles va con una marca reconocible, para distinguir "esto lo
+   * copie yo de BookStudio" de cualquier otro texto que alguien tenga copiado.
+   * --------------------------------------------------------------------- */
+
+  const copiados = ref<ElementoCopiado[]>([]);
+
+  const recortar = (el: CanvasElement): ElementoCopiado => ({
+    type: el.type,
+    transformMatrix: { ...el.transformMatrix },
+    properties: JSON.parse(JSON.stringify(el.properties ?? {})),
+    opacity: el.opacity,
+    isLocked: el.isLocked,
+    interaction: el.interaction ?? null,
+    animation: el.animation ?? null,
+    actions: el.actions ?? null,
+  });
+
+
+  /** Lo copiado, listo para dejarlo en el portapapeles del sistema. */
+  function paquetePortapapeles(): string {
+    const paquete: PortapapelesBookStudio = {
+      __bookstudio: 'elementos',
+      version: 1,
+      elementos: copiados.value,
+    };
+    return JSON.stringify(paquete);
+  }
+
+  /**
+   * Lee un paquete nuestro de un texto del portapapeles. Devuelve null si ese
+   * texto es cualquier otra cosa, que es lo normal.
+   */
+  function leerPaquete(texto: string): ElementoCopiado[] | null {
+    if (!texto.includes('__bookstudio')) return null;
+    try {
+      const dato = JSON.parse(texto) as PortapapelesBookStudio;
+      if (dato?.__bookstudio !== 'elementos' || !Array.isArray(dato.elementos)) return null;
+      return dato.elementos;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Guarda la seleccion como "lo copiado" y devuelve el paquete para dejarlo en
+   * el portapapeles del sistema.
+   *
+   * No se escribe aqui en el portapapeles. Se intento con
+   * `navigator.clipboard.writeText` y no llegaba a escribir nada: esa API exige
+   * que la pagina tenga el foco y permisos concedidos, y falla en silencio. Quien
+   * escribe es el evento `copy` del navegador, que ya viene autorizado porque lo
+   * ha provocado la persona.
+   */
+  function copiarSeleccion(): { cuantos: number; paquete: string } {
+    const elegidos = selectedElements.value;
+    if (!elegidos.length) return { cuantos: 0, paquete: '' };
+
+    copiados.value = elegidos.map(recortar);
+    return { cuantos: copiados.value.length, paquete: paquetePortapapeles() };
+  }
+
+  async function cortarSeleccion(): Promise<{ cuantos: number; paquete: string }> {
+    const copia = copiarSeleccion();
+    if (copia.cuantos) await removeSelection();
+    return copia;
+  }
+
+  /**
+   * Pega los elementos indicados (o lo ultimo copiado) en la pagina actual.
+   *
+   * Se corren un poco respecto al original para que se vea que hay dos cosas y no
+   * una: pegados exactamente encima, parece que no ha pasado nada.
+   */
+  async function pegar(elementos: ElementoCopiado[] = copiados.value): Promise<number> {
+    if (!book.value || !currentPage.value || !elementos.length) return 0;
+
+    const DESPLAZAMIENTO = 3;
+    const que = elementos.length === 1
+      ? `pegar ${NOMBRE_TIPO[elementos[0].type] ?? 'elemento'}`
+      : `pegar ${elementos.length} elementos`;
+
+    const nuevos: string[] = [];
+    await historial.agrupar(que, async () => {
+      for (const copia of elementos) {
+        const t = copia.transformMatrix;
+        const creado = await addElement(
+          copia.type,
+          {
+            ...t,
+            x: Math.min(100 - Math.min(t.width, 100), t.x + DESPLAZAMIENTO),
+            y: Math.min(100 - Math.min(t.height, 100), t.y + DESPLAZAMIENTO),
+          },
+          copia.properties as Record<string, unknown>,
+        );
+        if (!creado) continue;
+        nuevos.push(creado.id);
+
+        // Lo que no viaja en `addElement` se pone despues: opacidad, bloqueo y
+        // todo lo de interactividad, que tambien forma parte de lo copiado.
+        const extra: Parameters<typeof patchElement>[1] = {};
+        if (copia.opacity !== 1) extra.opacity = copia.opacity;
+        if (copia.isLocked) extra.isLocked = copia.isLocked;
+        if (copia.interaction) extra.interaction = copia.interaction;
+        if (copia.animation) extra.animation = copia.animation;
+        if (copia.actions) extra.actions = copia.actions;
+        if (Object.keys(extra).length) await patchElement(creado.id, extra);
+      }
+    });
+
+    // Lo recien pegado queda seleccionado: es lo que se va a mover a continuacion
+    if (nuevos.length) {
+      selectedIds.value = nuevos;
+      selectedElementId.value = nuevos[nuevos.length - 1];
+    }
+    return nuevos.length;
+  }
+
+  /** Duplicar es copiar y pegar sin tocar el portapapeles de nadie. */
+  async function duplicarSeleccion(): Promise<number> {
+    const elegidos = selectedElements.value;
+    if (!elegidos.length) return 0;
+    return pegar(elegidos.map(recortar));
+  }
+
+  /** Hay algo que pegar sin mirar el portapapeles del sistema. */
+  const hayCopiados = computed(() => copiados.value.length > 0);
+
   /** Aplica el cambio en local y luego persiste; ante error recarga para no dejar estado divergente. */
   async function patchElement(
     elementId: string,
@@ -253,7 +438,11 @@ export const useEditorStore = defineStore('editor', () => {
 
       const pageId = page.id;
       const aplicar = async (valores: Record<string, unknown>) => {
-        const r = await booksApi.updateElement(book.value!.id, pageId, elementId, valores as never);
+        const vigente = idVigente(elementId);
+        // Un paso viejo puede apuntar a algo que ya no esta; deshacer no puede
+        // reventar por eso, simplemente no hay nada que cambiar.
+        if (!page.elements.some((el) => el.id === vigente)) return;
+        const r = await booksApi.updateElement(book.value!.id, pageId, vigente, valores as never);
         replaceElement(r);
       };
 
@@ -296,6 +485,8 @@ export const useEditorStore = defineStore('editor', () => {
               animation: borrado.animation,
               actions: borrado.actions,
             });
+            // Quien apunte al id viejo debe encontrar el nuevo
+            equivalencias.set(vigente, recreado.id);
             vigente = recreado.id;
             book.value!.pages.find((p) => p.id === pageId)?.elements.push(recreado);
           },
@@ -326,11 +517,28 @@ export const useEditorStore = defineStore('editor', () => {
 
     if (from === to) return;
 
+    const previo = [...ordered];
     ordered.splice(to, 0, ordered.splice(from, 1)[0]);
 
     const page = currentPage.value;
-    const elements = await withSaving(() => booksApi.reorderLayers(book.value!.id, page.id, ordered));
-    if (elements) page.elements = elements;
+
+    const aplicar = async (orden: string[]): Promise<void> => {
+      // Los ids pueden haber cambiado si algo se borro y se recupero
+      const vigentes = orden.map(idVigente).filter((id) => page.elements.some((el) => el.id === id));
+      if (vigentes.length !== page.elements.length) return;
+      const elements = await withSaving(() => booksApi.reorderLayers(book.value!.id, page.id, vigentes));
+      if (elements) page.elements = elements;
+    };
+
+    await aplicar(ordered);
+
+    // Cambiar de capa era lo unico que no se podia deshacer: se guarda el orden
+    // que habia, que es lo unico que hace falta para volver atras.
+    historial.registrar({
+      descripcion: `cambiar la capa de ${describirElemento(sortedElements.value.find((el) => el.id === elementId) ?? { type: 'shape' })}`,
+      deshacer: () => aplicar(previo),
+      rehacer: () => aplicar(ordered),
+    });
   }
 
   async function addPage(): Promise<void> {
@@ -479,6 +687,12 @@ export const useEditorStore = defineStore('editor', () => {
     addElement,
     patchElement,
     patchElementLocal,
+    copiarSeleccion,
+    cortarSeleccion,
+    pegar,
+    duplicarSeleccion,
+    leerPaquete,
+    hayCopiados,
     removeElement,
     moveLayer,
     addPage,

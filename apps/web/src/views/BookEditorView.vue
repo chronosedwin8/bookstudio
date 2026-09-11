@@ -381,6 +381,33 @@ async function onPickMap(payload: {
  *
  * No se toca el pegado dentro de un campo de texto: ahi Ctrl+V debe pegar texto.
  */
+/** Se copia un objeto del lienzo, y no texto de un campo. */
+function copiandoObjeto(event: ClipboardEvent): boolean {
+  if (!editor.canEdit || !editor.selectedElementId) return false;
+  const destino = event.target as HTMLElement | null;
+  if (destino && ['INPUT', 'TEXTAREA'].includes(destino.tagName)) return false;
+  // Si hay texto seleccionado en la pagina, se copia el texto: es lo que se pidio
+  return !window.getSelection()?.toString();
+}
+
+function onCopy(event: ClipboardEvent): void {
+  if (!copiandoObjeto(event)) return;
+  const { cuantos, paquete } = editor.copiarSeleccion();
+  if (!cuantos) return;
+  event.preventDefault();
+  event.clipboardData?.setData('text/plain', paquete);
+  anunciar(cuantos === 1 ? 'Copiado 1 objeto' : `Copiados ${cuantos} objetos`);
+}
+
+async function onCut(event: ClipboardEvent): Promise<void> {
+  if (!copiandoObjeto(event)) return;
+  event.preventDefault();
+  const { cuantos, paquete } = await editor.cortarSeleccion();
+  if (!cuantos) return;
+  event.clipboardData?.setData('text/plain', paquete);
+  anunciar(cuantos === 1 ? 'Cortado 1 objeto' : `Cortados ${cuantos} objetos`);
+}
+
 async function onPaste(event: ClipboardEvent): Promise<void> {
   if (!editor.canEdit) return;
 
@@ -389,6 +416,21 @@ async function onPaste(event: ClipboardEvent): Promise<void> {
 
   const datos = event.clipboardData;
   if (!datos) return;
+
+  /*
+   * Un objeto copiado de BookStudio manda sobre lo demas.
+   *
+   * Antes no se miraba: copiar una forma y pulsar Ctrl+V pegaba lo que hubiera en
+   * el portapapeles del sistema (una imagen, una direccion), que es lo que hacia
+   * parecer que copiar objetos "no dejaba pegar".
+   */
+  const nuestro = editor.leerPaquete(datos.getData('text/plain'));
+  if (nuestro?.length) {
+    event.preventDefault();
+    const cuantos = await editor.pegar(nuestro);
+    anunciar(cuantos === 1 ? 'Pegado 1 objeto' : `Pegados ${cuantos} objetos`);
+    return;
+  }
 
   const archivo = [...datos.items]
     .filter((item) => item.kind === 'file' && item.type.startsWith('image/'))
@@ -409,6 +451,19 @@ async function onPaste(event: ClipboardEvent): Promise<void> {
 
   // Sin archivo: puede venir la direccion de una imagen de internet.
   const texto = datos.getData('text/plain').trim();
+
+  /*
+   * Si no hay nada mas que pegar pero si hay algo copiado en esta pestana, se
+   * pega eso. Pasa cuando el navegador no deja escribir en el portapapeles del
+   * sistema: la copia de dentro sigue estando.
+   */
+  if (!texto && editor.hayCopiados) {
+    event.preventDefault();
+    const cuantos = await editor.pegar();
+    anunciar(cuantos === 1 ? 'Pegado 1 objeto' : `Pegados ${cuantos} objetos`);
+    return;
+  }
+
   if (/^https?:\/\/\S+\.(png|jpe?g|gif|webp|avif)(\?\S*)?$/i.test(texto)) {
     event.preventDefault();
     const caja = await cajaMidiendo(texto, editor.aspectRatio);
@@ -842,6 +897,17 @@ function onKeydown(event: KeyboardEvent): void {
 
   if (!editor.selectedElementId || !editor.canEdit) return;
 
+  /*
+   * Duplicar. Copiar, cortar y pegar NO se atienden aqui: los cubren los eventos
+   * `copy`, `cut` y `paste` del navegador, que son los unicos que pueden leer y
+   * escribir en el portapapeles del sistema sin pedir permisos.
+   */
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'd') {
+    event.preventDefault();
+    void editor.duplicarSeleccion().then((n) => anunciar(n ? (n === 1 ? 'Duplicado 1 objeto' : `Duplicados ${n} objetos`) : null));
+    return;
+  }
+
   if (event.key === 'Delete' || event.key === 'Backspace') {
     event.preventDefault();
     // Borra toda la seleccion, no solo el elemento principal.
@@ -894,6 +960,8 @@ onMounted(async () => {
   titleDraft.value = editor.book?.title ?? '';
   window.addEventListener('keydown', onKeydown);
   window.addEventListener('paste', onPaste);
+  window.addEventListener('copy', onCopy);
+  window.addEventListener('cut', onCut);
 
   if (editor.book?.libraryId) {
     void avisarActividad();
@@ -904,6 +972,8 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeydown);
   window.removeEventListener('paste', onPaste);
+  window.removeEventListener('copy', onCopy);
+  window.removeEventListener('cut', onCut);
   clearInterval(latido);
 });
 
@@ -1409,6 +1479,7 @@ async function saveTitle(): Promise<void> {
           @patch-vivo="editor.patchElementLocal($event.elementId, $event.properties)"
           @patch-elemento="editor.patchElement($event.elementId, { properties: $event.properties })"
           @ajustar-a-imagen="onAjustarAImagen"
+          @duplicar="editor.duplicarSeleccion().then((n) => anunciar(n ? 'Duplicado' : null))"
           @rehacer-ilustracion="onRehacerIlustracion"
           @patch-otro="onPatchOtro"
           @move="editor.selectedElementId && editor.moveLayer(editor.selectedElementId, $event)"
