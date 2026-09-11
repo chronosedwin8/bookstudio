@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import { query, withTransaction } from '../../db/pool.js';
 import { HttpError } from '../../lib/http-error.js';
-import { PLANS, type PlanId } from '../billing/plans.js';
+import { getPlan, nombrePlan, type PlanId } from '../billing/plans.js';
 import * as mp from '../billing/mercadopago.service.js';
 import type {
   BillingDataInput,
@@ -357,7 +357,7 @@ export async function getPortal(userId: string, role: string, organizationId?: s
     subscriptions: suscripciones.map((s) => ({
       id: s.id,
       plan: s.plan,
-      planName: PLANS[s.plan]?.name ?? s.plan,
+      planName: nombrePlan(s.plan),
       status: s.status,
       amountCop: Number(s.amount_cop),
       autoRenew: s.auto_renew,
@@ -765,7 +765,7 @@ export async function listOrganizations(): Promise<AdminOrganization[]> {
     ...toOrganization(row),
     teachers: Number(row.teachers),
     students: Number(row.students),
-    plan: row.plan ? (PLANS[row.plan as PlanId]?.name ?? row.plan) : null,
+    plan: row.plan ? nombrePlan(row.plan) : null,
     planStatus: row.plan_status,
     expiresAt: row.expires_at?.toISOString() ?? null,
     pendingCharges: Number(row.pending_charges),
@@ -924,7 +924,11 @@ export async function grantPlan(
     throw HttpError.badRequest('Asigna primero un titular: la licencia va a nombre de alguien');
   }
 
-  const plan = PLANS[input.plan];
+  // La licencia se otorga a mano, con el importe que diga la administracion, asi
+  // que un plan retirado sigue valiendo aqui: lo unico que se usa es su nombre.
+  const plan = await getPlan(input.plan);
+  if (!plan) throw HttpError.badRequest('Ese plan no existe');
+
   const desde = new Date();
   const hasta = new Date(desde);
   hasta.setMonth(hasta.getMonth() + input.months);

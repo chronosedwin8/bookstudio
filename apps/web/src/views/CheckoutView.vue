@@ -8,6 +8,7 @@ import { errorMessage } from '@/services/http';
 import { useAuthStore } from '@/stores/auth';
 import { SITE } from '@/utils/site';
 import type { BillingConfig, BillingPlan } from '@/types/api';
+import { duracionTexto, pesos } from '@/utils/precio';
 
 /**
  * Contratacion directa: se elige plan, se crean las credenciales y se paga en la
@@ -44,7 +45,8 @@ const form = ref({
   autoRenew: true,
 });
 
-const cop = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 });
+/** El formato del dinero es el mismo en toda la aplicacion; vive en un solo sitio. */
+const cop = { format: pesos };
 
 /** Cuando ya hay sesion, el cobro va contra la cuenta existente. */
 const yaTieneCuenta = computed(() => auth.isAuthenticated && !auth.isTrial);
@@ -178,6 +180,11 @@ onBeforeUnmount(() => {
 function choosePlan(selected: BillingPlan): void {
   plan.value = selected;
   error.value = null;
+  // Un plan de un mes se anuncia como "sin permanencia": llegar al pago con la
+  // renovacion ya marcada contradice lo que dice la portada. En los anuales la
+  // renovacion sigue siendo lo esperable, porque nadie quiere que su licencia
+  // caduque a mitad de curso.
+  form.value.autoRenew = selected.periodMonths > 1;
   void mountBrick();
 }
 
@@ -283,7 +290,7 @@ onMounted(async () => {
         <section class="mt-8">
           <h2 class="text-sm font-bold uppercase tracking-wide text-slate-500">1 · Elige tu plan</h2>
 
-          <ul class="mt-3 grid gap-4 lg:grid-cols-3">
+          <ul class="mt-3 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <li v-for="item in config.plans" :key="item.id">
               <button
                 type="button"
@@ -297,7 +304,7 @@ onMounted(async () => {
                 <p class="mt-1 text-sm text-slate-500">{{ item.summary }}</p>
                 <p class="mt-4 text-2xl font-black text-slate-900">{{ cop.format(item.amountCop) }}</p>
                 <p class="text-xs text-slate-500">
-                  al año<span v-if="item.monthlyCop"> · {{ cop.format(item.monthlyCop) }}/mes</span>
+                  por {{ duracionTexto(item) }}<span v-if="item.monthlyCop && item.periodMonths > 1"> · {{ cop.format(item.monthlyCop) }}/mes</span>
                 </p>
               </button>
             </li>
@@ -352,13 +359,15 @@ onMounted(async () => {
             <div class="card mt-3 p-5">
               <div class="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
                 <p class="font-bold text-slate-800">Plan {{ plan.name }}</p>
-                <p class="text-xl font-black text-slate-900">{{ cop.format(plan.amountCop) }} / año</p>
+                <p class="text-xl font-black text-slate-900">
+                  {{ cop.format(plan.amountCop) }} <span class="text-sm font-bold text-slate-500">/ {{ duracionTexto(plan) }}</span>
+                </p>
               </div>
 
               <label class="mb-4 flex items-start gap-2 text-sm text-slate-700">
                 <input v-model="form.autoRenew" type="checkbox" class="mt-0.5 h-4 w-4 rounded" />
                 <span>
-                  Renovar automáticamente cada año
+                  Renovar automáticamente al vencer
                   <span class="block text-xs text-slate-500">
                     Puedes desactivarlo cuando quieras desde tu panel.
                   </span>

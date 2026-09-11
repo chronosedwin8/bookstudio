@@ -8,10 +8,12 @@ import { requireAuth, requireRole } from '../../middleware/auth.js';
 import { validate } from '../../middleware/validate.js';
 import * as service from './billing.service.js';
 import { isBillingEnabled, verifyWebhookSignature } from './mercadopago.service.js';
-import { PLANS, PLAN_IDS, type PlanId } from './plans.js';
+import { listPlans, listVisiblePlans, updatePlan } from './plans.js';
 
 const checkoutSchema = z.object({
-  plan: z.enum(PLAN_IDS as [PlanId, ...PlanId[]]),
+  // No es un enum: los planes viven en la base y se comprueban al cobrar, que es
+  // donde importa. Aqui solo se limita la forma.
+  plan: z.string().min(2).max(40),
   /** Token de la tarjeta creado en el navegador; la tarjeta nunca llega al servidor. */
   token: z.string().min(8).max(120).optional(),
   paymentMethodId: z.string().min(2).max(40),
@@ -39,23 +41,34 @@ const checkoutLimiter = createRateLimiter(6, 10 * 60_000);
 
 export const billingRouter = Router();
 
-/** Catalogo y clave publica: lo unico que el navegador necesita saber. */
-billingRouter.get('/config', (_req, res) => {
-  res.json({
-    enabled: isBillingEnabled(),
-    publicKey: env.MP_PUBLIC_KEY,
-    currency: 'COP',
-    plans: PLAN_IDS.map((id) => ({
-      id,
-      name: PLANS[id].name,
-      amountCop: PLANS[id].amountCop,
-      monthlyCop: PLANS[id].monthlyCop,
-      summary: PLANS[id].summary,
-      maxTeachers: PLANS[id].maxTeachers,
-      maxStudents: PLANS[id].maxStudents,
-    })),
-  });
-});
+/**
+ * Catalogo y clave publica: lo unico que el navegador necesita saber.
+ *
+ * Es la unica fuente de los precios que se anuncian, tambien para la portada.
+ * Antes la portada llevaba los suyos escritos aparte y podian dejar de coincidir
+ * con lo que se cobra, que en una pagina de precios es el peor fallo posible.
+ */
+billingRouter.get(
+  '/config',
+  asyncHandler(async (_req, res) => {
+    const planes = await listVisiblePlans();
+    res.json({
+      enabled: isBillingEnabled(),
+      publicKey: env.MP_PUBLIC_KEY,
+      currency: 'COP',
+      plans: planes.map((p) => ({
+        id: p.id,
+        name: p.name,
+        amountCop: p.amountCop,
+        monthlyCop: p.monthlyCop,
+        periodMonths: p.periodMonths,
+        summary: p.summary,
+        maxTeachers: p.maxTeachers,
+        maxStudents: p.maxStudents,
+      })),
+    });
+  }),
+);
 
 /**
  * Aviso de Mercado Pago. Va antes de requireAuth porque lo llama Mercado Pago, no
@@ -145,5 +158,46 @@ billingRouter.get(
   requireRole('admin'),
   asyncHandler(async (_req, res) => {
     res.json({ subscriptions: await service.listAllSubscriptions() });
+  }),
+);
+
+/* ---------------------------------------------------------------------------
+ * Planes: solo la administracion.
+ *
+ * Cambiar un precio es tocar dinero, asi que no basta con esconder el boton del
+ * panel: estas rutas exigen rol de administracion aqui, que es donde de verdad
+ * se decide.
+ * ------------------------------------------------------------------------ */
+
+const planPatchSchema = z.object({
+  name: z.string().min(2).max(80).trim().optional(),
+  summary: z.string().max(400).trim().optional(),
+  // Enteros: el peso colombiano no tiene centavos, y un precio con decimales
+  // solo sirve para que la pasarela lo redondee por su cuenta.
+  amountCop: z.number().int().min(1000, 'El importe minimo es 1.000 COP').max(999_000_000).optional(),
+  monthlyCop: z.number().int().min(1000).max(999_000_000).nullable().optional(),
+  periodMonths: z.number().int().min(1).max(60).optional(),
+  maxTeachers: z.number().int().min(1).max(100_000).nullable().optional(),
+  maxStudents: z.number().int().min(1).max(1_000_000).nullable().optional(),
+  visible: z.boolean().optional(),
+  sortOrder: z.number().int().min(0).max(999).optional(),
+});
+
+/** Todos los planes, tambien los retirados: la administracion los gestiona. */
+billingRouter.get(
+  '/plans',
+  requireRole('admin'),
+  asyncHandler(async (_req, res) => {
+    res.json({ plans: await listPlans() });
+  }),
+);
+
+billingRouter.patch(
+  '/plans/:id',
+  requireRole('admin'),
+  validate(planPatchSchema),
+  asyncHandler(async (req, res) => {
+    const plan = await updatePlan(req.params.id, req.body, req.auth!.userId);
+    res.json({ plan });
   }),
 );

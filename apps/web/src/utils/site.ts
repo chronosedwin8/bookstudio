@@ -1,10 +1,13 @@
 /**
  * Contenido de la web comercial.
  *
- * Vive aparte de la maquetacion para que cambiar un precio, una pregunta frecuente
- * o el texto de una ventaja no obligue a tocar el HTML.
+ * Vive aparte de la maquetacion para que cambiar una pregunta frecuente o el texto
+ * de una ventaja no obligue a tocar el HTML.
  *
- * Los importes están en pesos colombianos (COP) y se facturan de forma anual.
+ * Aqui NO hay precios. Los importes se configuran desde el panel de administracion
+ * y la portada los pide a /billing/config, que es el mismo catalogo con el que se
+ * cobra. Antes estaban escritos tambien aqui y podian dejar de coincidir con lo que
+ * se cobraba de verdad, que en una pagina de precios es el peor fallo posible.
  */
 
 export interface Feature {
@@ -20,15 +23,15 @@ export interface UseCase {
   bullets: string[];
 }
 
-export interface Plan {
-  id: string;
-  name: string;
-  price: string;
-  period: string;
-  summary: string;
+/**
+ * Lo que se cuenta de un plan y no es dinero: la lista de ventajas y el boton.
+ * El nombre, el resumen y el precio los pone el servidor.
+ */
+export interface PlanMarketing {
   features: string[];
   cta: string;
   highlight?: boolean;
+  /** Letra pequeña que no depende del precio. */
   note?: string;
 }
 
@@ -177,13 +180,26 @@ export const STEPS = [
   },
 ];
 
-export const PLANS: Plan[] = [
-  {
-    id: 'individual',
-    name: 'Individual',
-    price: '$150.000 COP',
-    period: 'al mes, con pago anual',
-    summary: 'Para un docente o un profesional que trabaja por su cuenta.',
+/**
+ * Texto de cada plan, buscado por su identificador.
+ *
+ * Si desde el panel se crea un plan nuevo que no este aqui, la portada lo muestra
+ * igualmente con lo generico: es mejor un plan con menos adornos que un plan que
+ * se vende pero no aparece.
+ */
+export const PLAN_MARKETING: Record<string, PlanMarketing> = {
+  mensual: {
+    features: [
+      'Todas las funciones del editor',
+      'Libros y páginas ilimitados',
+      'Enlaces para compartir y modo lectura',
+      'Exportación a PDF y a página web',
+      'Soporte por correo',
+    ],
+    cta: 'Probar un mes',
+    note: 'Sin permanencia: se cobra una sola vez y no se renueva salvo que lo pidas.',
+  },
+  individual: {
     features: [
       'Todas las funciones del editor',
       'Libros y páginas ilimitados',
@@ -192,14 +208,8 @@ export const PLANS: Plan[] = [
       'Soporte por correo',
     ],
     cta: 'Contratar',
-    note: 'Facturación anual: $1.800.000 COP al año.',
   },
-  {
-    id: 'escuela',
-    name: 'Escuela',
-    price: '$5.000.000 COP',
-    period: 'al año',
-    summary: 'Para colegios que trabajan por proyectos con varios cursos.',
+  escuela: {
     features: [
       'Hasta 5 profesores y 500 estudiantes',
       'Alojamiento, copias de seguridad y actualizaciones',
@@ -210,14 +220,9 @@ export const PLANS: Plan[] = [
     ],
     cta: 'Contratar',
     highlight: true,
-    note: 'Pago anual. Si superas los cupos, pasas al plan institucional.',
+    note: 'Si superas los cupos, pasas al plan institucional.',
   },
-  {
-    id: 'institucional',
-    name: 'Institucional y empresas',
-    price: '$20.000.000 COP',
-    period: 'al año',
-    summary: 'Para instituciones grandes y equipos corporativos.',
+  institucional: {
     features: [
       'Usuarios ilimitados',
       'Dominio e imagen propios',
@@ -226,17 +231,28 @@ export const PLANS: Plan[] = [
       'Formacion y acompañamiento continuo',
     ],
     cta: 'Contratar',
-    note: 'Pago anual.',
   },
-];
+};
+
+/** Para un plan creado desde el panel del que aqui todavia no se sabe nada. */
+export const MARKETING_POR_DEFECTO: PlanMarketing = {
+  features: [
+    'Todas las funciones del editor',
+    'Libros y páginas ilimitados',
+    'Enlaces para compartir y modo lectura',
+    'Soporte por correo',
+  ],
+  cta: 'Contratar',
+};
 
 export const FAQS: Faq[] = [
   {
     question: 'Como se contrata y como se factura?',
     answer:
       'Se paga con tarjeta en la propia web y la cuenta se crea en el mismo paso: al terminar ya ' +
-      'estas dentro del editor. Todos los planes son anuales; el Individual se anuncia por mes ' +
-      'solo para comparar, pero se cobra el año completo. En el extracto aparece como BookStudio.',
+      'estas dentro del editor. El plan Mensual se cobra una vez y dura un mes; los demas son ' +
+      'anuales, y el Individual se anuncia por mes solo para comparar aunque se cobre el año ' +
+      'completo. En el extracto aparece como BookStudio.',
   },
   {
     question: 'Que pasa si mi colegio supera los cupos del plan Escuela?',

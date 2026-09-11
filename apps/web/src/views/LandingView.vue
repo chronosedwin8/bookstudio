@@ -1,10 +1,13 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { useSeo } from '@/composables/useSeo';
 import { useRouter } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
 import { errorMessage } from '@/services/http';
-import { FAQS, FEATURES, PLANS, SITE, STEPS, USE_CASES } from '@/utils/site';
+import { billingApi } from '@/services/api';
+import type { BillingPlan } from '@/types/api';
+import { FAQS, FEATURES, MARKETING_POR_DEFECTO, PLAN_MARKETING, SITE, STEPS, USE_CASES } from '@/utils/site';
+import { notaDelPrecio, periodoTexto, pesos, precioDestacado } from '@/utils/precio';
 
 const auth = useAuthStore();
 const router = useRouter();
@@ -33,6 +36,50 @@ const toggleFaq = (index: number) => (openFaq.value = openFaq.value === index ? 
 
 const title = `${SITE.name} · ${SITE.tagline}`;
 
+/* --------------------------------------------------------------------------
+ * Precios
+ *
+ * Se piden al servidor, que es el mismo catalogo con el que se cobra. Si no se
+ * pueden cargar se dice y se ofrece el contacto: es preferible a enseñar un
+ * precio escrito a mano que quiza ya no sea el que se cobra.
+ * ----------------------------------------------------------------------- */
+const catalogo = ref<BillingPlan[]>([]);
+const preciosFallaron = ref(false);
+
+onMounted(async () => {
+  try {
+    catalogo.value = (await billingApi.config()).plans;
+  } catch {
+    preciosFallaron.value = true;
+  }
+});
+
+/** El catalogo del servidor con el texto de venta de cada plan pegado encima. */
+const planes = computed(() =>
+  catalogo.value.map((plan) => {
+    const texto = PLAN_MARKETING[plan.id] ?? MARKETING_POR_DEFECTO;
+    const notaPrecio = notaDelPrecio(plan);
+    return {
+      id: plan.id,
+      name: plan.name,
+      summary: plan.summary,
+      // La moneda va con el periodo, no pegada al numero: con cuatro planes en
+      // fila, "$20.000.000 COP" en grande no cabia y partia en dos lineas.
+      price: pesos(precioDestacado(plan)),
+      period: `COP ${periodoTexto(plan)}`,
+      features: texto.features,
+      cta: texto.cta,
+      highlight: texto.highlight === true,
+      note: [notaPrecio, texto.note].filter(Boolean).join(' ') || null,
+    };
+  }),
+);
+
+/** Con cuatro planes ya no caben tres columnas comodas. */
+const rejillaPlanes = computed(() =>
+  planes.value.length >= 4 ? 'md:grid-cols-2 xl:grid-cols-4' : 'lg:grid-cols-3',
+);
+
 /**
  * Datos estructurados: la ficha del producto y las preguntas frecuentes. El bloque
  * FAQPage es el que permite que las respuestas salgan desplegadas en el buscador.
@@ -46,12 +93,12 @@ const structuredData = computed(() => [
     operatingSystem: 'Navegador web',
     description: SITE.description,
     inLanguage: 'es',
-    // Los importes van sin separadores: schema.org espera un numero, no texto.
-    offers: PLANS.map((plan) => ({
+    // schema.org espera un numero, asi que va el importe que se cobra de verdad.
+    offers: catalogo.value.map((plan) => ({
       '@type': 'Offer',
       name: plan.name,
       description: plan.summary,
-      price: plan.price.replace(/[^\d]/g, ''),
+      price: String(plan.amountCop),
       priceCurrency: 'COP',
       availability: 'https://schema.org/InStock',
     })),
@@ -71,7 +118,9 @@ useSeo({
   title,
   description: SITE.description,
   path: '/',
-  structuredData: structuredData.value,
+  // Como funcion: los precios llegan del servidor despues de montar y el JSON-LD
+  // tiene que rehacerse cuando llegan.
+  structuredData: () => structuredData.value,
 });
 
 const NAV = [
@@ -252,13 +301,23 @@ const NAV = [
           <div class="mx-auto max-w-2xl text-center">
             <h2 class="text-3xl font-black">Precios sin letra pequeña</h2>
             <p class="mt-3 text-slate-300">
-              Tres planes, pago anual y factura a nombre de tu centro o empresa.
+              Desde un mes suelto hasta la licencia de todo el centro, con factura a tu nombre.
             </p>
           </div>
 
-          <div class="mt-10 grid items-start gap-6 lg:grid-cols-3">
+          <p v-if="!planes.length && !preciosFallaron" class="mt-10 text-center text-sm text-slate-400">
+            Cargando precios...
+          </p>
+
+          <p v-else-if="preciosFallaron" class="mt-10 text-center text-sm text-slate-300">
+            Ahora mismo no podemos mostrar los precios.
+            <a :href="`mailto:${SITE.email}`" class="font-bold text-brand-300 underline">Escríbenos</a>
+            y te pasamos el detalle.
+          </p>
+
+          <div v-else class="mt-10 grid items-start gap-6" :class="rejillaPlanes">
             <article
-              v-for="plan in PLANS"
+              v-for="plan in planes"
               :key="plan.id"
               class="rounded-2xl p-7"
               :class="plan.highlight
@@ -278,12 +337,14 @@ const NAV = [
               </p>
 
               <p class="mt-5">
-                <span class="text-4xl font-black" :class="plan.highlight ? 'text-slate-900' : 'text-white'">
-                  {{ plan.price }}
-                </span>
-                <span class="ml-1 text-sm" :class="plan.highlight ? 'text-slate-500' : 'text-slate-400'">
-                  {{ plan.period }}
-                </span>
+                <span
+                  class="block text-3xl font-black tracking-tight"
+                  :class="plan.highlight ? 'text-slate-900' : 'text-white'"
+                >{{ plan.price }}</span>
+                <span
+                  class="block text-sm"
+                  :class="plan.highlight ? 'text-slate-500' : 'text-slate-400'"
+                >{{ plan.period }}</span>
               </p>
 
               <ul class="mt-5 space-y-2 text-sm">

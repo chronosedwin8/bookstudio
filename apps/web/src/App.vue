@@ -1,13 +1,25 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue';
-import { useRouter } from 'vue-router';
+import { computed, ref, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import CambiarClaveDialog from '@/components/CambiarClaveDialog.vue';
 import { clientsApi } from '@/services/api';
 import { useAuthStore } from '@/stores/auth';
 
 const auth = useAuthStore();
 const router = useRouter();
+const route = useRoute();
 const cambiarClave = ref(false);
+
+/**
+ * La portada trae su propia cabecera, con el logotipo y el menu comercial.
+ *
+ * Si ademas se pintaba esta, quien tenia la sesion abierta veia dos barras
+ * apiladas, las dos con el mismo logotipo. Manda la de la pagina.
+ */
+const SIN_CABECERA = new Set(['landing']);
+const conCabecera = computed(
+  () => auth.isAuthenticated && !SIN_CABECERA.has(String(route.name ?? '')),
+);
 
 /**
  * Si esta persona tiene cuenta de cliente, para pintar "Mi cuenta".
@@ -43,32 +55,42 @@ function handleLogout(): void {
     nada y el lienzo del editor y del lector crecian hasta desbordar la ventana.
   -->
   <div class="flex h-dvh flex-col overflow-hidden">
-    <header v-if="auth.isAuthenticated" class="shrink-0 border-b border-slate-200 bg-white">
-      <div class="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
+    <header v-if="conCabecera" class="shrink-0 border-b border-slate-200 bg-white">
+      <!--
+        Los enlaces van pegados al logotipo y la cuenta se queda sola a la derecha,
+        separada por una linea. Antes iba todo amontonado en el mismo grupo y, con
+        cada enlace nuevo, el nombre y el boton de salir quedaban mas apretados.
+        `flex-wrap` deja que en una pantalla estrecha los enlaces bajen de linea en
+        vez de desbordarse o comprimir el resto.
+      -->
+      <div class="mx-auto flex max-w-6xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3">
         <RouterLink :to="{ name: 'dashboard' }" class="flex items-center gap-2 font-black text-brand-700">
           <span class="grid h-8 w-8 place-items-center rounded-lg bg-brand-600 text-white">B</span>
           <span class="text-lg">BookStudio</span>
         </RouterLink>
 
-        <div class="flex items-center gap-3">
+        <nav aria-label="Secciones" class="flex flex-wrap items-center gap-x-5 gap-y-1 text-sm">
           <!-- El mural lo ve todo el mundo, tenga cuenta o no; aqui el enlace es
                para quien publica y quiere comprobar como ha quedado. -->
-          <RouterLink
-            :to="{ name: 'mural' }"
-            class="text-sm text-slate-600 hover:text-brand-700"
-          >Mural</RouterLink>
+          <RouterLink :to="{ name: 'mural' }" class="enlace-cabecera">Mural</RouterLink>
 
           <RouterLink
             v-if="auth.user?.role === 'admin'"
             :to="{ name: 'admin-clients' }"
-            class="text-sm text-slate-600 hover:text-brand-700"
+            class="enlace-cabecera"
           >Clientes</RouterLink>
 
           <RouterLink
             v-if="auth.user?.role === 'admin'"
             :to="{ name: 'admin-users' }"
-            class="text-sm text-slate-600 hover:text-brand-700"
+            class="enlace-cabecera"
           >Usuarios</RouterLink>
+
+          <RouterLink
+            v-if="auth.user?.role === 'admin'"
+            :to="{ name: 'admin-plans' }"
+            class="enlace-cabecera"
+          >Planes</RouterLink>
 
           <!--
             Solo a quien tiene cuenta de cliente. Se consulta una vez al entrar: un
@@ -77,9 +99,12 @@ function handleLogout(): void {
           <RouterLink
             v-if="esCliente"
             :to="{ name: 'client-portal' }"
-            class="text-sm text-slate-600 hover:text-brand-700"
+            class="enlace-cabecera"
           >Mi cuenta</RouterLink>
+        </nav>
 
+        <!-- `ms-auto` empuja la cuenta al extremo; al bajar de linea sigue a la derecha. -->
+        <div class="ms-auto flex items-center gap-3 border-s border-slate-200 ps-4">
           <!-- Cambiar la contrasena: al alcance de todos, tambien del alumnado -->
           <button
             type="button"

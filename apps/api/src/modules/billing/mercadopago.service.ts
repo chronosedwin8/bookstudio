@@ -158,13 +158,18 @@ export interface CreatePreapprovalInput {
   reason: string;
   externalReference: string;
   backUrl: string;
+  /**
+   * Cada cuantos meses se vuelve a cobrar. Tiene que coincidir con lo que dura la
+   * licencia: si no, o se cobra antes de que venza o se regala el tiempo de en medio.
+   */
+  periodMonths: number;
   /** Token de tarjeta: con el la suscripcion queda autorizada sin pasar por MP. */
   cardTokenId?: string;
 }
 
 /**
- * Crea la suscripcion anual. Si se envia una tarjeta ya tokenizada queda
- * autorizada directamente; si no, Mercado Pago devuelve un enlace de autorizacion.
+ * Crea la suscripcion. Si se envia una tarjeta ya tokenizada queda autorizada
+ * directamente; si no, Mercado Pago devuelve un enlace de autorizacion.
  */
 export async function createPreapproval(input: CreatePreapprovalInput): Promise<MpPreapproval> {
   return request<MpPreapproval>('/preapproval', {
@@ -176,10 +181,14 @@ export async function createPreapproval(input: CreatePreapprovalInput): Promise<
       back_url: input.backUrl,
       ...(input.cardTokenId ? { card_token_id: input.cardTokenId, status: 'authorized' } : {}),
       auto_recurring: {
-        // Doce meses, no "1 ano": Mercado Pago solo admite [days, months] y
-        // rechazaba la suscripcion con 400 "Invalid value for frequency type".
+        // Siempre en meses, nunca en anos: Mercado Pago solo admite [days, months]
+        // y rechazaba la suscripcion con 400 "Invalid value for frequency type".
         // Comprobado contra su API: con years da error, con 12 months pasa.
-        frequency: 12,
+        //
+        // Y el numero sale del plan, no es fijo. Estuvo fijo en 12 mientras todos
+        // los planes eran anuales; con el plan de un mes, eso habria cobrado la
+        // renovacion un ano despues de que la licencia venciera.
+        frequency: input.periodMonths,
         frequency_type: 'months',
         transaction_amount: input.amountCop,
         currency_id: 'COP',

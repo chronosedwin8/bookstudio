@@ -8,14 +8,22 @@ import { onBeforeUnmount, watchEffect } from 'vue';
  * pero los rastreadores de redes sociales no siempre: por eso los valores por
  * defecto de la portada estan ademas escritos a mano en index.html.
  */
+type Datos = Record<string, unknown>;
+
 export interface SeoOptions {
   title: string;
   description: string;
   /** Ruta canonica, sin dominio. */
   path?: string;
   image?: string;
-  /** JSON-LD; se inyecta y se retira con la vista. */
-  structuredData?: Record<string, unknown> | Record<string, unknown>[];
+  /**
+   * JSON-LD; se inyecta y se retira con la vista.
+   *
+   * Puede ser una funcion cuando los datos no estan listos al montar (por ejemplo
+   * los precios, que llegan del servidor): al leerlos dentro del efecto, el
+   * bloque se rehace solo en cuanto cambian.
+   */
+  structuredData?: Datos | Datos[] | (() => Datos | Datos[] | null);
 }
 
 const MANAGED = 'data-seo';
@@ -64,12 +72,15 @@ export function useSeo(options: SeoOptions): void {
     setMeta('meta[name="twitter:description"]', 'name', 'twitter:description', options.description);
     setMeta('meta[name="twitter:image"]', 'name', 'twitter:image', image);
 
-    if (!options.structuredData) return;
+    const datos =
+      typeof options.structuredData === 'function' ? options.structuredData() : options.structuredData;
+    if (!datos) return;
+
     scriptTag?.remove();
     scriptTag = document.createElement('script');
     scriptTag.type = 'application/ld+json';
     scriptTag.setAttribute(MANAGED, '');
-    scriptTag.textContent = JSON.stringify(options.structuredData);
+    scriptTag.textContent = JSON.stringify(datos);
     document.head.appendChild(scriptTag);
   });
 

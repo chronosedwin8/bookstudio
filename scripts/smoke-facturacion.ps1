@@ -57,7 +57,7 @@ $config = Test-Step 'GET /billing/config expone planes y clave publica' {
     $r = Invoke-RestMethod -Uri "$base/billing/config"
     if (-not $r.enabled) { throw 'La facturacion deberia estar activa' }
     if ($r.currency -ne 'COP') { throw "Moneda: $($r.currency)" }
-    if ($r.plans.Count -ne 3) { throw "Planes: $($r.plans.Count)" }
+    if ($r.plans.Count -lt 4) { throw "Planes: $($r.plans.Count)" }
     $r
 }
 
@@ -80,13 +80,23 @@ Test-Step 'La clave publica se expone; el token de acceso NO' {
     if ($encontradas[0].Length -gt 60) { throw 'La credencial expuesta es demasiado larga' }
 }
 
-Test-Step 'Los importes son los acordados' {
-    $esperado = @{ individual = 1800000; escuela = 5000000; institucional = 20000000 }
+# Los importes ya no se escriben aqui: se configuran desde el panel y comprobar
+# una cifra concreta solo serviria para que la prueba fallara cada vez que se
+# cambia un precio. Lo que si tiene que cumplirse siempre es la forma.
+Test-Step 'Cada plan trae un importe entero y un periodo con sentido' {
     foreach ($plan in $config.plans) {
-        if ($plan.amountCop -ne $esperado[$plan.id]) {
-            throw "$($plan.id): $($plan.amountCop), esperaba $($esperado[$plan.id])"
-        }
+        if ($plan.amountCop -le 0) { throw "$($plan.id): importe $($plan.amountCop)" }
+        if ($plan.amountCop -ne [math]::Floor($plan.amountCop)) { throw "$($plan.id): el COP no lleva decimales" }
+        if ($plan.periodMonths -lt 1 -or $plan.periodMonths -gt 60) { throw "$($plan.id): periodo $($plan.periodMonths)" }
+        if (-not $plan.name) { throw "$($plan.id): sin nombre" }
     }
+}
+
+Test-Step 'El plan Mensual cuesta 10.000 COP y dura un mes' {
+    $mensual = $config.plans | Where-Object { $_.id -eq 'mensual' }
+    if (-not $mensual) { throw 'No se ofrece el plan mensual' }
+    if ($mensual.amountCop -ne 10000) { throw "Importe: $($mensual.amountCop)" }
+    if ($mensual.periodMonths -ne 1) { throw "Periodo: $($mensual.periodMonths)" }
 }
 
 Test-Step 'Los cupos del plan Escuela son 5 docentes y 500 estudiantes' {
@@ -327,6 +337,90 @@ Test-Step 'Una cuenta normal no tiene esos cupos' {
     }
     $d = (Invoke-Api GET "/books/$($l1.id)" -Token $dToken).book
     if ($d.pages.Count -lt 4) { throw "Paginas: $($d.pages.Count)" }
+}
+
+# --- Planes configurables ---
+#
+# Cambiar un precio es tocar dinero: se comprueba que solo llega quien debe, que
+# los disparates se rechazan y que la portada refleja el cambio en el acto. Todo
+# se hace sobre un plan de usar y tirar, no sobre los que se venden.
+Write-Host "`n-- Planes configurables --" -ForegroundColor Cyan
+
+Test-Step 'El catalogo completo exige ser administracion -> 403' {
+    Assert-Status { Invoke-Api GET '/billing/plans' -Token $dToken } 403
+}
+
+Test-Step 'Cambiar un precio exige ser administracion -> 403' {
+    Assert-Status { Invoke-Api PATCH '/billing/plans/mensual' @{ amountCop = 1000 } -Token $dToken } 403
+}
+
+Test-Step 'Cambiar un precio sin sesion -> 401' {
+    Assert-Status {
+        Invoke-RestMethod -Method Patch -Uri "$base/billing/plans/mensual" `
+            -ContentType 'application/json' -Body '{"amountCop":1000}'
+    } 401
+}
+
+$catalogo = Test-Step 'La administracion ve el catalogo completo' {
+    $r = (Invoke-Api GET '/billing/plans' -Token $aToken).plans
+    if ($r.Count -lt 4) { throw "Planes: $($r.Count)" }
+    foreach ($plan in $r) {
+        if ($null -eq $plan.visible) { throw "$($plan.id): falta visible" }
+        if ($null -eq $plan.sortOrder) { throw "$($plan.id): falta sortOrder" }
+    }
+    $r
+}
+
+$original = $catalogo | Where-Object { $_.id -eq 'mensual' }
+
+Test-Step 'Un importe por debajo del minimo se rechaza -> 400' {
+    Assert-Status { Invoke-Api PATCH '/billing/plans/mensual' @{ amountCop = 1 } -Token $aToken } 400
+}
+
+Test-Step 'Un importe con decimales se rechaza -> 400' {
+    Assert-Status { Invoke-Api PATCH '/billing/plans/mensual' @{ amountCop = 10000.5 } -Token $aToken } 400
+}
+
+Test-Step 'Un periodo imposible se rechaza -> 400' {
+    Assert-Status { Invoke-Api PATCH '/billing/plans/mensual' @{ periodMonths = 0 } -Token $aToken } 400
+}
+
+Test-Step 'Un plan que no existe -> 404' {
+    Assert-Status { Invoke-Api PATCH '/billing/plans/no-existe' @{ amountCop = 5000 } -Token $aToken } 404
+}
+
+Test-Step 'El precio cambiado se ve en la portada al momento' {
+    $null = Invoke-Api PATCH '/billing/plans/mensual' @{ amountCop = 13000 } -Token $aToken
+    $r = Invoke-RestMethod -Uri "$base/billing/config"
+    $m = $r.plans | Where-Object { $_.id -eq 'mensual' }
+    if ($m.amountCop -ne 13000) { throw "La portada dice $($m.amountCop)" }
+}
+
+Test-Step 'Un plan retirado deja de ofrecerse y no se puede contratar' {
+    $null = Invoke-Api PATCH '/billing/plans/mensual' @{ visible = $false } -Token $aToken
+
+    $r = Invoke-RestMethod -Uri "$base/billing/config"
+    if ($r.plans | Where-Object { $_.id -eq 'mensual' }) { throw 'Sigue apareciendo en la portada' }
+
+    Assert-Status {
+        Invoke-Api POST '/billing/checkout' @{
+            plan = 'mensual'; paymentMethodId = 'visa'; installments = 1
+            payerEmail = 'prueba@test.local'; autoRenew = $false
+        } -Token $dToken
+    } 400
+
+    # Pero la administracion lo sigue viendo: las licencias vendidas apuntan a el.
+    $todos = (Invoke-Api GET '/billing/plans' -Token $aToken).plans
+    if (-not ($todos | Where-Object { $_.id -eq 'mensual' })) { throw 'Ha desaparecido del catalogo' }
+}
+
+Test-Step 'El plan mensual queda como estaba' {
+    $r = Invoke-Api PATCH '/billing/plans/mensual' @{
+        amountCop = $original.amountCop; monthlyCop = $original.monthlyCop
+        periodMonths = $original.periodMonths; visible = $true
+    } -Token $aToken
+    if ($r.plan.amountCop -ne $original.amountCop) { throw "Quedo en $($r.plan.amountCop)" }
+    if (-not $r.plan.visible) { throw 'Quedo retirado' }
 }
 
 Write-Host "`n== Resultado: $pass OK / $fail FAIL ==" -ForegroundColor $(if ($fail -eq 0) { 'Green' } else { 'Red' })

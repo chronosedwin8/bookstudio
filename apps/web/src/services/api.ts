@@ -21,6 +21,7 @@ import type {
   QuizStatus,
   QuizSubmitResult,
   BillingConfig,
+  PlanAdmin,
   Book,
   BookActivity,
   CheckoutResult,
@@ -573,6 +574,16 @@ export const billingApi = {
   async allSubscriptions() {
     const { data } = await http.get<{ subscriptions: Subscription[] }>('/billing/subscriptions');
     return data.subscriptions;
+  },
+
+  /** Administracion: el catalogo entero, tambien los planes retirados. */
+  async plans() {
+    const { data } = await http.get<{ plans: PlanAdmin[] }>('/billing/plans');
+    return data.plans;
+  },
+  async updatePlan(id: string, cambio: Partial<Omit<PlanAdmin, 'id'>>) {
+    const { data } = await http.patch<{ plan: PlanAdmin }>(`/billing/plans/${id}`, cambio);
+    return data.plan;
   },
 };
 

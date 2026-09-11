@@ -180,7 +180,7 @@ async function removeLibrary(id: string, name: string): Promise<void> {
     <p class="mt-1 text-sm text-slate-500">Tus libros personales y tus bibliotecas de clase</p>
 
     <section class="mt-6">
-      <div class="mb-3 flex flex-wrap items-end justify-between gap-3">
+      <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 class="font-bold text-slate-800">Mis libros</h2>
           <p class="text-xs text-slate-500">
@@ -189,7 +189,13 @@ async function removeLibrary(id: string, name: string): Promise<void> {
           </p>
         </div>
 
-        <form class="flex flex-wrap items-end gap-2" @submit.prevent="createPersonalBook">
+        <!--
+          `sm:flex-nowrap`: los campos llevan `.input`, que es `w-full`, y eso hacia
+          que el formulario se quedara en el ancho justo de los dos campos y el boton
+          bajara solo a otra linea, flotando encima del titulo. En pantalla estrecha
+          si debe poder partirse.
+        -->
+        <form class="flex flex-wrap items-center gap-2 sm:flex-nowrap" @submit.prevent="createPersonalBook">
           <input
             v-model.trim="newBookTitle"
             type="text"
@@ -198,14 +204,14 @@ async function removeLibrary(id: string, name: string): Promise<void> {
             placeholder="Título del libro"
             aria-label="Título del libro personal"
           />
-          <select v-model="newBookFormat" class="input max-w-[9rem]" aria-label="Formato de página">
+          <select v-model="newBookFormat" class="input w-[9rem] shrink-0" aria-label="Formato de página">
             <option value="square">Cuadrado 1:1</option>
             <option value="portrait">Vertical 3:4</option>
             <option value="landscape">Apaisado 4:3</option>
           </select>
           <button
             type="submit"
-            class="btn-primary"
+            class="btn-primary shrink-0 whitespace-nowrap"
             :disabled="busy || (auth.isTrial && personalBooks.length >= 1)"
             :title="auth.isTrial && personalBooks.length >= 1
               ? 'La prueba permite un libro'

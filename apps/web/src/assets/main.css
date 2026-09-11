@@ -74,6 +74,14 @@
   .label {
     @apply mb-1 block text-sm font-medium text-slate-700;
   }
+  /* Los enlaces de la barra superior: el activo se marca solo, sin repetirlo en cada uno. */
+  .enlace-cabecera {
+    @apply whitespace-nowrap text-slate-600 transition hover:text-brand-700;
+  }
+  .enlace-cabecera.router-link-active {
+    @apply font-bold text-brand-700;
+  }
+
   .card {
     @apply rounded-xl border border-slate-200 bg-white shadow-sm;
   }

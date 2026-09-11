@@ -4,7 +4,7 @@ import { env } from '../../config/env.js';
 import { HttpError } from '../../lib/http-error.js';
 import { signAccessToken } from '../../lib/tokens.js';
 import * as mp from './mercadopago.service.js';
-import { addOneYear, PLANS, type PlanId } from './plans.js';
+import { addMonths, getPlan, getPlanParaContratar, nombrePlan, type PlanId } from './plans.js';
 
 /**
  * Suscripciones, licencias y facturas.
@@ -74,7 +74,7 @@ function toSubscription(row: SubscriptionRow): Subscription {
   return {
     id: row.id,
     plan: row.plan,
-    planName: PLANS[row.plan]?.name ?? row.plan,
+    planName: nombrePlan(row.plan),
     status: row.status,
     organization: row.organization,
     amountCop: Number(row.amount_cop),
@@ -151,6 +151,18 @@ export async function listInvoices(ownerId: string): Promise<Invoice[]> {
 
 // --- Contratacion ---
 
+/**
+ * Lo que dura una licencia, leido del plan en la propia consulta.
+ *
+ * Se calcula en SQL y no en JavaScript porque estas actualizaciones ocurren dentro
+ * de la transaccion del aviso de pago, donde no conviene ir y volver a la base.
+ * Si el plan hubiera desaparecido se toma un ano, que es lo que eran todos los
+ * planes hasta que aparecio el mensual.
+ */
+const DURACION_DEL_PLAN = `(
+  COALESCE((SELECT p.period_months FROM plans p WHERE p.id = s.plan), 12) * INTERVAL '1 month'
+)`;
+
 export interface CheckoutInput {
   plan: PlanId;
   token?: string;
@@ -184,8 +196,7 @@ export async function checkout(
   ownerEmail: string,
   input: CheckoutInput,
 ): Promise<CheckoutResult> {
-  const plan = PLANS[input.plan];
-  if (!plan) throw HttpError.badRequest('Plan desconocido');
+  const plan = await getPlanParaContratar(input.plan);
 
   const reference = mp.newExternalReference(`bs-${input.plan}`);
 
@@ -194,7 +205,7 @@ export async function checkout(
     token: input.token,
     paymentMethodId: input.paymentMethodId,
     amountCop: plan.amountCop,
-    description: `BookStudio · Plan ${plan.name} (12 meses)`,
+    description: `BookStudio · Plan ${plan.name} (${plan.periodMonths} ${plan.periodMonths === 1 ? 'mes' : 'meses'})`,
     installments: input.installments,
     payerEmail: input.payerEmail || ownerEmail,
     payerDocType: input.payerDocType,
@@ -224,7 +235,7 @@ export async function checkout(
         false, // la renovacion se activa despues, solo si el cobro sale bien
         input.payerEmail || ownerEmail,
         aprobado ? ahora : null,
-        aprobado ? addOneYear(ahora) : null,
+        aprobado ? addMonths(ahora, plan.periodMonths) : null,
       ],
     );
 
@@ -267,6 +278,7 @@ export async function checkout(
         payerEmail: input.payerEmail || ownerEmail,
         amountCop: plan.amountCop,
         reason: `BookStudio · Plan ${plan.name}`,
+        periodMonths: plan.periodMonths,
         externalReference: `renovacion-${reference}`,
         backUrl: `${env.APP_URL || 'https://bookstudio.uk'}/clientes/facturacion`,
       });
@@ -321,8 +333,7 @@ const KEEP_ACCOUNT = new Set(['approved', 'authorized', 'in_process', 'pending']
  * en tramite (PSE, Efecty) la cuenta se conserva y el webhook la activa despues.
  */
 export async function signupAndCheckout(input: SignupCheckoutInput): Promise<SignupCheckoutResult> {
-  const plan = PLANS[input.plan];
-  if (!plan) throw HttpError.badRequest('Plan desconocido');
+  const plan = await getPlanParaContratar(input.plan);
 
   const email = input.payerEmail.trim().toLowerCase();
 
@@ -396,11 +407,14 @@ export async function setAutoRenew(
       [row.id],
     );
   } else {
-    const plan = PLANS[row.plan];
+    // El ritmo del cobro lo dice el plan contratado. Si ese plan ya no existiera,
+    // se asume anual, que es lo que eran todos hasta ahora.
+    const plan = await getPlan(row.plan);
     const preapproval = await mp.createPreapproval({
       payerEmail: row.payer_email ?? '',
       amountCop: Number(row.amount_cop),
-      reason: `BookStudio · Plan ${plan?.name ?? row.plan}`,
+      reason: `BookStudio · Plan ${nombrePlan(row.plan)}`,
+      periodMonths: plan?.periodMonths ?? 12,
       externalReference: mp.newExternalReference(`bs-renov-${row.id}`),
       backUrl: `${env.APP_URL || 'https://bookstudio.uk'}/clientes/facturacion`,
     });
@@ -461,12 +475,14 @@ export async function handlePaymentNotification(paymentId: string): Promise<void
       const subscriptionId = existente.rows[0].subscription_id;
       if (subscriptionId && aprobado) {
         // Un pago que se aprueba mas tarde (PSE, Efecty) activa la licencia.
+        // La duracion la dice el plan contratado: con el plan de un mes, dar un
+        // ano seria regalar once. Si el plan ya no existiera, se asume anual.
         await client.query(
-          `UPDATE subscriptions
+          `UPDATE subscriptions s
            SET status = 'activa',
-               starts_at = COALESCE(starts_at, NOW()),
-               expires_at = COALESCE(expires_at, NOW() + INTERVAL '1 year')
-           WHERE id = $1 AND status <> 'cancelada'`,
+               starts_at = COALESCE(s.starts_at, NOW()),
+               expires_at = COALESCE(s.expires_at, NOW() + ${DURACION_DEL_PLAN})
+           WHERE s.id = $1 AND s.status <> 'cancelada'`,
           [subscriptionId],
         );
       }
@@ -475,17 +491,18 @@ export async function handlePaymentNotification(paymentId: string): Promise<void
 
     if (!ownerId) return;
 
-    // Renovacion: se prolonga la licencia un año mas desde su vencimiento.
+    // Renovacion: se prolonga la licencia otro periodo desde su vencimiento, el
+    // que dure el plan. Cobrar cada mes y dar un ano de licencia seria un regalo.
     const suscripcion = await client.query<{ id: string }>(
-      `UPDATE subscriptions
+      `UPDATE subscriptions s
        SET status = 'activa',
-           expires_at = GREATEST(COALESCE(expires_at, NOW()), NOW()) + INTERVAL '1 year'
-       WHERE id = (
+           expires_at = GREATEST(COALESCE(s.expires_at, NOW()), NOW()) + ${DURACION_DEL_PLAN}
+       WHERE s.id = (
          SELECT id FROM subscriptions
          WHERE owner_id = $1 AND status <> 'cancelada'
          ORDER BY created_at DESC LIMIT 1
        )
-       RETURNING id`,
+       RETURNING s.id`,
       [ownerId],
     );
 

@@ -50,9 +50,14 @@ Write-Host "`n-- Embudo --" -ForegroundColor Cyan
 
 Test-Step 'Los planes son publicos, sin sesion' {
     $r = Invoke-RestMethod -Uri "$base/billing/config"
-    if ($r.plans.Count -ne 3) { throw "Planes: $($r.plans.Count)" }
+    # No se fija el numero: los planes se configuran desde el panel y pueden
+    # retirarse o anadirse sin que eso sea un fallo. Lo que no puede pasar es que
+    # la portada se quede sin nada que ofrecer, o con un plan sin precio.
+    if ($r.plans.Count -lt 1) { throw 'La portada no ofrece ningun plan' }
     foreach ($plan in $r.plans) {
         if ($plan.amountCop -le 0) { throw "$($plan.id) sin importe" }
+        if (-not $plan.name) { throw "$($plan.id) sin nombre" }
+        if ($plan.periodMonths -lt 1) { throw "$($plan.id) sin periodo" }
     }
 }
 

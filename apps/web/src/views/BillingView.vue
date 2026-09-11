@@ -177,7 +177,7 @@ onMounted(async () => {
               @change="toggleAutoRenew(($event.target as HTMLInputElement).checked)"
             />
             <span>
-              <span class="block text-sm font-semibold text-slate-800">Renovar automáticamente cada año</span>
+              <span class="block text-sm font-semibold text-slate-800">Renovar automáticamente al vencer</span>
               <span class="block text-xs text-slate-500">
                 Se cobrará {{ cop.format(subscription.amountCop) }} al vencimiento. Puedes desactivarlo
                 cuando quieras; la licencia sigue vigente hasta la fecha ya pagada.

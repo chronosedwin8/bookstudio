@@ -617,16 +617,30 @@ export interface PhidiasImportResult {
   skipped: number;
 }
 
-export type PlanId = 'individual' | 'escuela' | 'institucional';
+/**
+ * Los planes se configuran desde el panel, asi que ya no son una lista cerrada:
+ * el identificador es el que diga el servidor.
+ */
+export type PlanId = string;
 
 export interface BillingPlan {
   id: PlanId;
   name: string;
+  /** Lo que se cobra de una vez, por todo el periodo. */
   amountCop: number;
+  /** Solo para mostrarlo como "al mes"; el cobro siempre es amountCop. */
   monthlyCop: number | null;
+  /** Cuanto dura la licencia: 12 en los anuales, 1 en el mensual. */
+  periodMonths: number;
   summary: string;
   maxTeachers: number | null;
   maxStudents: number | null;
+}
+
+/** Un plan tal y como lo administra el panel, con los campos que solo ve la administracion. */
+export interface PlanAdmin extends BillingPlan {
+  visible: boolean;
+  sortOrder: number;
 }
 
 export interface BillingConfig {
