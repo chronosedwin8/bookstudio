@@ -60,12 +60,24 @@ const datosCompletos = computed(
 );
 
 const CONTENEDOR = 'mp-brick';
+const SDK_URL = 'https://sdk.mercadopago.com/js/v2';
 /** Si en este tiempo no hay formulario, algo lo esta bloqueando. */
 const ESPERA_MAXIMA_MS = 15_000;
+/**
+ * Y si el propio SDK no llega en este tiempo, se da por perdido.
+ *
+ * Una peticion que se queda colgada no dispara onload ni onerror: sin este plazo,
+ * la promesa no se resuelve nunca y la pantalla se queda en "Cargando el
+ * formulario seguro..." indefinidamente. Pasa con una VPN o una red que descarta
+ * los paquetes en silencio.
+ */
+const ESPERA_SDK_MS = 12_000;
 
 let mercadoPago: unknown = null;
 let brickController: { unmount?: () => void } | null = null;
 let sdkCargando: Promise<void> | null = null;
+let intentosSdk = 0;
+let vigilanteActual: { bloqueos: () => string[]; parar: () => void } | null = null;
 /** Distingue el montaje vigente de los que quedaron atras al cambiar de plan. */
 let generacion = 0;
 let temporizador: number | undefined;
@@ -76,12 +88,45 @@ function loadSdk(): Promise<void> {
   if (!sdkCargando) {
     sdkCargando = new Promise<void>((resolve, reject) => {
       const script = document.createElement('script');
-      script.src = 'https://sdk.mercadopago.com/js/v2';
-      script.onload = () => resolve();
-      script.onerror = () => {
+
+      /*
+       * En los reintentos se pide la MISMA direccion con un parametro distinto.
+       *
+       * Sin el, el navegador no vuelve a pedir nada: reaprovecha la peticion
+       * anterior, que sigue colgada, y "Reintentar" no hace nada aunque la red ya
+       * funcione. Comprobado: tras pulsarlo no salia ni una peticion. El SDK
+       * ignora el parametro y responde lo mismo byte a byte.
+       */
+      intentosSdk++;
+      script.src = intentosSdk === 1 ? SDK_URL : `${SDK_URL}?reintento=${intentosSdk}`;
+
+      /**
+       * Al fallar se olvida la promesa y se retira el <script> muerto.
+       *
+       * Sin esto, "Reintentar" devolvia la misma promesa ya rechazada (o peor,
+       * una que nunca se iba a resolver) y el boton no hacia absolutamente nada.
+       */
+      const rendirse = (motivo: string) => {
+        window.clearTimeout(plazo);
         sdkCargando = null;
-        reject(new Error('No se pudo cargar la pasarela de pago. Revisa tu conexion.'));
+        script.remove();
+        reject(new Error(motivo));
       };
+
+      const plazo = window.setTimeout(
+        () => rendirse(
+          'La pasarela de pago no respondio. Si usas una VPN o una red con filtros, ' +
+          'desactivalos para este sitio y reintenta.',
+        ),
+        ESPERA_SDK_MS,
+      );
+
+      script.onload = () => {
+        window.clearTimeout(plazo);
+        resolve();
+      };
+      script.onerror = () => rendirse('No se pudo cargar la pasarela de pago. Revisa tu conexion.');
+
       document.head.appendChild(script);
     });
   }
@@ -102,6 +147,31 @@ function desmontar(): void {
   brickController = null;
 }
 
+/**
+ * Escucha lo que la politica de seguridad del sitio bloquea mientras se monta el
+ * pago.
+ *
+ * El SDK de Mercado Pago inyecta un script en linea que nuestra politica no
+ * permite (y no se puede permitir por su huella: cambia en cada carga). Hoy el
+ * formulario funciona igual, comprobado en Chrome y en Firefox. Pero si algun dia
+ * dejara de funcionar por eso, el sintoma seria otra pantalla muerta sin
+ * explicacion. Asi al menos se dice en voz alta.
+ */
+function vigilanciaCsp(): { bloqueos: () => string[]; parar: () => void } {
+  const vistos: string[] = [];
+
+  const alBloquear = (evento: SecurityPolicyViolationEvent) => {
+    if (!/mercadopago|mlstatic|mercadolibre/i.test(evento.sourceFile ?? '')) return;
+    vistos.push(`${evento.violatedDirective} <- ${evento.blockedURI || evento.sourceFile}`);
+  };
+
+  document.addEventListener('securitypolicyviolation', alBloquear);
+  return {
+    bloqueos: () => vistos,
+    parar: () => document.removeEventListener('securitypolicyviolation', alBloquear),
+  };
+}
+
 async function mountBrick(): Promise<void> {
   if (!plan.value || !config.value?.enabled) return;
 
@@ -115,6 +185,41 @@ async function mountBrick(): Promise<void> {
   await nextTick();
   desmontar();
 
+  /*
+   * El reloj se pone ANTES de tocar nada, no despues de descargar el SDK.
+   *
+   * Estaba armado despues, asi que si la descarga se quedaba colgada no saltaba
+   * nunca: la pantalla decia "Cargando el formulario seguro..." indefinidamente,
+   * sin error y sin boton de reintentar. Comprobado dejando la peticion al SDK
+   * en el aire: 35 segundos y ni un aviso.
+   */
+  // Solo uno a la vez: cambiar de plan remonta, y el anterior sobraba.
+  vigilanteActual?.parar();
+  const vigilarCsp = vigilanciaCsp();
+  vigilanteActual = vigilarCsp;
+
+  temporizador = window.setTimeout(() => {
+    if (mio !== generacion || brickReady.value) return;
+
+    // El aviso general sirve para casi todos los casos. Solo si ademas la politica
+    // de seguridad bloqueo algo se dice, porque entonces el problema es nuestro y
+    // no hay nada que la persona pueda desactivar para arreglarlo.
+    const bloqueos = vigilarCsp.bloqueos();
+    brickFailed.value = bloqueos.length
+      ? 'El formulario de pago no cargo: la politica de seguridad de este sitio bloqueo una parte ' +
+        'de la pasarela. Es un fallo nuestro, no tuyo. Escribenos y lo resolvemos.'
+      : 'El formulario de pago no termino de cargar. Suele ser un bloqueador de anuncios, la ' +
+        'proteccion contra rastreo del navegador o una VPN: desactivalos para este sitio y reintenta.';
+
+    if (bloqueos.length) {
+      // eslint-disable-next-line no-console
+      console.warn('[pago] bloqueado por la politica de seguridad:', bloqueos.join(' | '));
+    }
+
+    // Se ha dado por perdido: ya no hace falta seguir escuchando.
+    vigilarCsp.parar();
+  }, ESPERA_MAXIMA_MS);
+
   try {
     await loadSdk();
     if (mio !== generacion) return;
@@ -126,16 +231,6 @@ async function mountBrick(): Promise<void> {
     mercadoPago ??= new (window as unknown as {
       MercadoPago: new (key: string, options: { locale: string }) => unknown;
     }).MercadoPago(config.value.publicKey, { locale: 'es-CO' });
-
-    // Sin esto, un bloqueador de anuncios deja "Cargando..." para siempre y nadie
-    // sabe que ha pasado.
-    temporizador = window.setTimeout(() => {
-      if (mio === generacion && !brickReady.value) {
-        brickFailed.value =
-          'El formulario de pago no termino de cargar. Casi siempre es un bloqueador de anuncios ' +
-          'o la proteccion contra rastreo del navegador: desactivalos para este sitio y reintenta.';
-      }
-    }, ESPERA_MAXIMA_MS);
 
     const correo = (form.value.email || auth.user?.email || '').trim();
 
@@ -151,6 +246,7 @@ async function mountBrick(): Promise<void> {
         onReady: () => {
           if (mio !== generacion) return;
           window.clearTimeout(temporizador);
+          vigilarCsp.parar();
           brickReady.value = true;
           brickFailed.value = null;
         },
@@ -161,6 +257,7 @@ async function mountBrick(): Promise<void> {
         onError: (brickError: { message?: string }) => {
           if (mio !== generacion) return;
           window.clearTimeout(temporizador);
+          vigilarCsp.parar();
           brickFailed.value = brickError?.message ?? 'No se pudo cargar el formulario de pago.';
         },
       },
@@ -168,12 +265,14 @@ async function mountBrick(): Promise<void> {
   } catch (err) {
     if (mio !== generacion) return;
     window.clearTimeout(temporizador);
+    vigilarCsp.parar();
     brickFailed.value = err instanceof Error ? err.message : 'No se pudo cargar el formulario de pago.';
   }
 }
 
 onBeforeUnmount(() => {
   window.clearTimeout(temporizador);
+  vigilanteActual?.parar();
   desmontar();
 });
 
