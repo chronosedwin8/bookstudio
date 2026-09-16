@@ -28,6 +28,19 @@ export interface User {
   createdAt: string;
 }
 
+export interface DestinoTransferencia {
+  libraryId: string;
+  libraryName: string;
+  bookId: string;
+}
+
+/** Resultado de pasar un libro de "Mis libros" a bibliotecas. */
+export interface TransferResult {
+  /** Donde quedo el original, si se traslado. */
+  moved: DestinoTransferencia | null;
+  copies: DestinoTransferencia[];
+}
+
 export interface Library {
   id: string;
   name: string;

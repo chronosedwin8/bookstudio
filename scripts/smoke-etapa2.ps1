@@ -1,6 +1,6 @@
 # Ensayo funcional de la Etapa 2 (libros, paginas, elementos, capas).
 $ErrorActionPreference = 'Stop'
-$base = 'http://localhost:4000/api'
+$base = if ($env:BOOKSTUDIO_API) { $env:BOOKSTUDIO_API } else { 'http://localhost:4000/api' }
 $pass = 0; $fail = 0
 
 function Test-Step {

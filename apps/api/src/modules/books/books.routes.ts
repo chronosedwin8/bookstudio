@@ -17,6 +17,7 @@ import {
   questionParamsSchema,
   reorderPagesSchema,
   shareSchema,
+  transferBookSchema,
   updateBookSchema,
   updatePageSchema,
 } from './books.schemas.js';
@@ -200,6 +201,16 @@ booksRouter.delete(
   asyncHandler(async (req, res) => {
     await service.deleteBook(req.params.id, req.auth!.userId);
     res.status(204).end();
+  }),
+);
+
+/** Pasa un libro de "Mis libros" a una o varias bibliotecas, moviendolo o copiandolo. */
+booksRouter.post(
+  '/:id/transfer',
+  validate(bookIdSchema, 'params'),
+  validate(transferBookSchema),
+  asyncHandler(async (req, res) => {
+    res.json(await service.transferBook(req.params.id, req.auth!.userId, req.body));
   }),
 );
 

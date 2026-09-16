@@ -114,6 +114,23 @@ export const gradeParamsSchema = bookIdSchema.extend({
   gradeId: z.string().uuid('El id de la valoracion debe ser un UUID'),
 });
 
+/**
+ * Pasar un libro de "Mis libros" a una o varias bibliotecas.
+ *
+ * `keepPersonal` decide si es un traslado o una copia: sin el, el libro se mueve a
+ * la primera biblioteca de la lista y en las demas queda una copia; con el, todas
+ * son copias y el original sigue donde estaba.
+ */
+export const transferBookSchema = z.object({
+  libraryIds: z
+    .array(z.string().uuid())
+    .min(1, 'Elige al menos una biblioteca')
+    .max(30, 'Como mucho 30 bibliotecas de una vez')
+    .transform((ids) => [...new Set(ids)]),
+  keepPersonal: z.boolean().default(false),
+});
+
+export type TransferBookInput = z.infer<typeof transferBookSchema>;
 export type CreateBookInput = z.infer<typeof createBookSchema>;
 export type UpdateBookInput = z.infer<typeof updateBookSchema>;
 export type ListBooksQuery = z.infer<typeof listBooksQuerySchema>;

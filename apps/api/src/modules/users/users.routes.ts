@@ -23,6 +23,7 @@ const createSchema = z.object({
 const updateSchema = z
   .object({
     fullName: z.string().min(2).max(100).trim().optional(),
+    email: z.string().trim().toLowerCase().email('Correo no válido').max(255).optional(),
     role: z.enum(['teacher', 'student', 'admin']).optional(),
     isActive: z.boolean().optional(),
   })
@@ -80,8 +81,9 @@ usersRouter.post(
 );
 
 /**
- * Corrige los datos de una cuenta. Un docente solo puede cambiar el nombre; el
- * rol y el alta o baja los reserva el servicio a la administracion.
+ * Corrige los datos de una cuenta. Un docente solo puede cambiar el nombre y el
+ * correo de su alumnado; el rol y el alta o baja los reserva el servicio a la
+ * administracion.
  */
 usersRouter.patch(
   '/:id',

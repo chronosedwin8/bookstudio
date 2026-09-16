@@ -5,7 +5,7 @@
 param([switch]$Generar)
 
 $ErrorActionPreference = 'Stop'
-$base = 'http://localhost:4000/api'
+$base = if ($env:BOOKSTUDIO_API) { $env:BOOKSTUDIO_API } else { 'http://localhost:4000/api' }
 $ok = 0; $fail = 0
 
 function Check($nombre, $condicion, $detalle = '') {
@@ -99,7 +99,7 @@ Check 'la imagen termina bien' ($estado.status -eq 'COMPLETED') "$($estado.statu
 Check 'devuelve una direccion nuestra' ($estado.fileUrl -and ($estado.fileUrl -like '/storage/*' -or $estado.fileUrl -like 'https://*')) "$($estado.fileUrl)"
 Check 'no devuelve la direccion de Magnific, que caduca' ($estado.fileUrl -notlike '*magnific*') "$($estado.fileUrl)"
 
-$url = if ($estado.fileUrl -like 'http*') { $estado.fileUrl } else { "http://localhost:4000$($estado.fileUrl)" }
+$url = if ($estado.fileUrl -like 'http*') { $estado.fileUrl } else { "$($base -replace '/api$', '')$($estado.fileUrl)" }
 $imagen = Invoke-WebRequest -Uri $url -UseBasicParsing
 Check 'la imagen se descarga de nuestro almacen' ($imagen.StatusCode -eq 200)
 Check 'y pesa lo que pesa una imagen' ($imagen.RawContentLength -gt 10000) "$($imagen.RawContentLength) bytes"

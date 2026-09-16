@@ -1,6 +1,6 @@
 # Ensayo funcional de la web comercial: portada, portal de clientes y solicitudes.
 $ErrorActionPreference = 'Stop'
-$base = 'http://localhost:4000/api'
+$base = if ($env:BOOKSTUDIO_API) { $env:BOOKSTUDIO_API } else { 'http://localhost:4000/api' }
 # El puerto de siempre puede estar ocupado por otro proyecto: con
 # BOOKSTUDIO_WEB se apunta a donde este de verdad.
 $web = if ($env:BOOKSTUDIO_WEB) { $env:BOOKSTUDIO_WEB } else { 'http://localhost:5173' }

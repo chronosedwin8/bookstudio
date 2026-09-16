@@ -2,6 +2,7 @@ import type { PoolClient } from 'pg';
 import { query, withTransaction } from '../../db/pool.js';
 import { HttpError } from '../../lib/http-error.js';
 import { getAccess } from '../libraries/libraries.service.js';
+import { copiarPaginas, type PaginaRow } from './copiar-paginas.js';
 import { TRIAL_LIMITS } from '../auth/trial.service.js';
 import { EDITOR_TOOLS, sanitizeTools } from '../canvas/tools.js';
 import type { ElementActions, ElementAnimation, ElementInteraction } from '../canvas/canvas.schemas.js';
@@ -16,6 +17,7 @@ import type {
   CreateBookInput,
   CreatePageInput,
   ListBooksQuery,
+  TransferBookInput,
   UpdateBookInput,
   UpdatePageInput,
 } from './books.schemas.js';
@@ -366,6 +368,113 @@ export async function createBook(userId: string, role: string, input: CreateBook
     await client.query('INSERT INTO pages (book_id, page_number) VALUES ($1, 1)', [inserted.rows[0].id]);
 
     return toBook(inserted.rows[0]);
+  });
+}
+
+export interface DestinoTransferencia {
+  libraryId: string;
+  libraryName: string;
+  bookId: string;
+}
+
+export interface TransferResult {
+  /** Donde ha ido a parar el original, si se ha trasladado. */
+  moved: DestinoTransferencia | null;
+  /** Las copias creadas, una por biblioteca. */
+  copies: DestinoTransferencia[];
+}
+
+/**
+ * Lleva un libro de "Mis libros" a una o varias bibliotecas.
+ *
+ * Al trasladar se MUEVE el libro, no se copia y se borra: asi conserva su enlace
+ * compartido, su sitio en el mural y su historial. Si se eligen varias
+ * bibliotecas, el original va a la primera y en las demas queda una copia.
+ *
+ * Todas las comprobaciones se hacen antes de tocar nada: o entra en todas las
+ * bibliotecas o no entra en ninguna, en vez de quedar a medias.
+ */
+export async function transferBook(
+  bookId: string,
+  userId: string,
+  input: TransferBookInput,
+): Promise<TransferResult> {
+  const { rows } = await query<{
+    id: string;
+    title: string;
+    library_id: string | null;
+    portfolio_id: string | null;
+    creator_id: string | null;
+    layout_format: string;
+    is_template: boolean;
+  }>(
+    `SELECT id, title, library_id, portfolio_id, creator_id, layout_format, is_template
+     FROM books WHERE id = $1`,
+    [bookId],
+  );
+  const libro = rows[0];
+
+  // "No existe" tambien para el libro ajeno: no se confirma que exista.
+  if (!libro || libro.creator_id !== userId) throw HttpError.notFound('Libro no encontrado');
+  if (libro.library_id) {
+    throw HttpError.badRequest('Ese libro ya está en una biblioteca; solo se transfieren los de Mis libros');
+  }
+
+  const { rows: bibliotecas } = await query<{ id: string; name: string }>(
+    'SELECT id, name FROM libraries WHERE id = ANY($1::uuid[])',
+    [input.libraryIds],
+  );
+  const nombre = new Map(bibliotecas.map((b) => [b.id, b.name]));
+  const faltan = input.libraryIds.filter((id) => !nombre.has(id));
+  if (faltan.length) throw HttpError.notFound('Alguna de las bibliotecas elegidas no existe');
+
+  // Permiso en cada una ANTES de empezar: acceso, plantillas y cupo del alumnado.
+  for (const libraryId of input.libraryIds) {
+    try {
+      await assertCanCreateInLibrary(libraryId, userId, libro.is_template);
+    } catch (error) {
+      if (error instanceof HttpError) {
+        throw new HttpError(error.status, `«${nombre.get(libraryId)}»: ${error.message}`, error.code);
+      }
+      throw error;
+    }
+  }
+
+  const copiasACrear = input.keepPersonal ? input.libraryIds : input.libraryIds.slice(1);
+  if (copiasACrear.length) await assertTrialAllowsNewBook(userId);
+
+  const { rows: paginas } = await query<PaginaRow>(
+    `SELECT id, page_number, background_color, background_pattern
+     FROM pages WHERE book_id = $1 ORDER BY page_number`,
+    [bookId],
+  );
+
+  return withTransaction(async (client) => {
+    const copies: DestinoTransferencia[] = [];
+
+    for (const libraryId of copiasACrear) {
+      // La copia nace privada y fuera del mural: publicar es una decision que se
+      // toma en cada biblioteca, no algo que se herede sin darse cuenta.
+      const nueva = await client.query<{ id: string }>(
+        `INSERT INTO books (title, library_id, portfolio_id, creator_id, layout_format, is_template)
+         VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+        [libro.title, libraryId, libro.portfolio_id, userId, libro.layout_format, libro.is_template],
+      );
+      await copiarPaginas(client, paginas, nueva.rows[0].id, 'final');
+      copies.push({ libraryId, libraryName: nombre.get(libraryId)!, bookId: nueva.rows[0].id });
+    }
+
+    let moved: DestinoTransferencia | null = null;
+    if (!input.keepPersonal) {
+      const destino = input.libraryIds[0];
+      await client.query(
+        'UPDATE books SET library_id = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $1',
+        [bookId, destino],
+      );
+      moved = { libraryId: destino, libraryName: nombre.get(destino)!, bookId };
+    }
+
+    return { moved, copies };
   });
 }
 

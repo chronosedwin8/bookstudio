@@ -157,9 +157,17 @@ export async function createUser(input: CreateUserInput): Promise<ManagedUser> {
 
 export interface UpdateUserInput {
   fullName?: string;
+  email?: string;
   role?: UserRole;
   isActive?: boolean;
 }
+
+/**
+ * Dominios que usa la propia aplicacion para cuentas sin correo real (acceso con
+ * QR, pruebas sin registro). Poner uno de estos a mano confundiria esas cuentas
+ * con las que genera el sistema.
+ */
+const DOMINIOS_RESERVADOS = ['@qr.local', '@trial.local'];
 
 export async function updateUser(
   userId: string,
@@ -168,7 +176,7 @@ export async function updateUser(
   actorRole = 'admin',
 ): Promise<ManagedUser> {
   /*
-   * Un docente puede corregir el nombre de su alumnado, y nada mas. El rol y el
+   * Un docente puede corregir el nombre y el correo de su alumnado, y nada mas. El rol y el
    * alta o baja de una cuenta son decisiones del centro, no de una clase: un
    * alumno suele estar en varias bibliotecas y desactivarlo desde una dejaria a
    * los demas docentes sin saber por que ese alumno dejo de entrar.
@@ -187,7 +195,16 @@ export async function updateUser(
     throw HttpError.badRequest('No puedes desactivar tu propia cuenta');
   }
 
-  const columns: Record<string, string> = { fullName: 'full_name', role: 'role', isActive: 'is_active' };
+  if (input.email !== undefined && DOMINIOS_RESERVADOS.some((d) => input.email!.endsWith(d))) {
+    throw HttpError.badRequest('Ese dominio lo reserva la aplicación; usa un correo real');
+  }
+
+  const columns: Record<string, string> = {
+    fullName: 'full_name',
+    email: 'email',
+    role: 'role',
+    isActive: 'is_active',
+  };
   const sets: string[] = [];
   const values: unknown[] = [userId];
 
@@ -199,10 +216,50 @@ export async function updateUser(
   }
   if (!sets.length) throw HttpError.badRequest('No hay campos para actualizar');
 
-  const { rowCount } = await query(`UPDATE users SET ${sets.join(', ')} WHERE id = $1`, values);
-  if (!rowCount) throw HttpError.notFound('Usuario no encontrado');
+  /*
+   * Da igual de donde venga la cuenta, a mano o de Phidias: el correo se puede
+   * cambiar. Phidias reconoce a su alumnado por su identificador propio, no por el
+   * correo, asi que la siguiente importacion no lo duplica ni se lo vuelve a pisar.
+   */
+  try {
+    const { rowCount } = await query(`UPDATE users SET ${sets.join(', ')} WHERE id = $1`, values);
+    if (!rowCount) throw HttpError.notFound('Usuario no encontrado');
+  } catch (error) {
+    if ((error as { code?: string }).code === '23505' && input.email) {
+      throw HttpError.conflict(await explicarCorreoOcupado(input.email));
+    }
+    throw error;
+  }
 
   return loadUser(userId);
+}
+
+/**
+ * Por que no se puede poner ese correo, dicho de forma que se pueda resolver.
+ *
+ * El caso tipico: un alumno con un correo de fuera del colegio entro alguna vez
+ * con su cuenta de Microsoft, y eso le creo una segunda cuenta, vacia, con el
+ * correo del colegio. Un "ya existe" a secas deja al docente sin saber que hacer.
+ */
+async function explicarCorreoOcupado(email: string): Promise<string> {
+  const { rows } = await query<{ full_name: string; libros: number; bibliotecas: number }>(
+    `SELECT u.full_name,
+            (SELECT COUNT(*)::int FROM books b WHERE b.creator_id = u.id) AS libros,
+            ((SELECT COUNT(*)::int FROM library_students ls WHERE ls.student_id = u.id)
+             + (SELECT COUNT(*)::int FROM libraries l WHERE l.owner_id = u.id)) AS bibliotecas
+     FROM users u WHERE u.email = $1`,
+    [email],
+  );
+  const otra = rows[0];
+  if (!otra) return 'Ese correo ya lo usa otra cuenta';
+
+  const vacia = otra.libros === 0 && otra.bibliotecas === 0;
+  return vacia
+    ? `Ese correo ya lo usa otra cuenta, «${otra.full_name}», que está vacía: sin libros ni ` +
+        'bibliotecas. Suele pasar cuando la persona entró con Microsoft antes de corregir el correo. ' +
+        'Pide a la administración que borre esa cuenta vacía y vuelve a intentarlo.'
+    : `Ese correo ya lo usa otra cuenta, «${otra.full_name}», que tiene contenido. ` +
+        'Revisa con la administración cuál de las dos es la buena antes de cambiar nada.';
 }
 
 export interface BorradoUsuario {

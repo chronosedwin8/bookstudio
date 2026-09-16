@@ -3,7 +3,7 @@
 # No se cobra nada: pagar exige una tarjeta de Mercado Pago y eso se prueba aparte.
 # Aqui se comprueba el modelo, los permisos y los limites del plan.
 $ErrorActionPreference = 'Stop'
-$base = 'http://localhost:4000/api'
+$base = if ($env:BOOKSTUDIO_API) { $env:BOOKSTUDIO_API } else { 'http://localhost:4000/api' }
 $ok = 0; $fail = 0
 
 function Check($nombre, $condicion, $detalle = '') {

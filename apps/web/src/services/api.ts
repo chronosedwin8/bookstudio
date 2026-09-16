@@ -21,6 +21,7 @@ import type {
   QuizStatus,
   QuizSubmitResult,
   BillingConfig,
+  TransferResult,
   PlanAdmin,
   Book,
   BookActivity,
@@ -230,6 +231,14 @@ export const librariesApi = {
 };
 
 export const booksApi = {
+  /**
+   * Pasa un libro de "Mis libros" a una o varias bibliotecas. Sin `keepPersonal`
+   * el original se mueve a la primera y en las demas queda una copia.
+   */
+  async transfer(id: string, payload: { libraryIds: string[]; keepPersonal: boolean }) {
+    const { data } = await http.post<TransferResult>(`/books/${id}/transfer`, payload, { timeout: 60_000 });
+    return data;
+  },
   async list(
     params: {
       libraryId?: string;
@@ -459,7 +468,7 @@ export const usersApi = {
     const { data } = await http.post<{ user: ManagedUser }>('/users', payload);
     return data.user;
   },
-  async update(id: string, payload: { fullName?: string; role?: string; isActive?: boolean }) {
+  async update(id: string, payload: { fullName?: string; email?: string; role?: string; isActive?: boolean }) {
     const { data } = await http.patch<{ user: ManagedUser }>(`/users/${id}`, payload);
     return data.user;
   },

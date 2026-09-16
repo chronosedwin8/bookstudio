@@ -4,6 +4,7 @@ import AlertMessage from '@/components/AlertMessage.vue';
 import { phidiasApi, usersApi } from '@/services/api';
 import { errorMessage } from '@/services/http';
 import { useAuthStore } from '@/stores/auth';
+import { pedirCorreoNuevo } from '@/utils/correo';
 import type { ManagedUser, PhidiasSection, UserStats } from '@/types/api';
 
 /** Panel de administracion: cuentas, roles, contrasenas e importacion de grupos. */
@@ -104,6 +105,23 @@ async function resetPassword(user: ManagedUser): Promise<void> {
   try {
     await usersApi.resetPassword(user.id, password);
     notice.value = `Contrasena actualizada para ${user.fullName}`;
+  } catch (err) {
+    error.value = errorMessage(err);
+  }
+}
+
+/** Corrige el correo con el que entra la cuenta; la de Phidias tambien. */
+async function changeEmail(user: ManagedUser): Promise<void> {
+  const resultado = pedirCorreoNuevo(user.fullName, user.email);
+  if (resultado.tipo === 'cancelado' || resultado.tipo === 'igual') return;
+  if (resultado.tipo === 'invalido') {
+    error.value = resultado.motivo;
+    return;
+  }
+  try {
+    const actualizado = await usersApi.update(user.id, { email: resultado.email });
+    notice.value = `Correo de ${user.fullName} cambiado a ${actualizado.email}`;
+    await load();
   } catch (err) {
     error.value = errorMessage(err);
   }
@@ -412,6 +430,12 @@ onMounted(async () => {
                   <button type="button" class="btn-secondary px-2 py-1 text-xs" @click="resetPassword(user)">
                     Contraseña
                   </button>
+                  <button
+                    type="button"
+                    class="btn-secondary px-2 py-1 text-xs"
+                    :disabled="user.id === auth.user?.id"
+                    @click="changeEmail(user)"
+                  >Correo</button>
                   <button
                     type="button"
                     class="px-2 py-1 text-xs"

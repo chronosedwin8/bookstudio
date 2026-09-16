@@ -1,4 +1,5 @@
 import bcrypt from 'bcryptjs';
+import type pg from 'pg';
 import { env } from '../../config/env.js';
 import { query, withTransaction } from '../../db/pool.js';
 import { HttpError } from '../../lib/http-error.js';
@@ -174,11 +175,17 @@ export async function listSectionStudents(sectionId: number): Promise<SectionStu
   if (!students.length) return [];
 
   const correos = students.map((s) => s.email!.trim().toLowerCase());
-  const { rows } = await query<{ email: string }>(
-    'SELECT email FROM users WHERE email = ANY($1::text[])',
-    [correos],
+  const ids = students.map((s) => String(s.id));
+  // Por identificador de Phidias o por correo: un alumno con el correo corregido
+  // a mano sigue teniendo su cuenta, aunque ya no coincida con el de Phidias.
+  const { rows } = await query<{ email: string; external_id: string | null }>(
+    `SELECT email, external_id FROM users
+      WHERE email = ANY($1::text[])
+         OR (external_source = 'phidias' AND external_id = ANY($2::text[]))`,
+    [correos, ids],
   );
   const conCuenta = new Set(rows.map((r) => r.email));
+  const idsConCuenta = new Set(rows.map((r) => r.external_id).filter(Boolean));
 
   return students
     .map((student) => ({
@@ -186,7 +193,7 @@ export async function listSectionStudents(sectionId: number): Promise<SectionStu
       fullName: fullNameOf(student),
       lastName: (student.lastname ?? '').replace(/\s+/g, ' ').trim(),
       email: student.email!.trim().toLowerCase(),
-      hasAccount: conCuenta.has(student.email!.trim().toLowerCase()),
+      hasAccount: idsConCuenta.has(String(student.id)) || conCuenta.has(student.email!.trim().toLowerCase()),
     }))
     .sort(porApellido);
 }
@@ -317,6 +324,52 @@ export async function syncGroups(): Promise<SincronizacionGrupos> {
   return { total: rows.length, actualizadas, clavesPuestas, sinSeccion };
 }
 
+/**
+ * La cuenta de un alumno de Phidias: la que ya tiene, o una nueva.
+ *
+ * Se busca PRIMERO por su identificador de Phidias y solo despues por correo.
+ *
+ * Antes se buscaba solo por correo, y eso rompia en cuanto un docente corregia el
+ * correo de un alumno (el caso real: alumnado con correo de fuera del colegio, que
+ * no puede entrar con Microsoft). La siguiente importacion traia el correo viejo,
+ * no encontraba a nadie con el y al insertar chocaba con el indice unico de
+ * (external_source, external_id): fallaba la importacion ENTERA de la seccion.
+ *
+ * Tampoco se le pisa el correo: si alguien lo corrigio a mano, esa correccion
+ * manda sobre lo que diga Phidias. Nombre y curso si se refrescan, porque cambian
+ * cada ano y ahi Phidias es la fuente buena.
+ */
+export async function cuentaDeAlumno(
+  client: pg.PoolClient,
+  student: PhidiasStudent,
+  email: string,
+  seccion: string,
+): Promise<{ id: string; password_is_default: boolean; inserted: boolean }> {
+  const nombre = fullNameOf(student).slice(0, 100);
+  const grupo = seccion.slice(0, 60);
+
+  const suya = await client.query<{ id: string; password_is_default: boolean }>(
+    `UPDATE users
+        SET full_name = $2, external_group = $3
+      WHERE external_source = 'phidias' AND external_id = $1
+      RETURNING id, password_is_default`,
+    [String(student.id), nombre, grupo],
+  );
+  if (suya.rows[0]) return { ...suya.rows[0], inserted: false };
+
+  const upserted = await client.query<{ id: string; password_is_default: boolean; inserted: boolean }>(
+    `INSERT INTO users (email, password_hash, full_name, role, external_source, external_id,
+                        external_group, password_is_default)
+     VALUES ($1, $2, $3, 'student', 'phidias', $4, $5, TRUE)
+     ON CONFLICT (email) DO UPDATE
+       SET full_name = EXCLUDED.full_name,
+           external_group = EXCLUDED.external_group
+     RETURNING id, password_is_default, (xmax = 0) AS inserted`,
+    [email, await bcrypt.hash(codigoDe(student), 12), nombre, String(student.id), grupo],
+  );
+  return upserted.rows[0];
+}
+
 export interface CuentaCreada {
   id: string;
   fullName: string;
@@ -344,24 +397,7 @@ export async function ensureStudentAccounts(
 
       // Si la cuenta ya existe NO se le toca la contrasena: puede haberla cambiado.
       // external_group si se refresca, porque el alumno cambia de curso cada ano.
-      const upserted = await client.query<{ id: string; password_is_default: boolean; inserted: boolean }>(
-        `INSERT INTO users (email, password_hash, full_name, role, external_source, external_id,
-                            external_group, password_is_default)
-         VALUES ($1, $2, $3, 'student', 'phidias', $4, $5, TRUE)
-         ON CONFLICT (email) DO UPDATE
-           SET full_name = EXCLUDED.full_name,
-               external_group = EXCLUDED.external_group
-         RETURNING id, password_is_default, (xmax = 0) AS inserted`,
-        [
-          email,
-          await bcrypt.hash(codigoDe(student), 12),
-          fullNameOf(student).slice(0, 100),
-          String(student.id),
-          section.name.slice(0, 60),
-        ],
-      );
-
-      const fila = upserted.rows[0];
+      const fila = await cuentaDeAlumno(client, student, email, section.name);
       cuentas.push({
         id: fila.id,
         fullName: fullNameOf(student),
@@ -482,25 +518,8 @@ export async function importSection(
     for (const student of students) {
       const email = student.email!.trim().toLowerCase();
 
-      // ON CONFLICT sobre el email: si ya existe (por otra seccion), se reutiliza.
-      const upserted = await client.query<{ id: string; inserted: boolean }>(
-        `INSERT INTO users (email, password_hash, full_name, role, external_source, external_id,
-                            external_group, password_is_default)
-         VALUES ($1, $2, $3, 'student', 'phidias', $4, $5, TRUE)
-         ON CONFLICT (email) DO UPDATE
-           SET full_name = EXCLUDED.full_name,
-               external_group = EXCLUDED.external_group
-         RETURNING id, (xmax = 0) AS inserted`,
-        [
-          email,
-          await bcrypt.hash(codigoDe(student), 12),
-          fullNameOf(student).slice(0, 100),
-          String(student.id),
-          section.name.slice(0, 60),
-        ],
-      );
-
-      const user = upserted.rows[0];
+      // Si ya existe (por otra seccion, o con el correo corregido), se reutiliza.
+      const user = await cuentaDeAlumno(client, student, email, section.name);
       if (user.inserted) created += 1;
       else reused += 1;
 

@@ -1,6 +1,6 @@
 # Ensayo funcional de la Etapa 4 (multimedia open source).
 $ErrorActionPreference = 'Stop'
-$base = 'http://localhost:4000/api'
+$base = if ($env:BOOKSTUDIO_API) { $env:BOOKSTUDIO_API } else { 'http://localhost:4000/api' }
 $pass = 0; $fail = 0
 
 function Test-Step {
@@ -168,7 +168,7 @@ $upload = Test-Step 'POST /media/uploads acepta PNG valido' {
 }
 
 Test-Step 'El archivo subido se sirve por HTTP' {
-    $r = Invoke-WebRequest -Uri "http://localhost:4000$($upload.fileUrl)" -UseBasicParsing
+    $r = Invoke-WebRequest -Uri "$($base -replace '/api$', '')$($upload.fileUrl)" -UseBasicParsing
     if ($r.StatusCode -ne 200) { throw "Status $($r.StatusCode)" }
     if ($r.Headers['X-Content-Type-Options'] -ne 'nosniff') { throw 'Falta cabecera nosniff' }
 }

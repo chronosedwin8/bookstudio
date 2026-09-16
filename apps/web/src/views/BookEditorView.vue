@@ -1390,7 +1390,8 @@ async function saveTitle(): Promise<void> {
             @drop.prevent="resetDrag"
           >
             <!--
-              Un contenedor por hoja: dentro van la miniatura y el aspa de borrar.
+              Un contenedor por hoja: dentro van la miniatura, el aspa de borrar y
+              el boton de duplicar.
               El aspa no puede ir DENTRO del boton de la miniatura (un boton
               dentro de otro es marcado invalido), asi que son hermanos y el
               contenedor es quien lleva el arrastre.
@@ -1450,6 +1451,31 @@ async function saveTitle(): Promise<void> {
                 :aria-label="index === 0 ? 'Eliminar la portada' : `Eliminar la página ${page.pageNumber}`"
                 @click.stop="onRemovePage(page.id)"
               >&times;</button>
+
+              <!--
+                Duplicar, en la esquina contraria al aspa. Abajo a la izquierda y no
+                arriba: con la separacion entre miniaturas, el aspa de una y este
+                boton de la siguiente se montaban uno encima del otro en pantallas
+                tactiles, donde los dos se ven siempre.
+              -->
+              <button
+                v-if="editor.canEdit"
+                type="button"
+                class="absolute -bottom-1.5 -left-1.5 grid h-5 w-5 place-items-center rounded-full border border-white
+                       bg-slate-700 text-white opacity-0 shadow transition
+                       hover:bg-brand-600 focus-visible:opacity-100 group-hover:opacity-100 disabled:cursor-wait
+                       [@media(hover:none)]:opacity-100"
+                :disabled="editor.saving"
+                :title="index === 0 ? 'Duplicar la portada' : `Duplicar la página ${page.pageNumber}`"
+                :aria-label="index === 0 ? 'Duplicar la portada' : `Duplicar la página ${page.pageNumber}`"
+                @click.stop="editor.duplicatePage(page.id)"
+              >
+                <svg viewBox="0 0 24 24" class="h-3 w-3" fill="none" stroke="currentColor" stroke-width="2.5"
+                     stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <rect x="9" y="9" width="12" height="12" rx="2" />
+                  <path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1" />
+                </svg>
+              </button>
             </div>
 
             <button

@@ -5,11 +5,12 @@ import AlertMessage from '@/components/AlertMessage.vue';
 import BookCard from '@/components/BookCard.vue';
 import PagePreview from '@/components/canvas/PagePreview.vue';
 import PhidiasImportDialog from '@/components/media/PhidiasImportDialog.vue';
+import TransferBookDialog from '@/components/TransferBookDialog.vue';
 import { booksApi, phidiasApi } from '@/services/api';
 import { errorMessage } from '@/services/http';
 import { useAuthStore } from '@/stores/auth';
 import { useLibrariesStore } from '@/stores/libraries';
-import type { Book, LayoutFormat } from '@/types/api';
+import type { Book, LayoutFormat, TransferResult } from '@/types/api';
 
 const ASPECT: Record<LayoutFormat, number> = { square: 1, portrait: 3 / 4, landscape: 4 / 3 };
 
@@ -83,6 +84,24 @@ async function removePersonalBook(book: Book): Promise<void> {
   } catch (err) {
     formError.value = errorMessage(err);
   }
+}
+
+// --- Pasar un libro de Mis libros a bibliotecas ---
+const transfiriendo = ref<Book | null>(null);
+
+async function onTransferido(resultado: TransferResult): Promise<void> {
+  const titulo = transfiriendo.value?.title ?? 'El libro';
+  transfiriendo.value = null;
+
+  const partes: string[] = [];
+  if (resultado.moved) partes.push(`«${titulo}» está ahora en «${resultado.moved.libraryName}»`);
+  if (resultado.copies.length) {
+    const nombres = resultado.copies.map((c) => `«${c.libraryName}»`).join(', ');
+    partes.push(`${resultado.moved ? 'con copia' : `Copia de «${titulo}»`} en ${nombres}`);
+  }
+  notice.value = `${partes.join(', ')}.`;
+  formError.value = null;
+  await loadBooks();
 }
 
 /**
@@ -233,7 +252,15 @@ async function removeLibrary(id: string, name: string): Promise<void> {
           :book="book"
           can-delete
           @remove="removePersonalBook"
-        />
+        >
+          <template #acciones>
+            <button
+              type="button"
+              class="mt-2 self-start text-xs font-semibold text-brand-600 hover:underline"
+              @click="transfiriendo = book"
+            >Pasar a biblioteca…</button>
+          </template>
+        </BookCard>
       </ul>
     </section>
 
@@ -368,5 +395,12 @@ async function removeLibrary(id: string, name: string): Promise<void> {
     </ul>
 
     <PhidiasImportDialog v-if="showPhidias" @close="showPhidias = false" @imported="onPhidiasImported" />
+
+    <TransferBookDialog
+      v-if="transfiriendo"
+      :book="transfiriendo"
+      @close="transfiriendo = null"
+      @done="onTransferido"
+    />
   </div>
 </template>

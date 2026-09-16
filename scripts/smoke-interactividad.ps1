@@ -4,7 +4,7 @@
 # al viaje de ida y vuelta a la base, que null los quite y que omitirlos no los
 # borre por accidente, y que duplicar una pagina se los lleve consigo.
 $ErrorActionPreference = 'Stop'
-$base = 'http://localhost:4000/api'
+$base = if ($env:BOOKSTUDIO_API) { $env:BOOKSTUDIO_API } else { 'http://localhost:4000/api' }
 $pass = 0; $fail = 0
 
 function Test-Step {

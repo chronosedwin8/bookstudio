@@ -14,6 +14,7 @@ import QuizList from '@/components/quizzes/QuizList.vue';
 import { authApi, booksApi, librariesApi, phidiasApi, usersApi } from '@/services/api';
 import { errorMessage } from '@/services/http';
 import { useAuthStore } from '@/stores/auth';
+import { correoVisible, pedirCorreoNuevo } from '@/utils/correo';
 import type {
   EditorTool,
   ElementType,
@@ -274,6 +275,34 @@ async function deleteStudent(studentId: string, nombre: string): Promise<void> {
  * ------------------------------------------------------------------------ */
 
 const claveOcupada = ref(false);
+
+/**
+ * Corregir el correo de un alumno, venga de donde venga (a mano o de Phidias).
+ *
+ * El motivo real: alumnado con un correo de fuera del colegio, que asi no puede
+ * entrar con su cuenta de Microsoft. Tras corregirlo entra con ella y cae en su
+ * propia cuenta, con todo su trabajo.
+ */
+async function cambiarCorreo(studentId: string, nombre: string, actual: string | null): Promise<void> {
+  const resultado = pedirCorreoNuevo(nombre, actual);
+  if (resultado.tipo === 'cancelado' || resultado.tipo === 'igual') return;
+  if (resultado.tipo === 'invalido') {
+    error.value = resultado.motivo;
+    return;
+  }
+
+  claveOcupada.value = true;
+  error.value = null;
+  try {
+    const usuario = await usersApi.update(studentId, { email: resultado.email });
+    notice.value = `Correo de ${nombre} cambiado a ${usuario.email}. Desde ahora entra con ese.`;
+    await loadAll();
+  } catch (err) {
+    error.value = errorMessage(err);
+  } finally {
+    claveOcupada.value = false;
+  }
+}
 
 async function cambiarClave(studentId: string, nombre: string): Promise<void> {
   const clave = window.prompt(`Nueva contraseña para ${nombre} (mínimo 8 caracteres):`);
@@ -909,7 +938,7 @@ function formatDate(value: string | null): string {
               <tr v-for="alumno in alumnado" :key="alumno.studentId" class="hover:bg-slate-50">
                 <td class="px-4 py-2">
                   <span class="block font-medium text-slate-800">{{ alumno.studentName }}</span>
-                  <span class="block text-xs text-slate-500">{{ alumno.email || 'Accede con QR' }}</span>
+                  <span class="block text-xs text-slate-500">{{ correoVisible(alumno.email) || 'Accede con QR' }}</span>
                 </td>
                 <td class="px-4 py-2">
                   <span
@@ -931,6 +960,13 @@ function formatDate(value: string | null): string {
                       :disabled="claveOcupada"
                       @click="cambiarClave(alumno.studentId, alumno.studentName)"
                     >Contraseña</button>
+                    <button
+                      type="button"
+                      class="text-xs font-semibold text-brand-600 hover:underline disabled:opacity-50"
+                      title="Corrige el correo con el que entra"
+                      :disabled="claveOcupada"
+                      @click="cambiarCorreo(alumno.studentId, alumno.studentName, alumno.email)"
+                    >Correo</button>
                     <button
                       type="button"
                       class="text-xs font-semibold text-slate-500 hover:underline"

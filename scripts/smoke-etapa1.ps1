@@ -1,6 +1,6 @@
 # Ensayo funcional de la Etapa 1 contra la API en ejecucion.
 $ErrorActionPreference = 'Stop'
-$base = 'http://localhost:4000/api'
+$base = if ($env:BOOKSTUDIO_API) { $env:BOOKSTUDIO_API } else { 'http://localhost:4000/api' }
 $pass = 0; $fail = 0
 
 function Test-Step {

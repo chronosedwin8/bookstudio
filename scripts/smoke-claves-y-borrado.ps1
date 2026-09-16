@@ -1,6 +1,6 @@
 # Claves al dar de alta, cambio de contrasena y borrado de usuarios con su contenido.
 $ErrorActionPreference = 'Stop'
-$base = 'http://localhost:4000/api'
+$base = if ($env:BOOKSTUDIO_API) { $env:BOOKSTUDIO_API } else { 'http://localhost:4000/api' }
 $ok = 0; $fail = 0
 
 function Check($nombre, $condicion, $detalle = '') {

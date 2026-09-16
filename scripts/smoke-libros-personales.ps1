@@ -1,6 +1,6 @@
 # Ensayo funcional de los libros personales (fuera de clase) y de la subida desde el equipo.
 $ErrorActionPreference = 'Stop'
-$base = 'http://localhost:4000/api'
+$base = if ($env:BOOKSTUDIO_API) { $env:BOOKSTUDIO_API } else { 'http://localhost:4000/api' }
 $pass = 0; $fail = 0
 
 function Test-Step {
@@ -210,7 +210,7 @@ Test-Step 'Acepta un GIF' {
 $upload = Test-Step 'El audio subido se sirve por HTTP' {
     $url = To-DataUrl 'audio/mpeg' ([byte[]](0x49, 0x44, 0x33, 0x03, 0x00, 0x00, 0x00, 0x00))
     $r = Invoke-Api POST '/media/uploads' @{ dataUrl = $url } -Token $sToken
-    $web = Invoke-WebRequest -Uri "http://localhost:4000$($r.fileUrl)" -UseBasicParsing
+    $web = Invoke-WebRequest -Uri "$($base -replace '/api$', '')$($r.fileUrl)" -UseBasicParsing
     if ($web.StatusCode -ne 200) { throw "Status $($web.StatusCode)" }
     $r
 }

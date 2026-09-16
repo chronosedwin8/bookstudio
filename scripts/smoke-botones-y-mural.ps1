@@ -4,7 +4,7 @@
 # la unica parte de la plataforma que sale a internet abierto, asi que un fallo
 # de permisos aqui no expone un libro a una clase, lo expone a cualquiera.
 $ErrorActionPreference = 'Stop'
-$base = 'http://localhost:4000/api'
+$base = if ($env:BOOKSTUDIO_API) { $env:BOOKSTUDIO_API } else { 'http://localhost:4000/api' }
 $pass = 0; $fail = 0
 
 function Test-Step {
