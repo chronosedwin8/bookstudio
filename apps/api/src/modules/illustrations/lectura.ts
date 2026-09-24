@@ -114,6 +114,23 @@ const TEMA_POR_PALABRA: Array<[string[], Escena['tema']]> = [
   [['arte', 'musica', 'amistad', 'fiesta', 'celebra', 'literatura'], 'warm'],
 ];
 
+/**
+ * Si la descripcion habla de algo que este motor sabe dibujar.
+ *
+ * El motor dibuja escenas de aula: personas (alumnado, docentes), lo que llevan
+ * en las manos, y el aula, la biblioteca o un fondo tecnologico. Si no aparece
+ * nada de eso ("un volcan en erupcion", "el sistema solar"), el resultado seria
+ * un alumno de pie en un aula que no tiene nada que ver con lo pedido. Mejor
+ * decirlo, y ofrecer la herramienta que si sabe dibujar cualquier cosa.
+ */
+export function reconoceAlgo(texto: string): boolean {
+  const t = normalizar(texto);
+  ALUMNADO.lastIndex = 0;
+  if (ALUMNADO.test(t) || DOCENTE.test(t) || contiene(t, HAY_DOCENTE)) return true;
+  const tablas: Array<Array<[string[], unknown]>> = [POSE_POR_PALABRA, OBJETO_POR_PALABRA, FONDO_POR_PALABRA];
+  return tablas.some((tabla) => tabla.some(([palabras]) => contiene(t, palabras)));
+}
+
 const primeraCoincidencia = <T,>(t: string, tabla: Array<[string[], T]>, siNo: T): T => {
   for (const [palabras, valor] of tabla) if (contiene(t, palabras)) return valor;
   return siNo;
@@ -200,6 +217,8 @@ export function analizarLocalmente(entrada: AnalizarInput): Escena {
     personajes,
     objetos,
     descripcion: entrada.texto.slice(0, 300),
+    // La semilla la pone quien genera, que la cambia en cada peticion.
+    semilla: 0,
   };
 
   return escenaSchema.parse(escena);

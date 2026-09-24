@@ -54,6 +54,8 @@ export const escenaSchema = z.object({
   personajes: z.array(personajeSchema).min(1).max(MAXIMO_PERSONAJES),
   objetos: z.array(objetoSchema).max(MAXIMO_OBJETOS).default([]),
   descripcion: z.string().max(300).default(''),
+  /** Aspecto de las personas (piel, pelo, ropa, peinado). 0 = el reparto de siempre. */
+  semilla: z.number().int().min(0).max(999_999).default(0),
 });
 
 export type Escena = z.infer<typeof escenaSchema>;

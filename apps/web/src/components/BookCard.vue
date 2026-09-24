@@ -14,6 +14,13 @@ const ASPECT: Record<Book['layoutFormat'], number> = {
   landscape: 4 / 3,
 };
 
+/** En español: antes salia "landscape" en la tarjeta. */
+const NOMBRE_FORMATO: Record<Book['layoutFormat'], string> = {
+  square: 'cuadrado',
+  portrait: 'vertical',
+  landscape: 'apaisado',
+};
+
 const aspectRatio = computed(() => ASPECT[props.book.layoutFormat]);
 const cssAspect = computed(() => `${aspectRatio.value}`);
 
@@ -53,7 +60,7 @@ const coverWidth = useElementWidth(coverBox);
     </p>
 
     <p class="mt-0.5 text-xs text-slate-500">
-      {{ book.pageCount ?? 0 }} páginas · {{ book.layoutFormat }}
+      {{ book.pageCount ?? 0 }} {{ book.pageCount === 1 ? 'página' : 'páginas' }} · {{ NOMBRE_FORMATO[book.layoutFormat] }}
       <span v-if="book.isPublished" class="ml-1 rounded bg-emerald-100 px-1.5 py-0.5 text-emerald-700">Publicado</span>
       <span v-if="book.originBookId" class="ml-1 rounded bg-sky-100 px-1.5 py-0.5 text-sky-700">Entregado</span>
     </p>

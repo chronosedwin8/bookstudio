@@ -1,8 +1,9 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomInt } from 'node:crypto';
 import { query } from '../../db/pool.js';
 import { env } from '../../config/env.js';
 import { HttpError } from '../../lib/http-error.js';
 import { analizar, iaDisponible, type ResultadoAnalisis } from './analisis.service.js';
+import { reconoceAlgo } from './lectura.js';
 import {
   escenaSchema,
   VERSION_CATALOGO,
@@ -76,6 +77,34 @@ const origenDe = (resultado: ResultadoAnalisis): string =>
  * viaje a la pantalla de otro.
  */
 export async function generar(
+  userId: string,
+  entrada: AnalizarInput,
+): Promise<{ ilustracion: Ilustracion; reutilizada: boolean; aviso?: string; fueraDeAlcance?: boolean }> {
+  /*
+   * Fuera de lo que este motor sabe dibujar: se dice claro en vez de devolver en
+   * silencio un alumno de pie en un aula. Con la IA activa se deja pasar, porque
+   * la IA si puede sacar algo de una descripcion indirecta.
+   */
+  const fueraDeAlcance = !iaDisponible() && !reconoceAlgo(entrada.texto);
+  const avisoAlcance = fueraDeAlcance
+    ? 'Esta herramienta dibuja escenas de clase con personas (alumnado, docentes, libros, tablets, aula, ' +
+      'biblioteca) y no he reconocido nada de eso en la descripción. Para dibujar otras cosas usa «Crear imagen con IA».'
+    : undefined;
+
+  const resultado = await generarEscena(userId, entrada);
+  /*
+   * Una semilla nueva cada vez, tambien si la escena sale de la cache: pedir lo
+   * mismo dos veces tiene que dar gente distinta. La escena (quien, que hace, con
+   * que) se reutiliza; el aspecto no. Antes era identico siempre.
+   */
+  resultado.ilustracion.escena = { ...resultado.ilustracion.escena, semilla: 1 + randomInt(999_998) };
+  return {
+    ...resultado,
+    ...(avisoAlcance ? { aviso: avisoAlcance, fueraDeAlcance: true } : {}),
+  };
+}
+
+async function generarEscena(
   userId: string,
   entrada: AnalizarInput,
 ): Promise<{ ilustracion: Ilustracion; reutilizada: boolean; aviso?: string }> {

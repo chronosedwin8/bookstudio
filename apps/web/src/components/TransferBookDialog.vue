@@ -10,10 +10,10 @@ import type { Book, Library, TransferResult } from '@/types/api';
 /**
  * Pasar un libro de "Mis libros" a una o varias bibliotecas.
  *
- * Por defecto es un traslado: el libro deja Mis libros y va a la primera
- * biblioteca marcada, conservando su enlace, su sitio en el mural y su historial.
- * En las demas bibliotecas marcadas queda una copia. Si se pide conservarlo, todas
- * son copias y el original no se mueve.
+ * Por defecto se copia: cada biblioteca marcada recibe una copia y el original
+ * sigue en Mis libros. Si se desmarca "conservar", el libro se MUEVE a la primera
+ * biblioteca marcada (con su enlace, su sitio en el mural y su historial) y en las
+ * demas queda una copia.
  */
 const props = defineProps<{ book: Book }>();
 const emit = defineEmits<{ close: []; done: [resultado: TransferResult] }>();
@@ -27,7 +27,11 @@ const error = ref<string | null>(null);
 
 /** En el orden en que se marcaron: la primera es la que recibe el original. */
 const elegidas = ref<string[]>([]);
-const conservar = ref(false);
+/**
+ * Marcado de salida: lo que mas se hace es llevar una copia a las clases y
+ * quedarse con el original. Moverlo es la excepcion y hay que pedirlo.
+ */
+const conservar = ref(true);
 
 onMounted(async () => {
   try {

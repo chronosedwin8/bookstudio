@@ -10,6 +10,7 @@ import type {
   ElementAnimation,
   ElementInteraction,
   ElementType,
+  LayoutFormat,
   Page,
   ShareVisibility,
   TransformMatrix,
@@ -39,6 +40,13 @@ export interface PortapapelesBookStudio {
   __bookstudio: 'elementos';
   version: 1;
   elementos: ElementoCopiado[];
+}
+
+/** Lo que queda en el portapapeles al copiar paginas. */
+export interface PaginasCopiadas {
+  bookId: string;
+  bookTitle: string;
+  pageIds: string[];
 }
 
 export const useEditorStore = defineStore('editor', () => {
@@ -127,6 +135,104 @@ export const useEditorStore = defineStore('editor', () => {
     } finally {
       loading.value = false;
     }
+  }
+
+  /* ------------------------------------------------------------------------
+   * Portapapeles de paginas
+   *
+   * Solo guarda de que libro y que paginas son; el contenido lo copia el
+   * servidor al pegar. Asi se pueden copiar veinte paginas llenas de imagenes sin
+   * pasar megas por el navegador, y lo que se pega es la pagina tal como esta en
+   * ese momento. Vive en localStorage para que valga entre libros y pestanas.
+   * --------------------------------------------------------------------- */
+  const CLAVE_PAGINAS = 'bookstudio:paginas-copiadas';
+
+  function leerPaginasCopiadas(): PaginasCopiadas | null {
+    try {
+      const dato = JSON.parse(localStorage.getItem(CLAVE_PAGINAS) ?? 'null') as PaginasCopiadas | null;
+      return dato && typeof dato.bookId === 'string' && Array.isArray(dato.pageIds) && dato.pageIds.length
+        ? dato
+        : null;
+    } catch {
+      return null;
+    }
+  }
+
+  const paginasCopiadas = ref<PaginasCopiadas | null>(leerPaginasCopiadas());
+
+  // Si se copia en otra pestana, esta se entera sin recargar.
+  if (typeof window !== 'undefined') {
+    window.addEventListener('storage', (e) => {
+      if (e.key === CLAVE_PAGINAS) paginasCopiadas.value = leerPaginasCopiadas();
+    });
+  }
+
+  /** Copia paginas de este libro, en el orden que tienen en el. Devuelve cuantas. */
+  function copiarPaginas(pageIds: string[]): number {
+    if (!book.value) return 0;
+    const marcadas = new Set(pageIds);
+    const ordenadas = book.value.pages.filter((p) => marcadas.has(p.id)).map((p) => p.id);
+    if (!ordenadas.length) return 0;
+    const dato: PaginasCopiadas = { bookId: book.value.id, bookTitle: book.value.title, pageIds: ordenadas };
+    paginasCopiadas.value = dato;
+    try {
+      localStorage.setItem(CLAVE_PAGINAS, JSON.stringify(dato));
+    } catch {
+      // Sin almacenamiento sigue valiendo en esta pestana.
+    }
+    return ordenadas.length;
+  }
+
+  /** Pega las paginas copiadas detras de la actual y abre la primera pegada. */
+  async function pegarPaginas(): Promise<number> {
+    const copia = paginasCopiadas.value;
+    if (!book.value || !copia) return 0;
+    const id = book.value.id;
+    const detrasDe = currentPage.value?.id;
+
+    const nuevas = await withSaving(() =>
+      booksApi.pastePages(id, { sourceBookId: copia.bookId, pageIds: copia.pageIds, afterPageId: detrasDe }),
+    );
+    if (!nuevas?.length) return 0;
+
+    book.value = await booksApi.get(id);
+    const primera = book.value.pages.findIndex((p) => p.id === nuevas[0]);
+    if (primera >= 0) currentPageIndex.value = primera;
+    selectedElementId.value = null;
+    selectedIds.value = [];
+    return nuevas.length;
+  }
+
+  function olvidarPaginasCopiadas(): void {
+    paginasCopiadas.value = null;
+    try {
+      localStorage.removeItem(CLAVE_PAGINAS);
+    } catch {
+      // nada que hacer
+    }
+  }
+
+  /**
+   * Cambia el formato del libro y lo vuelve a cargar tal como lo dejo el servidor.
+   *
+   * El historial se vacia: sus pasos guardan las posiciones de antes del cambio, y
+   * deshacer uno de ellos pondria un elemento donde estaba en el formato viejo.
+   */
+  async function changeFormat(layoutFormat: LayoutFormat): Promise<boolean> {
+    if (!book.value || book.value.layoutFormat === layoutFormat) return false;
+    const id = book.value.id;
+    const pagina = currentPageIndex.value;
+    const ok = await withSaving(async () => {
+      await booksApi.changeFormat(id, layoutFormat);
+      return true;
+    });
+    if (!ok) return false;
+    historial.limpiar();
+    book.value = await booksApi.get(id);
+    currentPageIndex.value = Math.min(pagina, book.value.pages.length - 1);
+    selectedElementId.value = null;
+    selectedIds.value = [];
+    return true;
   }
 
   function goToPage(index: number): void {
@@ -698,6 +804,11 @@ export const useEditorStore = defineStore('editor', () => {
     addPage,
     addPageFromTemplate,
     duplicatePage,
+    changeFormat,
+    paginasCopiadas,
+    copiarPaginas,
+    pegarPaginas,
+    olvidarPaginasCopiadas,
     deletePage,
     deleteCurrentPage,
     reorderPages,

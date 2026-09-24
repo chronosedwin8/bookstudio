@@ -23,6 +23,8 @@ const createSchema = z.object({
 const updateSchema = z
   .object({
     fullName: z.string().min(2).max(100).trim().optional(),
+    givenName: z.string().min(1, 'Escribe los nombres').max(60).trim().optional(),
+    familyName: z.string().min(1, 'Escribe los apellidos').max(60).trim().optional(),
     email: z.string().trim().toLowerCase().email('Correo no válido').max(255).optional(),
     role: z.enum(['teacher', 'student', 'admin']).optional(),
     isActive: z.boolean().optional(),

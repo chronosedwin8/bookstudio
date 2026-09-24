@@ -6,6 +6,7 @@ import { illustrationsApi } from '@/services/api';
 import { errorMessage } from '@/services/http';
 import { FONDOS, NOMBRES, TEMAS, type Fondo, type Tema } from '@/utils/ilustracion/catalogo';
 import { normalizarEscena, type Escena } from '@/utils/ilustracion/escena';
+import { semillaNueva } from '@/utils/ilustracion/paleta';
 
 /**
  * Crear una ilustracion describiendola con palabras.
@@ -14,9 +15,16 @@ import { normalizarEscena, type Escena } from '@/utils/ilustracion/escena';
  * un SVG: escribe lo que quiere ver, mira la vista previa y la inserta. Todo lo
  * demas es asunto del programa.
  */
+const props = defineProps<{
+  /** Si esta cuenta puede crear imagenes con IA: entonces se le ofrece el salto. */
+  puedeImagenIa?: boolean;
+}>();
+
 const emit = defineEmits<{
   close: [];
   pick: [payload: { escena: Escena; prompt: string; illustrationId?: string }];
+  /** Lo pedido no es una escena de clase: mejor la herramienta de imagen con IA. */
+  'usar-ia': [descripcion: string];
 }>();
 
 const EJEMPLOS = [
@@ -32,6 +40,8 @@ const fondo = ref<Fondo | ''>('');
 const cargando = ref(false);
 const error = ref<string | null>(null);
 const aviso = ref<string | null>(null);
+/** El servidor dice que lo pedido no es algo que este motor sepa dibujar. */
+const fueraDeAlcance = ref(false);
 const escena = ref<Escena | null>(null);
 const illustrationId = ref<string | undefined>(undefined);
 const conIA = ref(false);
@@ -53,6 +63,7 @@ async function generar(): Promise<void> {
   cargando.value = true;
   error.value = null;
   aviso.value = null;
+  fueraDeAlcance.value = false;
 
   try {
     const respuesta = await illustrationsApi.analizar({
@@ -63,6 +74,7 @@ async function generar(): Promise<void> {
     escena.value = normalizarEscena(respuesta.ilustracion.escena, texto.value.trim());
     illustrationId.value = respuesta.ilustracion.id;
     aviso.value = respuesta.aviso ?? null;
+    fueraDeAlcance.value = respuesta.fueraDeAlcance === true;
   } catch (err) {
     error.value = errorMessage(err);
   } finally {
@@ -82,6 +94,14 @@ function insertar(): void {
     prompt: texto.value.trim(),
     illustrationId: illustrationId.value,
   });
+}
+
+/**
+ * La misma escena con otra gente: otra piel, otro pelo, otra ropa, otro peinado.
+ * No vuelve a preguntar al servidor; solo cambia la semilla del dibujo.
+ */
+function otraVersion(): void {
+  if (escena.value) escena.value = { ...escena.value, semilla: semillaNueva() };
 }
 
 /** Cambiar el aire de una escena ya compuesta no necesita volver a analizarla. */
@@ -141,11 +161,25 @@ function cambiarFondo(nuevo: Fondo): void {
         </div>
 
         <AlertMessage v-if="error" :message="error" class="mt-3" />
-        <p v-if="aviso" class="mt-3 rounded bg-amber-50 px-3 py-2 text-xs text-amber-800">{{ aviso }}</p>
+        <div v-if="aviso" class="mt-3 rounded bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          <p>{{ aviso }}</p>
+          <button
+            v-if="fueraDeAlcance && props.puedeImagenIa"
+            type="button"
+            class="btn-primary mt-2 px-3 py-1 text-xs"
+            @click="emit('usar-ia', texto.trim())"
+          >✨ Crear «{{ texto.trim().slice(0, 40) }}{{ texto.trim().length > 40 ? '…' : '' }}» con IA</button>
+        </div>
 
         <template v-if="escena">
-          <div class="mt-4 overflow-hidden rounded-lg border border-slate-200 bg-white">
+          <div class="relative mt-4 overflow-hidden rounded-lg border border-slate-200 bg-white">
             <IllustrationRenderer :escena="escena" :prompt="texto" />
+            <button
+              type="button"
+              class="btn-secondary absolute bottom-2 right-2 px-3 py-1 text-xs shadow"
+              title="La misma escena con otras personas: otra piel, pelo, ropa y peinado"
+              @click="otraVersion"
+            >🎲 Otra versión</button>
           </div>
 
           <div class="mt-4 grid gap-4 sm:grid-cols-2">

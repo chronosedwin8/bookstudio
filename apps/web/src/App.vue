@@ -88,6 +88,12 @@ function handleLogout(): void {
 
           <RouterLink
             v-if="auth.user?.role === 'admin'"
+            :to="{ name: 'admin-books' }"
+            class="enlace-cabecera"
+          >Libros</RouterLink>
+
+          <RouterLink
+            v-if="auth.user?.role === 'admin'"
             :to="{ name: 'admin-plans' }"
             class="enlace-cabecera"
           >Planes</RouterLink>

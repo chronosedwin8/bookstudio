@@ -710,6 +710,9 @@ export interface LibraryMember {
   email: string;
   /** Clase de origen del sistema academico; null si no viene de ninguna. */
   course?: string | null;
+  /** Partes del nombre, si se conocen: prellenan el formulario de correccion. */
+  givenName?: string | null;
+  familyName?: string | null;
 }
 
 export interface LibraryMembers {
@@ -727,16 +730,19 @@ export async function getMembers(libraryId: string, userId: string): Promise<Lib
     email: string;
     membership: string;
     course: string | null;
+    given_name: string | null;
+    family_name: string | null;
   }>(
     // El curso solo tiene sentido para el alumnado, y sale de su clase traida del
     // sistema academico: una biblioteca puede mezclar grupos y hay que distinguirlos.
-    `SELECT u.id, u.full_name, u.email, 'owner' AS membership, NULL::varchar AS course
+    `SELECT u.id, u.full_name, u.email, 'owner' AS membership, NULL::varchar AS course,
+            u.given_name, u.family_name
        FROM libraries l JOIN users u ON u.id = l.owner_id WHERE l.id = $1
      UNION ALL
-     SELECT u.id, u.full_name, u.email, 'teacher', NULL::varchar
+     SELECT u.id, u.full_name, u.email, 'teacher', NULL::varchar, u.given_name, u.family_name
        FROM library_teachers lt JOIN users u ON u.id = lt.teacher_id WHERE lt.library_id = $1
      UNION ALL
-     SELECT u.id, u.full_name, u.email, 'student', u.external_group
+     SELECT u.id, u.full_name, u.email, 'student', u.external_group, u.given_name, u.family_name
        FROM library_students ls JOIN users u ON u.id = ls.student_id WHERE ls.library_id = $1
      ORDER BY 4, 2`,
     [libraryId],
@@ -745,7 +751,14 @@ export async function getMembers(libraryId: string, userId: string): Promise<Lib
   const map = (m: string): LibraryMember[] =>
     rows
       .filter((r) => r.membership === m)
-      .map((r) => ({ id: r.id, fullName: r.full_name, email: r.email, course: r.course }));
+      .map((r) => ({
+        id: r.id,
+        fullName: r.full_name,
+        email: r.email,
+        course: r.course,
+        givenName: r.given_name,
+        familyName: r.family_name,
+      }));
 
   const [owner] = map('owner');
   return { owner, teachers: map('teacher'), students: map('student') };

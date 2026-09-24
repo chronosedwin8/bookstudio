@@ -5,6 +5,8 @@ import { phidiasApi, usersApi } from '@/services/api';
 import { errorMessage } from '@/services/http';
 import { useAuthStore } from '@/stores/auth';
 import { pedirCorreoNuevo } from '@/utils/correo';
+import { tieneLetrasDanadas } from '@/utils/nombres';
+import EditarNombreDialog from '@/components/EditarNombreDialog.vue';
 import type { ManagedUser, PhidiasSection, UserStats } from '@/types/api';
 
 /** Panel de administracion: cuentas, roles, contrasenas e importacion de grupos. */
@@ -110,6 +112,15 @@ async function resetPassword(user: ManagedUser): Promise<void> {
   }
 }
 
+/** La cuenta cuyo nombre se esta corrigiendo, si hay una. */
+const editandoNombre = ref<ManagedUser | null>(null);
+
+async function onNombreGuardado(nombre: string): Promise<void> {
+  notice.value = `Nombre corregido: ${nombre}`;
+  editandoNombre.value = null;
+  await load();
+}
+
 /** Corrige el correo con el que entra la cuenta; la de Phidias tambien. */
 async function changeEmail(user: ManagedUser): Promise<void> {
   const resultado = pedirCorreoNuevo(user.fullName, user.email);
@@ -175,6 +186,8 @@ async function sincronizarCursos(): Promise<void> {
     const r = await phidiasApi.syncGroups();
     const partes = [`${r.actualizadas} cursos actualizados de ${r.total}`];
     if (r.clavesPuestas) partes.push(`${r.clavesPuestas} claves puestas a su código`);
+    if (r.nombresCorregidos) partes.push(`${r.nombresCorregidos} nombres corregidos`);
+    if (r.vinculadas) partes.push(`${r.vinculadas} cuentas de Microsoft vinculadas a su ficha`);
     if (r.sinSeccion) partes.push(`${r.sinSeccion} ya no están en ninguna sección`);
     notice.value = `Alumnado al día: ${partes.join(' · ')}`;
     await load();
@@ -313,7 +326,7 @@ onMounted(async () => {
             type="button"
             class="btn-secondary"
             :disabled="sincronizando"
-            title="Pone al día el curso y deja como contraseña el código de cada alumno"
+            title="Pone al día curso y nombre (apellidos primero, con sus tildes) y deja como contraseña el código de cada alumno. No toca los nombres corregidos a mano."
             @click="sincronizarCursos"
           >
             {{ sincronizando ? 'Actualizando...' : 'Actualizar alumnado de Phidias' }}
@@ -396,6 +409,13 @@ onMounted(async () => {
                 <p class="font-semibold text-slate-800" :class="!user.isActive && 'text-slate-400'">
                   {{ user.fullName }}
                   <span v-if="user.id === auth.user?.id" class="text-xs font-normal text-brand-600">(tu)</span>
+                  <button
+                    v-if="tieneLetrasDanadas(user.fullName)"
+                    type="button"
+                    class="ml-1 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800 hover:bg-amber-200"
+                    title="El nombre tiene letras dañadas: pulsa para corregirlo"
+                    @click="editandoNombre = user"
+                  >⚠ corregir</button>
                 </p>
                 <p class="truncate text-xs text-slate-500">{{ user.email }}</p>
               </td>
@@ -438,6 +458,12 @@ onMounted(async () => {
                   >Correo</button>
                   <button
                     type="button"
+                    class="btn-secondary px-2 py-1 text-xs"
+                    :disabled="user.id === auth.user?.id"
+                    @click="editandoNombre = user"
+                  >Nombre</button>
+                  <button
+                    type="button"
                     class="px-2 py-1 text-xs"
                     :class="user.isActive ? 'btn-danger' : 'btn-secondary'"
                     :disabled="user.id === auth.user?.id"
@@ -467,5 +493,15 @@ onMounted(async () => {
         <button type="button" class="btn-secondary" :disabled="page >= totalPages" @click="page += 1">Siguiente</button>
       </div>
     </section>
+
+    <EditarNombreDialog
+      v-if="editandoNombre"
+      :user-id="editandoNombre.id"
+      :full-name="editandoNombre.fullName"
+      :given-name="editandoNombre.givenName"
+      :family-name="editandoNombre.familyName"
+      @close="editandoNombre = null"
+      @saved="onNombreGuardado"
+    />
   </div>
 </template>

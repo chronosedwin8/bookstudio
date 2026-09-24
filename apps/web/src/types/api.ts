@@ -28,6 +28,27 @@ export interface User {
   createdAt: string;
 }
 
+/** Un libro visto por la administracion, en la lista de todos. */
+export interface AdminBook {
+  id: string;
+  title: string;
+  creatorName: string | null;
+  creatorEmail: string | null;
+  libraryId: string | null;
+  libraryName: string | null;
+  pageCount: number;
+  isTrial: boolean;
+  updatedAt: string;
+}
+
+export interface AdminBookPage {
+  items: AdminBook[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
 export interface DestinoTransferencia {
   libraryId: string;
   libraryName: string;
@@ -99,6 +120,9 @@ export interface LibraryMember {
   email: string;
   /** Clase de origen del sistema academico; null si no viene de ninguna. */
   course?: string | null;
+  /** Partes del nombre, si se conocen. */
+  givenName?: string | null;
+  familyName?: string | null;
 }
 
 export interface LibraryMembers {
@@ -589,6 +613,8 @@ export interface ManagedUser {
   hasPassword: boolean;
   /** Curso o seccion de origen: el "name" de Phidias ("K2D"). */
   course: string | null;
+  givenName?: string | null;
+  familyName?: string | null;
   libraryCount: number;
   bookCount: number;
   createdAt: string;

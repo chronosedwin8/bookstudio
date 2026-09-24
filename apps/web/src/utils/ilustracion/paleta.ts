@@ -76,3 +76,75 @@ export function colorRopa(paleta: Paleta, indice: number, esDocente: boolean): s
 
 export const piel = (indice: number): string => PIELES[indice % PIELES.length];
 export const pelo = (indice: number): string => PELOS[indice % PELOS.length];
+
+/** Cuantos cortes de pelo sabe dibujar `cabello()`. */
+export const PEINADOS = 3;
+
+/** Lo que distingue a una persona de otra en el dibujo. Son indices, no colores. */
+export interface Rasgos {
+  piel: number;
+  pelo: number;
+  ropa: number;
+  peinado: number;
+}
+
+/**
+ * Generador pseudoaleatorio con semilla (mulberry32).
+ *
+ * Aleatorio pero repetible: la misma semilla da siempre la misma persona, asi que
+ * una ilustracion guardada se sigue dibujando igual al reabrir el libro.
+ */
+function generador(semilla: number): () => number {
+  let a = semilla >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function barajar(n: number, azar: () => number): number[] {
+  const lista = Array.from({ length: n }, (_, i) => i);
+  for (let i = n - 1; i > 0; i -= 1) {
+    const j = Math.floor(azar() * (i + 1));
+    [lista[i], lista[j]] = [lista[j], lista[i]];
+  }
+  return lista;
+}
+
+/**
+ * Los rasgos de cada persona de la escena.
+ *
+ * Con semilla 0 se reparten por orden de aparicion, como siempre: asi las
+ * ilustraciones que ya estan en los libros no cambian de aspecto. Con cualquier
+ * otra semilla se reparten al azar (repetible), y dos personas de la misma escena
+ * nunca comparten piel ni pelo mientras haya tonos para todas.
+ *
+ * Antes solo existia el reparto por orden, y por eso toda escena de dos alumnos
+ * salia con los mismos dos niños, con la misma ropa y el mismo peinado.
+ */
+export function rasgosDe(semilla: number, cuantos: number, esDocente: (i: number) => boolean): Rasgos[] {
+  if (!semilla) {
+    return Array.from({ length: cuantos }, (_, i) => ({
+      piel: i + (esDocente(i) ? 3 : 0),
+      pelo: i + (esDocente(i) ? 1 : 0),
+      ropa: i,
+      peinado: i % PEINADOS,
+    }));
+  }
+  const azar = generador(semilla);
+  const pieles = barajar(PIELES.length, azar);
+  const pelos = barajar(PELOS.length, azar);
+  const desfaseRopa = Math.floor(azar() * 4);
+  return Array.from({ length: cuantos }, (_, i) => ({
+    piel: pieles[i % pieles.length],
+    pelo: pelos[i % pelos.length],
+    ropa: i + desfaseRopa,
+    peinado: Math.floor(azar() * PEINADOS),
+  }));
+}
+
+/** Una semilla nueva para "Otra version". Nunca 0, que es el reparto de siempre. */
+export const semillaNueva = (): number => 1 + Math.floor(Math.random() * 999_998);

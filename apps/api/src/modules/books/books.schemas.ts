@@ -130,6 +130,19 @@ export const transferBookSchema = z.object({
   keepPersonal: z.boolean().default(false),
 });
 
+export const changeFormatSchema = z.object({ layoutFormat });
+
+/** Pegar paginas copiadas de otro libro. */
+export const pastePagesSchema = z.object({
+  sourceBookId: z.string().uuid(),
+  pageIds: z
+    .array(z.string().uuid())
+    .min(1, 'No hay páginas que pegar')
+    .max(100, 'Como mucho 100 páginas de una vez')
+    .transform((ids) => [...new Set(ids)]),
+  afterPageId: z.string().uuid().optional(),
+});
+
 export type TransferBookInput = z.infer<typeof transferBookSchema>;
 export type CreateBookInput = z.infer<typeof createBookSchema>;
 export type UpdateBookInput = z.infer<typeof updateBookSchema>;

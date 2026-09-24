@@ -6,11 +6,13 @@ import BookCard from '@/components/BookCard.vue';
 import PagePreview from '@/components/canvas/PagePreview.vue';
 import PhidiasImportDialog from '@/components/media/PhidiasImportDialog.vue';
 import TransferBookDialog from '@/components/TransferBookDialog.vue';
+import LibraryList from '@/components/library/LibraryList.vue';
+import LibrosAlumnadoDialog from '@/components/library/LibrosAlumnadoDialog.vue';
 import { booksApi, phidiasApi } from '@/services/api';
 import { errorMessage } from '@/services/http';
 import { useAuthStore } from '@/stores/auth';
 import { useLibrariesStore } from '@/stores/libraries';
-import type { Book, LayoutFormat, TransferResult } from '@/types/api';
+import type { Book, LayoutFormat, PhidiasImportResult, TransferResult } from '@/types/api';
 
 const ASPECT: Record<LayoutFormat, number> = { square: 1, portrait: 3 / 4, landscape: 4 / 3 };
 
@@ -130,9 +132,26 @@ onMounted(async () => {
 const phidiasEnabled = ref(false);
 const showPhidias = ref(false);
 
-async function onPhidiasImported(): Promise<void> {
+async function onPhidiasImported(resultado?: PhidiasImportResult): Promise<void> {
   showPhidias.value = false;
   await libraries.fetchAll();
+  await loadBooks();
+  // Recien creada y con alumnado: es el momento de darle a cada uno su libro.
+  if (resultado?.libraryId && resultado.enrolled + resultado.reused > 0) {
+    librosAlumnado.value = {
+      id: resultado.libraryId,
+      name: resultado.libraryName,
+      alumnos: resultado.enrolled,
+    };
+  }
+}
+
+/** Biblioteca a la que se ofrece crear un libro por alumno, si hay una. */
+const librosAlumnado = ref<{ id: string; name: string; alumnos: number } | null>(null);
+
+async function onLibrosAlumnadoCreados(mensaje: string): Promise<void> {
+  librosAlumnado.value = null;
+  notice.value = mensaje;
   await loadBooks();
 }
 
@@ -336,65 +355,25 @@ async function removeLibrary(id: string, name: string): Promise<void> {
       Todavia no perteneces a ninguna clase. No hace falta: tus libros personales funcionan igual.
     </p>
 
-    <ul v-else class="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-      <li v-for="library in libraries.items" :key="library.id" class="card flex flex-col overflow-hidden">
-        <!-- Estanteria: las portadas de los primeros libros de la biblioteca -->
-        <RouterLink
-          :to="{ name: 'library', params: { id: library.id } }"
-          class="flex h-28 items-end gap-1.5 bg-slate-800 px-3 pt-3"
-          :title="`Abrir ${library.name}`"
-        >
-          <template v-if="booksByLibrary.get(library.id)?.length">
-            <div
-              v-for="book in booksByLibrary.get(library.id)!.slice(0, 4)"
-              :key="book.id"
-              class="overflow-hidden rounded-t border border-b-0 border-slate-600 bg-white shadow"
-            >
-              <PagePreview
-                v-if="book.cover"
-                :background-color="book.cover.backgroundColor"
-                :elements="book.cover.elements"
-                :aspect-ratio="ASPECT[book.layoutFormat]"
-                :width="52"
-              />
-              <div v-else class="h-[68px] w-[52px] bg-white" />
-            </div>
-          </template>
-          <p v-else class="w-full pb-3 text-center text-xs text-slate-400">Biblioteca vacia</p>
-        </RouterLink>
-
-        <div class="flex flex-1 flex-col p-5">
-        <RouterLink :to="{ name: 'library', params: { id: library.id } }" class="font-bold text-slate-900 hover:text-brand-600">
-          {{ library.name }}
-        </RouterLink>
-
-        <p class="mt-2 text-xs text-slate-500">Código de invitacion</p>
-        <p class="font-mono text-lg font-black tracking-widest text-brand-700">{{ library.codeInvite }}</p>
-
-        <div class="mt-3 flex flex-wrap gap-1.5 text-xs">
-          <span class="rounded bg-slate-100 px-2 py-0.5 text-slate-600">
-            {{ booksByLibrary.get(library.id)?.length ?? 0 }} de {{ library.studentBookLimit }} libros
-          </span>
-          <span v-if="library.studentEditable" class="rounded bg-emerald-100 px-2 py-0.5 text-emerald-700">Edición alumnos</span>
-          <span v-if="library.studentPublishable" class="rounded bg-brand-100 px-2 py-0.5 text-brand-700">Publicable</span>
-        </div>
-
-        <div class="mt-4 flex gap-2 border-t border-slate-100 pt-3">
-          <RouterLink :to="{ name: 'library', params: { id: library.id } }" class="btn-secondary flex-1">Abrir</RouterLink>
-          <button
-            v-if="library.ownerId === auth.user?.id"
-            type="button"
-            class="btn-danger"
-            @click="removeLibrary(library.id, library.name)"
-          >
-            Eliminar
-          </button>
-        </div>
-        </div>
-      </li>
-    </ul>
+    <LibraryList
+      v-else
+      :libraries="libraries.items"
+      :books-by-library="booksByLibrary"
+      :current-user-id="auth.user?.id"
+      @remove="removeLibrary($event.id, $event.name)"
+    />
 
     <PhidiasImportDialog v-if="showPhidias" @close="showPhidias = false" @imported="onPhidiasImported" />
+
+    <LibrosAlumnadoDialog
+      v-if="librosAlumnado"
+      :library-id="librosAlumnado.id"
+      :library-name="librosAlumnado.name"
+      :student-count="librosAlumnado.alumnos"
+      recien-creada
+      @close="librosAlumnado = null"
+      @done="onLibrosAlumnadoCreados"
+    />
 
     <TransferBookDialog
       v-if="transfiriendo"

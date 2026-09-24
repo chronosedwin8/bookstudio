@@ -12,12 +12,17 @@ import type { MagnificAspect, MagnificModel } from '@/types/api';
  * hasta que esta. La imagen que llega ya vive en nuestro almacenamiento: la
  * direccion que da Magnific caduca en una hora y no serviria para un libro.
  */
+const props = defineProps<{
+  /** Descripcion ya escrita, cuando se llega desde otra herramienta. */
+  promptInicial?: string;
+}>();
+
 const emit = defineEmits<{
   close: [];
   pick: [payload: { fileUrl: string; altText: string }];
 }>();
 
-const prompt = ref('');
+const prompt = ref(props.promptInicial ?? '');
 const aspecto = ref<MagnificAspect>('square_1_1');
 const modelo = ref<MagnificModel>('fluid');
 const resolucion = ref<'1k' | '2k'>('1k');

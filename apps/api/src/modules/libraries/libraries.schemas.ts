@@ -84,6 +84,26 @@ export const distributeSchema = z.object({
   position: z.enum(['inicio', 'final']).default('final'),
 });
 
+/**
+ * Libros para el alumnado de una biblioteca, de una vez.
+ *   blank -> uno en blanco para cada alumno
+ *   copy  -> una copia de un libro del docente para cada alumno (es una entrega)
+ */
+export const studentBooksSchema = z.discriminatedUnion('mode', [
+  z.object({
+    mode: z.literal('blank'),
+    title: z.string().min(1, 'Ponle un título').max(255).trim(),
+    layoutFormat: z.enum(['portrait', 'square', 'landscape']).default('square'),
+    /** Saltar a quien ya tenga algun libro en la biblioteca. */
+    onlyWithoutBook: z.boolean().default(true),
+  }),
+  z.object({
+    mode: z.literal('copy'),
+    sourceBookId: z.string().uuid(),
+    title: z.string().min(1).max(255).trim().optional(),
+  }),
+]);
+
 /** Borrado masivo: los ids se envian explicitos, nunca un "borra todo" a ciegas. */
 export const bulkDeleteBooksSchema = z.object({
   bookIds: z.array(z.string().uuid()).min(1, 'Elige al menos un libro').max(500),
@@ -96,6 +116,7 @@ export type StudentSearchQuery = z.infer<typeof studentSearchSchema>;
 export type RosterQuery = z.infer<typeof rosterSchema>;
 export type AddStudentsInput = z.infer<typeof addStudentsSchema>;
 export type DistributeInput = z.infer<typeof distributeSchema>;
+export type StudentBooksInput = z.infer<typeof studentBooksSchema>;
 export type BulkDeleteBooksInput = z.infer<typeof bulkDeleteBooksSchema>;
 
 /**

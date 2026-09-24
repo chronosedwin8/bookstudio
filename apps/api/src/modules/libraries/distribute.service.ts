@@ -167,3 +167,84 @@ export async function distribute(
 
   return resultado;
 }
+
+export interface LibrosAlumnadoResult {
+  /** Libros creados. */
+  created: number;
+  /** Alumnado que ya tenia libro en la biblioteca y se ha saltado. */
+  skipped: number;
+}
+
+/**
+ * Un libro en blanco para cada alumno de la biblioteca.
+ *
+ * Es lo que se hace al montar un grupo nuevo: que cada alumno encuentre su libro
+ * listo para empezar, en vez de que treinta personas creen el suyo a la vez con
+ * treinta titulos distintos. El libro es del alumno (creador y portafolio suyos),
+ * no del docente: lo edita como si lo hubiera creado el.
+ *
+ * Por omision se salta a quien ya tiene algun libro en la biblioteca, para que
+ * repetir la operacion (por ejemplo tras anadir alumnado nuevo) no duplique.
+ */
+export async function crearLibrosEnBlanco(
+  libraryId: string,
+  teacherId: string,
+  input: { title: string; layoutFormat: string; soloSinLibro: boolean; studentIds?: string[] },
+): Promise<LibrosAlumnadoResult> {
+  await requireManager(libraryId, teacherId);
+
+  const { rows: alumnado } = await query<{ student_id: string; tiene: boolean }>(
+    `SELECT ls.student_id,
+            EXISTS (SELECT 1 FROM books b WHERE b.library_id = ls.library_id AND b.creator_id = ls.student_id) AS tiene
+     FROM library_students ls
+     WHERE ls.library_id = $1 AND ($2::uuid[] IS NULL OR ls.student_id = ANY($2::uuid[]))`,
+    [libraryId, input.studentIds ?? null],
+  );
+  if (!alumnado.length) throw HttpError.badRequest('Esta biblioteca todavía no tiene alumnado');
+
+  const destinatarios = alumnado.filter((a) => !(input.soloSinLibro && a.tiene));
+  const resultado: LibrosAlumnadoResult = { created: 0, skipped: alumnado.length - destinatarios.length };
+
+  // Todo o nada: con treinta alumnos, quedarse a medias obligaria a revisar a mano
+  // quien tiene libro y quien no.
+  await withTransaction(async (client) => {
+    for (const { student_id: alumnoId } of destinatarios) {
+      const portafolio = await client.query<{ id: string }>(
+        `INSERT INTO student_portfolios (student_id, name)
+         SELECT id, 'Portafolio de ' || full_name FROM users WHERE id = $1
+         ON CONFLICT (student_id) DO UPDATE SET student_id = EXCLUDED.student_id
+         RETURNING id`,
+        [alumnoId],
+      );
+      const libro = await client.query<{ id: string }>(
+        `INSERT INTO books (title, library_id, portfolio_id, creator_id, layout_format)
+         VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+        [input.title, libraryId, portafolio.rows[0]?.id ?? null, alumnoId, input.layoutFormat],
+      );
+      // Como cualquier libro: nace con portada para que el editor tenga lienzo.
+      await client.query('INSERT INTO pages (book_id, page_number) VALUES ($1, 1)', [libro.rows[0].id]);
+      resultado.created += 1;
+    }
+  });
+
+  return resultado;
+}
+
+/** Alumnado de la biblioteca que aun no tiene su copia de un libro concreto. */
+export async function alumnadoSinCopia(
+  libraryId: string,
+  teacherId: string,
+  sourceBookId: string,
+): Promise<{ total: number; faltan: string[] }> {
+  await requireManager(libraryId, teacherId);
+  const { rows } = await query<{ student_id: string; tiene: boolean }>(
+    `SELECT ls.student_id,
+            EXISTS (SELECT 1 FROM books b
+                     WHERE b.library_id = ls.library_id AND b.creator_id = ls.student_id
+                       AND b.origin_book_id = $2) AS tiene
+     FROM library_students ls WHERE ls.library_id = $1`,
+    [libraryId, sourceBookId],
+  );
+  if (!rows.length) throw HttpError.badRequest('Esta biblioteca todavía no tiene alumnado');
+  return { total: rows.length, faltan: rows.filter((r) => !r.tiene).map((r) => r.student_id) };
+}

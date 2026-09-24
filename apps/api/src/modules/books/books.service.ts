@@ -2,7 +2,8 @@ import type { PoolClient } from 'pg';
 import { query, withTransaction } from '../../db/pool.js';
 import { HttpError } from '../../lib/http-error.js';
 import { getAccess } from '../libraries/libraries.service.js';
-import { copiarPaginas, type PaginaRow } from './copiar-paginas.js';
+import { copiarPaginas, copiarPaginasConIds, type PaginaRow } from './copiar-paginas.js';
+import { reducirTexto, reencajar, reduccionDeFormato } from './formato.js';
 import { TRIAL_LIMITS } from '../auth/trial.service.js';
 import { EDITOR_TOOLS, sanitizeTools } from '../canvas/tools.js';
 import type { ElementActions, ElementAnimation, ElementInteraction } from '../canvas/canvas.schemas.js';
@@ -281,7 +282,7 @@ async function assertTrialAllowsNewBook(userId: string): Promise<void> {
 }
 
 /** Igual que la anterior, pero para el numero de paginas de un libro. */
-async function assertTrialAllowsNewPage(userId: string, bookId: string): Promise<void> {
+async function assertTrialAllowsNewPage(userId: string, bookId: string, nuevas = 1): Promise<void> {
   const { rows } = await query<{ is_trial: boolean; pages: string }>(
     `SELECT u.is_trial, (SELECT COUNT(*) FROM pages p WHERE p.book_id = $2) AS pages
      FROM users u WHERE u.id = $1`,
@@ -291,7 +292,7 @@ async function assertTrialAllowsNewPage(userId: string, bookId: string): Promise
   const row = rows[0];
   if (!row?.is_trial) return;
 
-  if (Number(row.pages) >= TRIAL_LIMITS.maxPagesPerBook) {
+  if (Number(row.pages) + nuevas > TRIAL_LIMITS.maxPagesPerBook) {
     throw HttpError.forbidden(
       `La prueba permite ${TRIAL_LIMITS.maxPagesPerBook} paginas por libro. Crea una cuenta para seguir.`,
     );
@@ -1021,6 +1022,115 @@ export async function updateBook(bookId: string, userId: string, input: UpdateBo
     values,
   );
   return toBook(rows[0]);
+}
+
+/**
+ * Cambia el formato de un libro ya hecho (cuadrado, vertical o apaisado).
+ *
+ * Lo puede hacer quien pueda editar el libro. Todo en una transaccion: o cambia
+ * el formato y se recolocan todos los elementos de todas las paginas, o no cambia
+ * nada. A medias quedaria un libro con la mitad del contenido deformado.
+ */
+export async function changeFormat(bookId: string, userId: string, layoutFormat: string): Promise<Book> {
+  const { book } = await requireEdit(bookId, userId);
+  const desde = book.layout_format;
+
+  return withTransaction(async (client) => {
+    if (desde !== layoutFormat) {
+      const s = reduccionDeFormato(desde, layoutFormat);
+      const { rows: elementos } = await client.query<{
+        id: string;
+        type: string;
+        transform_matrix: { x: number; y: number; width: number; height: number; angle?: number };
+        properties: Record<string, unknown>;
+      }>(
+        `SELECT e.id, e.type, e.transform_matrix, e.properties
+         FROM canvas_elements e JOIN pages p ON p.id = e.page_id
+         WHERE p.book_id = $1`,
+        [bookId],
+      );
+
+      for (const el of elementos) {
+        const propiedades = { ...el.properties };
+        /*
+         * El texto se mide en pixeles del lienzo, no en proporcion de su caja: si
+         * la caja se reduce, la letra tiene que reducirse con ella o se desborda.
+         * Sin bajar del minimo de cada tipo, que en el texto es el accesible.
+         */
+        if (s < 1 && typeof propiedades.fontSize === 'number') {
+          propiedades.fontSize = reducirTexto(propiedades.fontSize, s, el.type);
+        }
+
+        await client.query(
+          'UPDATE canvas_elements SET transform_matrix = $2, properties = $3 WHERE id = $1',
+          [el.id, JSON.stringify(reencajar(el.transform_matrix, desde, layoutFormat)), JSON.stringify(propiedades)],
+        );
+      }
+    }
+
+    const { rows } = await client.query<BookRow>(
+      `UPDATE books SET layout_format = $2, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1 RETURNING ${BOOK_COLUMNS}`,
+      [bookId, layoutFormat],
+    );
+    return toBook(rows[0]);
+  });
+}
+
+export interface PegarPaginasInput {
+  sourceBookId: string;
+  pageIds: string[];
+  /** Detras de que pagina del libro destino; sin ella, al final. */
+  afterPageId?: string;
+}
+
+/**
+ * Pega en un libro paginas copiadas de otro (o del mismo).
+ *
+ * Basta con poder VER el libro de origen: es lo mismo que ya se puede hacer
+ * copiando elemento a elemento. En el destino hay que poder editar. Las paginas
+ * se copian en el orden que tienen en su libro, no en el que se marcaron, y todo
+ * va en una transaccion: o se pegan todas o ninguna.
+ */
+export async function pastePages(
+  bookId: string,
+  userId: string,
+  input: PegarPaginasInput,
+): Promise<{ pageIds: string[] }> {
+  await requireEdit(bookId, userId);
+  // Lanza 404 si el origen no existe o no se puede ver: no se confirma que exista.
+  await loadContext(input.sourceBookId, userId);
+
+  const { rows: paginas } = await query<PaginaRow>(
+    `SELECT id, page_number, background_color, background_pattern
+     FROM pages WHERE book_id = $1 AND id = ANY($2::uuid[])
+     ORDER BY page_number`,
+    [input.sourceBookId, input.pageIds],
+  );
+  if (!paginas.length) throw HttpError.notFound('Esas páginas ya no existen en el libro de origen');
+
+  await assertTrialAllowsNewPage(userId, bookId, paginas.length);
+
+  let despuesDe: number | null = null;
+  if (input.afterPageId) {
+    const { rows } = await query<{ page_number: number }>(
+      'SELECT page_number FROM pages WHERE id = $1 AND book_id = $2',
+      [input.afterPageId, bookId],
+    );
+    if (!rows[0]) throw HttpError.badRequest('La página de destino no es de este libro');
+    despuesDe = rows[0].page_number;
+  }
+
+  return withTransaction(async (client) => {
+    const ids = await copiarPaginasConIds(
+      client,
+      paginas,
+      bookId,
+      despuesDe === null ? 'final' : { despuesDe },
+    );
+    await touchBook(client, bookId);
+    return { pageIds: ids };
+  });
 }
 
 export async function deleteBook(bookId: string, userId: string): Promise<void> {

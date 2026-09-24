@@ -20,6 +20,7 @@ import type {
   QuizResults,
   QuizStatus,
   QuizSubmitResult,
+  AdminBookPage,
   BillingConfig,
   TransferResult,
   PlanAdmin,
@@ -144,6 +145,18 @@ export const librariesApi = {
   async remove(id: string) {
     await http.delete(`/libraries/${id}`);
   },
+  /** Un libro para cada alumno: en blanco, o copia de un libro del docente. */
+  async studentBooks(
+    id: string,
+    payload:
+      | { mode: 'blank'; title: string; layoutFormat: LayoutFormat; onlyWithoutBook: boolean }
+      | { mode: 'copy'; sourceBookId: string; title?: string },
+  ) {
+    const { data } = await http.post<{ created: number; skipped: number }>(`/libraries/${id}/student-books`, payload, {
+      timeout: 120_000,
+    });
+    return data;
+  },
   async join(codeInvite: string) {
     const { data } = await http.post<{ library: Library }>('/libraries/join', { codeInvite });
     return data.library;
@@ -231,6 +244,16 @@ export const librariesApi = {
 };
 
 export const booksApi = {
+  /** Administracion: todos los libros de la plataforma, paginados. */
+  async adminList(params: { search?: string; scope?: 'all' | 'personal' | 'library' | 'trial'; page?: number; pageSize?: number }) {
+    const { data } = await http.get<AdminBookPage>('/books/admin/all', { params });
+    return data;
+  },
+  /** Administracion: borra de una vez los libros indicados, de quien sean. */
+  async adminBulkDelete(bookIds: string[]) {
+    const { data } = await http.post<{ deleted: number; ignored: number }>('/books/admin/bulk-delete', { bookIds });
+    return data;
+  },
   /**
    * Pasa un libro de "Mis libros" a una o varias bibliotecas. Sin `keepPersonal`
    * el original se mueve a la primera y en las demas queda una copia.
@@ -260,6 +283,16 @@ export const booksApi = {
   /** Sin libraryId el libro se crea como personal, fuera de toda biblioteca. */
   async create(payload: { title?: string; libraryId?: string | null; layoutFormat?: LayoutFormat; isTemplate?: boolean }) {
     const { data } = await http.post<{ book: Book }>('/books', payload);
+    return data.book;
+  },
+  /** Pega paginas copiadas de otro libro; devuelve los ids de las copias, en orden. */
+  async pastePages(id: string, payload: { sourceBookId: string; pageIds: string[]; afterPageId?: string }) {
+    const { data } = await http.post<{ pageIds: string[] }>(`/books/${id}/pages/paste`, payload, { timeout: 60_000 });
+    return data.pageIds;
+  },
+  /** Cambia el formato de un libro ya hecho; el servidor recoloca el contenido. */
+  async changeFormat(id: string, layoutFormat: LayoutFormat) {
+    const { data } = await http.put<{ book: Book }>(`/books/${id}/format`, { layoutFormat });
     return data.book;
   },
   async update(id: string, payload: { title?: string; isPublished?: boolean; isTemplate?: boolean }) {
@@ -468,7 +501,17 @@ export const usersApi = {
     const { data } = await http.post<{ user: ManagedUser }>('/users', payload);
     return data.user;
   },
-  async update(id: string, payload: { fullName?: string; email?: string; role?: string; isActive?: boolean }) {
+  async update(
+    id: string,
+    payload: {
+      fullName?: string;
+      givenName?: string;
+      familyName?: string;
+      email?: string;
+      role?: string;
+      isActive?: boolean;
+    },
+  ) {
     const { data } = await http.patch<{ user: ManagedUser }>(`/users/${id}`, payload);
     return data.user;
   },
@@ -508,6 +551,8 @@ export const phidiasApi = {
       actualizadas: number;
       clavesPuestas: number;
       sinSeccion: number;
+      nombresCorregidos: number;
+      vinculadas: number;
     }>(
       '/phidias/sync-groups',
       {},
@@ -861,6 +906,7 @@ export const illustrationsApi = {
       ilustracion: { id: string; prompt: string; escena: Record<string, unknown>; origen: string };
       reutilizada: boolean;
       aviso?: string;
+      fueraDeAlcance?: boolean;
     }>('/illustrations/analizar', payload);
     return data;
   },

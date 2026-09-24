@@ -15,28 +15,49 @@ export interface PaginaRow {
   background_pattern: string | null;
 }
 
+/** Donde se insertan: al principio, al final, o justo detras de una pagina. */
+export type PosicionCopia = 'inicio' | 'final' | { despuesDe: number };
+
 /**
  * Copia las paginas indicadas dentro del libro destino, con sus elementos.
- *
- * Al insertar al principio hay que abrir hueco corriendo lo que ya hay. Se hace en
- * dos pasos, pasando por numeros negativos, porque (book_id, page_number) es unico y
- * un desplazamiento directo chocaria consigo mismo a mitad de camino.
+ * Devuelve cuantas copio.
  */
 export async function copiarPaginas(
   client: pg.PoolClient,
   paginas: PaginaRow[],
   destinoId: string,
-  posicion: 'inicio' | 'final',
+  posicion: PosicionCopia,
 ): Promise<number> {
-  let numero: number;
+  return (await copiarPaginasConIds(client, paginas, destinoId, posicion)).length;
+}
 
-  if (posicion === 'inicio') {
-    await client.query('UPDATE pages SET page_number = -page_number WHERE book_id = $1', [destinoId]);
+/**
+ * Lo mismo, devolviendo los ids de las copias en orden: quien pega paginas quiere
+ * abrir la primera que ha pegado.
+ *
+ * Para insertar en medio hay que abrir hueco corriendo lo que viene detras. Se hace
+ * en dos pasos, pasando por numeros negativos, porque (book_id, page_number) es
+ * unico y un desplazamiento directo chocaria consigo mismo a mitad de camino.
+ */
+export async function copiarPaginasConIds(
+  client: pg.PoolClient,
+  paginas: PaginaRow[],
+  destinoId: string,
+  posicion: PosicionCopia,
+): Promise<string[]> {
+  let numero: number;
+  const despuesDe = posicion === 'inicio' ? 0 : posicion === 'final' ? null : posicion.despuesDe;
+
+  if (despuesDe !== null) {
+    await client.query(
+      'UPDATE pages SET page_number = -page_number WHERE book_id = $1 AND page_number > $2',
+      [destinoId, despuesDe],
+    );
     await client.query(
       'UPDATE pages SET page_number = -page_number + $2 WHERE book_id = $1 AND page_number < 0',
       [destinoId, paginas.length],
     );
-    numero = 1;
+    numero = despuesDe + 1;
   } else {
     const { rows } = await client.query<{ siguiente: number }>(
       'SELECT COALESCE(MAX(page_number), 0) + 1 AS siguiente FROM pages WHERE book_id = $1',
@@ -45,6 +66,7 @@ export async function copiarPaginas(
     numero = Number(rows[0].siguiente);
   }
 
+  const ids: string[] = [];
   for (const pagina of paginas) {
     const insertada = await client.query<{ id: string }>(
       `INSERT INTO pages (book_id, page_number, background_color, background_pattern)
@@ -68,8 +90,9 @@ export async function copiarPaginas(
       [insertada.rows[0].id, pagina.id],
     );
 
+    ids.push(insertada.rows[0].id);
     numero += 1;
   }
 
-  return paginas.length;
+  return ids;
 }

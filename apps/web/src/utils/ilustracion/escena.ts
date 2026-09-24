@@ -49,6 +49,12 @@ export interface Escena {
   objetos: ObjetoEscena[];
   /** Lo que se pidio, tal cual lo escribio la persona. Va al texto alternativo. */
   descripcion: string;
+  /**
+   * Decide el aspecto de cada persona (piel, pelo, ropa, peinado). 0 o ausente
+   * es el reparto de siempre, por orden; otro numero, un reparto al azar pero
+   * repetible. Es lo que hace que "Otra version" cambie la gente y no la escena.
+   */
+  semilla?: number;
 }
 
 /** Una escena minima que siempre se puede dibujar, para cuando todo lo demas falla. */
@@ -116,6 +122,9 @@ export function normalizarEscena(bruto: unknown, descripcionPorDefecto = ''): Es
     personajes,
     objetos,
     descripcion: texto(dato.descripcion, 300) || descripcionPorDefecto.slice(0, 300),
+    semilla: Number.isInteger(dato.semilla) && (dato.semilla as number) >= 0 && (dato.semilla as number) <= 999_999
+      ? (dato.semilla as number)
+      : 0,
   };
 
   // Una escena sin nadie no es una ilustracion educativa, es un fondo vacio

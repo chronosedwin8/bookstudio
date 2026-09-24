@@ -170,7 +170,7 @@ function cara(lienzo: Lienzo, alturaCabeza: number, emocion: Emocion, tinta: str
   return formas;
 }
 
-/** Tres cortes de pelo, repartidos por orden de aparicion. */
+/** Tres cortes de pelo; cual lleva cada persona lo dicen sus rasgos. */
 function cabello(lienzo: Lienzo, alturaCabeza: number, variante: number, color: string): Primitiva[] {
   const r = CUERPO.radioCabeza;
   const [cx, cy] = lienzo.punto(0, alturaCabeza);
@@ -208,7 +208,7 @@ export interface PersonajeDibujado {
 }
 
 export function dibujarPersonaje(c: PersonajeColocado, paleta: Paleta): PersonajeDibujado {
-  const { personaje, indice } = c;
+  const { personaje, rasgos } = c;
   const sentado = personaje.pose === 'sitting';
   const esDocente = personaje.papel === 'teacher';
 
@@ -221,9 +221,9 @@ export function dibujarPersonaje(c: PersonajeColocado, paleta: Paleta): Personaj
   const lienzo = lienzoDe({ ...c, escala: c.escala * (esDocente ? 1.06 : 1) });
   const formas: Primitiva[] = [];
 
-  const tonoPiel = piel(indice + (esDocente ? 3 : 0));
-  const tonoPelo = pelo(indice + (esDocente ? 1 : 0));
-  const ropa = colorRopa(paleta, indice, esDocente);
+  const tonoPiel = piel(rasgos.piel);
+  const tonoPelo = pelo(rasgos.pelo);
+  const ropa = colorRopa(paleta, rasgos.ropa, esDocente);
   const manosPose = MANOS[personaje.pose];
 
   // --- El asiento, si esta sentado ---
@@ -300,7 +300,7 @@ export function dibujarPersonaje(c: PersonajeColocado, paleta: Paleta): Personaj
   // --- Cabeza ---
   const [hx, hy] = lienzo.punto(0, alturaCabeza);
   formas.push({ tipo: 'circulo', cx: hx, cy: hy, r: CUERPO.radioCabeza * lienzo.escala, relleno: tonoPiel });
-  formas.push(...cabello(lienzo, alturaCabeza, indice % 3, tonoPelo));
+  formas.push(...cabello(lienzo, alturaCabeza, rasgos.peinado, tonoPelo));
   formas.push(...cara(lienzo, alturaCabeza, personaje.emocion, paleta.tinta));
 
   // --- Brazo de delante (por encima del torso) ---

@@ -82,6 +82,26 @@ try {
     assert.equal(rows[0].external_group, '11A');
   });
 
+  await prueba('el nombre sale con los apellidos primero y guarda sus partes', async () => {
+    const { rows } = await client.query('SELECT full_name, given_name, family_name FROM users WHERE id = $1', [cuentaId]);
+    assert.equal(rows[0].full_name, `Prueba ${sufijo} Renombrada Lucia`);
+    assert.equal(rows[0].given_name, 'Lucia');
+    assert.equal(rows[0].family_name, `Prueba ${sufijo} Renombrada`);
+  });
+
+  await prueba('un nombre corregido a mano no lo pisa la siguiente importacion', async () => {
+    await client.query(
+      "UPDATE users SET full_name = 'Corregido A Mano', given_name = 'Mano', family_name = 'Corregido A', name_edited_at = NOW() WHERE id = $1",
+      [cuentaId],
+    );
+    await cuentaDeAlumno(client, alumno, alumno.email!, '12A');
+    const { rows } = await client.query('SELECT full_name, given_name, external_group FROM users WHERE id = $1', [cuentaId]);
+    assert.equal(rows[0].full_name, 'Corregido A Mano');
+    assert.equal(rows[0].given_name, 'Mano');
+    // El curso si se refresca: ahi Phidias sigue siendo la fuente buena.
+    assert.equal(rows[0].external_group, '12A');
+  });
+
   await prueba('la contrasena que la persona se puso no se toca', async () => {
     await client.query("UPDATE users SET password_hash = 'propia', password_is_default = FALSE WHERE id = $1", [cuentaId]);
     const r = await cuentaDeAlumno(client, alumno, alumno.email!, '11A');

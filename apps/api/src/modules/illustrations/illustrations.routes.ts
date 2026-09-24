@@ -40,8 +40,8 @@ illustrationsRouter.post(
       throw HttpError.badRequest('Has pedido muchas ilustraciones seguidas. Prueba dentro de un rato.');
     }
 
-    const { ilustracion, reutilizada, aviso } = await service.generar(req.auth!.userId, req.body);
-    res.status(reutilizada ? 200 : 201).json({ ilustracion, reutilizada, aviso });
+    const { ilustracion, reutilizada, aviso, fueraDeAlcance } = await service.generar(req.auth!.userId, req.body);
+    res.status(reutilizada ? 200 : 201).json({ ilustracion, reutilizada, aviso, fueraDeAlcance: fueraDeAlcance === true });
   }),
 );
 

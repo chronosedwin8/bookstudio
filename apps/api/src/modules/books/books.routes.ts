@@ -1,11 +1,13 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { asyncHandler } from '../../lib/async-handler.js';
-import { requireAuth } from '../../middleware/auth.js';
+import { requireAuth, requireRole } from '../../middleware/auth.js';
 import { validate } from '../../middleware/validate.js';
 import { createElementSchema, reorderLayersSchema, updateElementSchema } from '../canvas/canvas.schemas.js';
 import {
   answerSchema,
+  changeFormatSchema,
+  pastePagesSchema,
   bookIdSchema,
   createBookSchema,
   createPageSchema,
@@ -25,10 +27,41 @@ import * as service from './books.service.js';
 import * as mural from './mural.service.js';
 import * as grades from './grades.service.js';
 import * as activity from './activity.service.js';
+import * as adminBooks from './admin-books.service.js';
 
 export const booksRouter = Router();
 
 booksRouter.use(requireAuth);
+
+/* -------------------------------------------------------------------------
+ * Administracion: todos los libros y borrado masivo.
+ *
+ * Van antes de '/:id' porque, si no, "admin" se tomaria por el id de un libro.
+ * ---------------------------------------------------------------------- */
+const librosAdminQuerySchema = z.object({
+  search: z.string().max(120).trim().optional(),
+  scope: z.enum(['all', 'personal', 'library', 'trial']).default('all'),
+  page: z.coerce.number().int().min(1).max(10_000).default(1),
+  pageSize: z.coerce.number().int().min(1).max(200).default(50),
+});
+
+booksRouter.get(
+  '/admin/all',
+  requireRole('admin'),
+  validate(librosAdminQuerySchema, 'query'),
+  asyncHandler(async (req, res) => {
+    res.json(await adminBooks.listarLibros(req.query as never));
+  }),
+);
+
+booksRouter.post(
+  '/admin/bulk-delete',
+  requireRole('admin'),
+  validate(z.object({ bookIds: z.array(z.string().uuid()).min(1, 'Elige al menos un libro').max(500) })),
+  asyncHandler(async (req, res) => {
+    res.json(await adminBooks.borrarLibros(req.body.bookIds));
+  }),
+);
 
 booksRouter.get(
   '/',
@@ -204,6 +237,19 @@ booksRouter.delete(
   }),
 );
 
+/**
+ * Cambia el formato de un libro ya hecho, recolocando su contenido para que no se
+ * deforme. Lo puede hacer cualquiera que pueda editar el libro.
+ */
+booksRouter.put(
+  '/:id/format',
+  validate(bookIdSchema, 'params'),
+  validate(changeFormatSchema),
+  asyncHandler(async (req, res) => {
+    res.json({ book: await service.changeFormat(req.params.id, req.auth!.userId, req.body.layoutFormat) });
+  }),
+);
+
 /** Pasa un libro de "Mis libros" a una o varias bibliotecas, moviendolo o copiandolo. */
 booksRouter.post(
   '/:id/transfer',
@@ -211,6 +257,16 @@ booksRouter.post(
   validate(transferBookSchema),
   asyncHandler(async (req, res) => {
     res.json(await service.transferBook(req.params.id, req.auth!.userId, req.body));
+  }),
+);
+
+/** Pega paginas copiadas de otro libro, detras de la pagina indicada o al final. */
+booksRouter.post(
+  '/:id/pages/paste',
+  validate(bookIdSchema, 'params'),
+  validate(pastePagesSchema),
+  asyncHandler(async (req, res) => {
+    res.status(201).json(await service.pastePages(req.params.id, req.auth!.userId, req.body));
   }),
 );
 

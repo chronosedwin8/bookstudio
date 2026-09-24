@@ -18,6 +18,9 @@ export interface ManagedUser {
   hasPassword: boolean;
   /** Curso o seccion de origen: el "name" de Phidias ("K2D"). null si no viene de ahi. */
   course: string | null;
+  /** Las dos partes del nombre, si se conocen. Sirven para editarlo por separado. */
+  givenName: string | null;
+  familyName: string | null;
   libraryCount: number;
   bookCount: number;
   createdAt: string;
@@ -32,6 +35,8 @@ interface UserRow {
   external_source: string | null;
   has_password: boolean;
   course: string | null;
+  given_name: string | null;
+  family_name: string | null;
   library_count: string;
   book_count: string;
   created_at: Date;
@@ -47,6 +52,8 @@ function toManagedUser(row: UserRow): ManagedUser {
     externalSource: row.external_source,
     hasPassword: row.has_password,
     course: row.course ?? null,
+    givenName: row.given_name ?? null,
+    familyName: row.family_name ?? null,
     libraryCount: Number(row.library_count),
     bookCount: Number(row.book_count),
     createdAt: row.created_at.toISOString(),
@@ -100,7 +107,7 @@ export async function listUsers({ search, role, page, pageSize }: ListUsersQuery
     `SELECT u.id, u.email, u.full_name, u.role, u.is_active, u.external_source, u.created_at,
             -- Es el "name" de la seccion en Phidias ("K2D"), que se refresca en
             -- cada importacion porque el alumnado cambia de curso cada ano.
-            u.external_group AS course,
+            u.external_group AS course, u.given_name, u.family_name,
             (u.password_hash IS NOT NULL) AS has_password,
             (SELECT COUNT(*) FROM library_students ls WHERE ls.student_id = u.id)
               + (SELECT COUNT(*) FROM libraries l WHERE l.owner_id = u.id) AS library_count,
@@ -126,7 +133,7 @@ async function loadUser(userId: string): Promise<ManagedUser> {
     `SELECT u.id, u.email, u.full_name, u.role, u.is_active, u.external_source, u.created_at,
             -- Es el "name" de la seccion en Phidias ("K2D"), que se refresca en
             -- cada importacion porque el alumnado cambia de curso cada ano.
-            u.external_group AS course,
+            u.external_group AS course, u.given_name, u.family_name,
             (u.password_hash IS NOT NULL) AS has_password,
             0 AS library_count, 0 AS book_count
      FROM users u WHERE u.id = $1`,
@@ -157,6 +164,9 @@ export async function createUser(input: CreateUserInput): Promise<ManagedUser> {
 
 export interface UpdateUserInput {
   fullName?: string;
+  /** Nombres y apellidos por separado: el nombre completo se compone con ellos. */
+  givenName?: string;
+  familyName?: string;
   email?: string;
   role?: UserRole;
   isActive?: boolean;
@@ -199,8 +209,26 @@ export async function updateUser(
     throw HttpError.badRequest('Ese dominio lo reserva la aplicación; usa un correo real');
   }
 
+  /*
+   * El nombre se compone siempre igual: "APELLIDOS NOMBRES", que es el orden en
+   * que se pasa lista. Asi da igual si la cuenta vino de Phidias, de Microsoft o
+   * se creo a mano: en la lista de clase salen todos del mismo modo.
+   */
+  const entrada: UpdateUserInput = { ...input };
+  const porPartes = input.givenName !== undefined || input.familyName !== undefined;
+  if (porPartes) {
+    const nombres = (input.givenName ?? '').replace(/\s+/g, ' ').trim();
+    const apellidos = (input.familyName ?? '').replace(/\s+/g, ' ').trim();
+    if (!nombres || !apellidos) throw HttpError.badRequest('Escribe los nombres y los apellidos');
+    entrada.fullName = `${apellidos} ${nombres}`.slice(0, 100);
+    entrada.givenName = nombres;
+    entrada.familyName = apellidos;
+  }
+
   const columns: Record<string, string> = {
     fullName: 'full_name',
+    givenName: 'given_name',
+    familyName: 'family_name',
     email: 'email',
     role: 'role',
     isActive: 'is_active',
@@ -209,12 +237,19 @@ export async function updateUser(
   const values: unknown[] = [userId];
 
   for (const [key, column] of Object.entries(columns)) {
-    const value = input[key as keyof UpdateUserInput];
+    const value = entrada[key as keyof UpdateUserInput];
     if (value === undefined) continue;
     values.push(value);
     sets.push(`${column} = $${values.length}`);
   }
   if (!sets.length) throw HttpError.badRequest('No hay campos para actualizar');
+
+  // Un nombre corregido a mano manda: Phidias ya no lo vuelve a pisar.
+  if (entrada.fullName !== undefined) {
+    sets.push('name_edited_at = NOW()');
+    // Si solo llega el nombre completo, las partes viejas ya no le corresponden.
+    if (!porPartes) sets.push('given_name = NULL', 'family_name = NULL');
+  }
 
   /*
    * Da igual de donde venga la cuenta, a mano o de Phidias: el correo se puede

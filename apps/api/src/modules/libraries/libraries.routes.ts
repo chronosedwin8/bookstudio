@@ -16,10 +16,12 @@ import {
   libraryIdSchema,
   rosterSchema,
   studentSearchSchema,
+  studentBooksSchema,
+  type StudentBooksInput,
   updateLibrarySchema,
 } from './libraries.schemas.js';
 import * as service from './libraries.service.js';
-import { distribute } from './distribute.service.js';
+import { alumnadoSinCopia, crearLibrosEnBlanco, distribute } from './distribute.service.js';
 import { getGradeBook } from '../books/grades.service.js';
 
 export const librariesRouter = Router();
@@ -206,6 +208,47 @@ librariesRouter.delete(
   asyncHandler(async (req, res) => {
     await service.removeStudent(req.params.id, req.auth!.userId, req.params.studentId);
     res.status(204).end();
+  }),
+);
+
+/**
+ * Un libro para cada alumno, en blanco o copiando uno del docente. Se ofrece al
+ * crear la biblioteca, pero se puede lanzar en cualquier momento.
+ */
+librariesRouter.post(
+  '/:id/student-books',
+  requireRole('teacher', 'admin'),
+  validate(libraryIdSchema, 'params'),
+  validate(studentBooksSchema),
+  asyncHandler(async (req, res) => {
+    const body = req.body as StudentBooksInput;
+    if (body.mode === 'blank') {
+      const r = await crearLibrosEnBlanco(req.params.id, req.auth!.userId, {
+        title: body.title,
+        layoutFormat: body.layoutFormat,
+        soloSinLibro: body.onlyWithoutBook,
+      });
+      res.status(201).json({ created: r.created, skipped: r.skipped });
+      return;
+    }
+    /*
+     * Copiar un libro a cada alumno es una entrega de libro entero, pero SOLO a
+     * quien aun no tiene su copia: una entrega normal anade las paginas otra vez
+     * a la copia existente, y repetir esta operacion duplicaria el contenido.
+     */
+    const pendientes = await alumnadoSinCopia(req.params.id, req.auth!.userId, body.sourceBookId);
+    if (!pendientes.faltan.length) {
+      res.status(201).json({ created: 0, skipped: pendientes.total });
+      return;
+    }
+    const r = await distribute(req.params.id, req.auth!.userId, {
+      sourceBookId: body.sourceBookId,
+      title: body.title,
+      studentIds: pendientes.faltan,
+      target: 'nuevo',
+      position: 'final',
+    });
+    res.status(201).json({ created: r.created, skipped: pendientes.total - pendientes.faltan.length });
   }),
 );
 

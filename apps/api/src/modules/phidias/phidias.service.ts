@@ -232,6 +232,13 @@ export interface SincronizacionGrupos {
   clavesPuestas: number;
   /** Cuentas que ya no aparecen en ninguna seccion (bajas, cambios de centro). */
   sinSeccion: number;
+  /** Nombres puestos al dia desde Phidias (orden, tildes, letras dañadas). */
+  nombresCorregidos: number;
+  /**
+   * Cuentas que ya existian por otra via (entraron con Microsoft, o se crearon a
+   * mano) y cuyo correo esta en Phidias: ahora quedan vinculadas a su ficha.
+   */
+  vinculadas: number;
 }
 
 /**
@@ -261,15 +268,21 @@ export async function syncGroups(): Promise<SincronizacionGrupos> {
 
   // Id del alumno en Phidias -> su codigo, para poder reponer contrasenas.
   const codigos = new Map<string, string>();
+  // Y la ficha entera, por id y por correo, para los nombres y los vinculos.
+  const fichaPorId = new Map<string, PhidiasStudent>();
+  const fichaPorCorreo = new Map<string, PhidiasStudent>();
   for (const level of levels) {
     for (const course of level.courses ?? []) {
       for (const section of course.sections ?? []) {
         for (const student of section.students ?? []) {
           codigos.set(String(student.id), codigoDe(student));
+          fichaPorId.set(String(student.id), student);
+          if (hasEmail(student)) fichaPorCorreo.set(student.email!.trim().toLowerCase(), student);
         }
       }
     }
   }
+
 
   const { rows } = await query<{
     id: string;
@@ -321,7 +334,98 @@ export async function syncGroups(): Promise<SincronizacionGrupos> {
     clavesPuestas += 1;
   }
 
-  return { total: rows.length, actualizadas, clavesPuestas, sinSeccion };
+  /*
+   * La vinculacion va DESPUES de reponer contrasenas, a proposito: una cuenta
+   * vinculada ahora no debe pasar por ese bucle. Si su docente le puso una clave
+   * (y quedo marcada como puesta por el sistema), cambiarsela por su codigo la
+   * dejaria fuera sin avisar.
+   */
+  const vinculadas = await vincularPorCorreo(fichaPorCorreo, porAlumno);
+  const nombresCorregidos = await corregirNombres(fichaPorId);
+
+  return { total: rows.length, actualizadas, clavesPuestas, sinSeccion, nombresCorregidos, vinculadas };
+}
+
+/**
+ * Vincula a su ficha de Phidias las cuentas de alumnado que se crearon por otra
+ * via con el mismo correo.
+ *
+ * El caso real: alumnado que entro con su cuenta de Microsoft antes de que nadie
+ * importara su seccion. Microsoft da el nombre con el que este en su directorio,
+ * a veces con letras dañadas ("HENR�QUEZ"), y ningun curso. Vinculadas, se les
+ * pone el nombre bueno de Phidias y su curso.
+ *
+ * No se toca la contrasena de estas cuentas: entraban con Microsoft y siguen
+ * entrando igual. Y si otra cuenta ya lleva ese identificador de Phidias (por
+ * ejemplo porque se le corrigio el correo), no se vincula: serian dos personas
+ * con la misma ficha.
+ */
+async function vincularPorCorreo(
+  fichaPorCorreo: Map<string, PhidiasStudent>,
+  seccionPorId: Map<string, string>,
+): Promise<number> {
+  if (!fichaPorCorreo.size) return 0;
+
+  const { rows } = await query<{ id: string; email: string }>(
+    `SELECT id, email FROM users
+      WHERE role = 'student'
+        AND external_source IS DISTINCT FROM 'phidias'
+        AND email = ANY($1::text[])`,
+    [[...fichaPorCorreo.keys()]],
+  );
+
+  let vinculadas = 0;
+  for (const fila of rows) {
+    const ficha = fichaPorCorreo.get(fila.email);
+    if (!ficha) continue;
+    const { rowCount } = await query(
+      `UPDATE users
+          SET external_source = 'phidias', external_id = $2, external_group = COALESCE($3, external_group)
+        WHERE id = $1
+          AND NOT EXISTS (
+            SELECT 1 FROM users otra
+             WHERE otra.external_source = 'phidias' AND otra.external_id = $2 AND otra.id <> $1
+          )`,
+      [fila.id, String(ficha.id), seccionPorId.get(String(ficha.id)) ?? null],
+    );
+    vinculadas += rowCount ?? 0;
+  }
+  return vinculadas;
+}
+
+/**
+ * Pone al dia el nombre de todo el alumnado vinculado a Phidias.
+ *
+ * Siempre "APELLIDOS NOMBRES" y con las tildes que da Phidias. Solo se tocan los
+ * nombres que nadie ha corregido a mano, y solo si cambian de verdad.
+ */
+async function corregirNombres(fichaPorId: Map<string, PhidiasStudent>): Promise<number> {
+  const { rows } = await query<{ id: string; external_id: string; full_name: string }>(
+    `SELECT id, external_id, full_name FROM users
+      WHERE external_source = 'phidias' AND external_id IS NOT NULL AND name_edited_at IS NULL`,
+  );
+
+  let corregidos = 0;
+  for (const fila of rows) {
+    const ficha = fichaPorId.get(fila.external_id);
+    if (!ficha) continue;
+    const nombre = fullNameOf(ficha).slice(0, 100);
+    const { nombres, apellidos } = partesDe(ficha);
+    if (nombre === fila.full_name) {
+      // El nombre ya esta bien; basta con guardar las partes si faltan.
+      await query(
+        'UPDATE users SET given_name = $2, family_name = $3 WHERE id = $1 AND given_name IS NULL',
+        [fila.id, nombres, apellidos],
+      );
+      continue;
+    }
+    await query(
+      'UPDATE users SET full_name = $2, given_name = $3, family_name = $4 WHERE id = $1 AND name_edited_at IS NULL',
+      [fila.id, nombre, nombres, apellidos],
+    );
+    corregidos += 1;
+  }
+  return corregidos;
 }
 
 /**
@@ -346,26 +450,33 @@ export async function cuentaDeAlumno(
   seccion: string,
 ): Promise<{ id: string; password_is_default: boolean; inserted: boolean }> {
   const nombre = fullNameOf(student).slice(0, 100);
+  const { nombres, apellidos } = partesDe(student);
   const grupo = seccion.slice(0, 60);
 
+  // El nombre solo se refresca si nadie lo corrigio a mano (name_edited_at).
   const suya = await client.query<{ id: string; password_is_default: boolean }>(
     `UPDATE users
-        SET full_name = $2, external_group = $3
+        SET full_name   = CASE WHEN name_edited_at IS NULL THEN $2 ELSE full_name END,
+            given_name  = CASE WHEN name_edited_at IS NULL THEN $4 ELSE given_name END,
+            family_name = CASE WHEN name_edited_at IS NULL THEN $5 ELSE family_name END,
+            external_group = $3
       WHERE external_source = 'phidias' AND external_id = $1
       RETURNING id, password_is_default`,
-    [String(student.id), nombre, grupo],
+    [String(student.id), nombre, grupo, nombres, apellidos],
   );
   if (suya.rows[0]) return { ...suya.rows[0], inserted: false };
 
   const upserted = await client.query<{ id: string; password_is_default: boolean; inserted: boolean }>(
     `INSERT INTO users (email, password_hash, full_name, role, external_source, external_id,
-                        external_group, password_is_default)
-     VALUES ($1, $2, $3, 'student', 'phidias', $4, $5, TRUE)
+                        external_group, password_is_default, given_name, family_name)
+     VALUES ($1, $2, $3, 'student', 'phidias', $4, $5, TRUE, $6, $7)
      ON CONFLICT (email) DO UPDATE
-       SET full_name = EXCLUDED.full_name,
+       SET full_name   = CASE WHEN users.name_edited_at IS NULL THEN EXCLUDED.full_name ELSE users.full_name END,
+           given_name  = CASE WHEN users.name_edited_at IS NULL THEN EXCLUDED.given_name ELSE users.given_name END,
+           family_name = CASE WHEN users.name_edited_at IS NULL THEN EXCLUDED.family_name ELSE users.family_name END,
            external_group = EXCLUDED.external_group
      RETURNING id, password_is_default, (xmax = 0) AS inserted`,
-    [email, await bcrypt.hash(codigoDe(student), 12), nombre, String(student.id), grupo],
+    [email, await bcrypt.hash(codigoDe(student), 12), nombre, String(student.id), grupo, nombres, apellidos],
   );
   return upserted.rows[0];
 }
@@ -444,13 +555,26 @@ export function codigoDe(student: PhidiasStudent): string {
   return local || String(student.id);
 }
 
+/**
+ * Nombre completo, siempre como "APELLIDOS NOMBRES".
+ *
+ * Antes se componia al reves ("NOMBRES APELLIDOS") y el alumnado que entra con su
+ * cuenta de Microsoft trae el orden contrario, asi que en una misma lista salian
+ * mezclados. Apellidos primero es como se pasa lista y como se ordena.
+ */
 function fullNameOf(student: PhidiasStudent): string {
-  const name = [student.firstname, student.lastname]
+  const name = [student.lastname, student.firstname]
     .filter(Boolean)
     .join(' ')
     .replace(/\s+/g, ' ')
     .trim();
   return name || `Alumno ${student.id}`;
+}
+
+/** Las dos partes por separado, tal como las da Phidias. */
+function partesDe(student: PhidiasStudent): { nombres: string | null; apellidos: string | null } {
+  const limpio = (t?: string) => (t ?? '').replace(/\s+/g, ' ').trim().slice(0, 100) || null;
+  return { nombres: limpio(student.firstname), apellidos: limpio(student.lastname) };
 }
 
 /** Comprueba que quien importa administra de verdad la biblioteca de destino. */

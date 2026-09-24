@@ -11,6 +11,7 @@
  */
 import type { Distribucion, Posicion } from './catalogo';
 import type { Escena, ObjetoEscena, PersonajeEscena } from './escena';
+import { rasgosDe, type Rasgos } from './paleta';
 import { ALTO_LIENZO, ANCHO_LIENZO } from './primitivas';
 
 /** El suelo: donde apoyan los pies. */
@@ -28,6 +29,8 @@ export interface Sitio {
 export interface PersonajeColocado extends Sitio {
   personaje: PersonajeEscena;
   indice: number;
+  /** Piel, pelo, ropa y peinado: salen de la semilla de la escena. */
+  rasgos: Rasgos;
   /** Hacia donde mira: 1 a la derecha, -1 a la izquierda. */
   sentido: 1 | -1;
 }
@@ -101,6 +104,8 @@ export function componer(escena: Escena): Composicion {
   const pedidos = gente.map((p) => p.posicion);
   const hayChoque = new Set(pedidos).size < pedidos.length;
 
+  const rasgos = rasgosDe(escena.semilla ?? 0, gente.length, (i) => gente[i].papel === 'teacher');
+
   const personajes: PersonajeColocado[] = gente.map((personaje, indice) => {
     const hueco = reparto[indice] ?? reparto[reparto.length - 1];
     const fraccion = !hayChoque && PEDIDO[personaje.posicion] !== undefined
@@ -110,6 +115,7 @@ export function componer(escena: Escena): Composicion {
     return {
       personaje,
       indice,
+      rasgos: rasgos[indice],
       x: fraccion * ANCHO_LIENZO,
       base: LINEA_SUELO,
       escala: hueco.escala * tamano,

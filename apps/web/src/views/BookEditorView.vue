@@ -36,6 +36,7 @@ import type {
   ElementAnimation,
   ElementInteraction,
   ElementType,
+  LayoutFormat,
   MediaResult,
   TransformMatrix,
 } from '@/types/api';
@@ -52,6 +53,88 @@ import type { PageTemplate } from '@/utils/templates';
 const route = useRoute();
 const router = useRouter();
 const auth = useAuthStore();
+
+/* --------------------------------------------------------------------------
+ * Seleccion de paginas para copiarlas y pegarlas en este u otro libro
+ * ----------------------------------------------------------------------- */
+const seleccionando = ref(false);
+const paginasMarcadas = ref(new Set<string>());
+const avisoPaginas = ref<string | null>(null);
+
+function alternarMarca(id: string): void {
+  const s = new Set(paginasMarcadas.value);
+  if (s.has(id)) s.delete(id);
+  else s.add(id);
+  paginasMarcadas.value = s;
+}
+
+/** En modo seleccion, o con Ctrl/Cmd, el clic marca; si no, abre la pagina. */
+function onClicMiniatura(id: string, index: number, evento: MouseEvent): void {
+  if (seleccionando.value || evento.ctrlKey || evento.metaKey) {
+    alternarMarca(id);
+    return;
+  }
+  editor.goToPage(index);
+}
+
+function marcarTodas(): void {
+  paginasMarcadas.value = new Set(editor.book?.pages.map((p) => p.id) ?? []);
+}
+
+function terminarSeleccion(): void {
+  seleccionando.value = false;
+  paginasMarcadas.value = new Set();
+}
+
+function copiarMarcadas(): void {
+  const n = editor.copiarPaginas([...paginasMarcadas.value]);
+  terminarSeleccion();
+  if (n) {
+    avisoPaginas.value =
+      `${n} ${n === 1 ? 'página copiada' : 'páginas copiadas'}. ` +
+      'Abre el libro donde las quieras (o quédate en este) y pulsa «Pegar» en la barra de páginas.';
+  }
+}
+
+async function pegarCopiadas(): Promise<void> {
+  const n = await editor.pegarPaginas();
+  if (n) avisoPaginas.value = `${n} ${n === 1 ? 'página pegada' : 'páginas pegadas'} detrás de la que tenías abierta.`;
+}
+
+/** Descripcion que llega a "Crear imagen con IA" desde la ilustracion educativa. */
+const promptImagenIa = ref('');
+
+const NOMBRE_FORMATO: Record<LayoutFormat, string> = {
+  square: 'Cuadrado 1:1',
+  portrait: 'Vertical 3:4',
+  landscape: 'Apaisado 4:3',
+};
+
+/**
+ * Cambiar el formato de un libro ya hecho.
+ *
+ * Se pregunta antes porque toca todas las paginas y vacia el historial de
+ * deshacer. Si se cancela, el selector vuelve a mostrar el formato de verdad.
+ */
+async function onChangeFormat(select: HTMLSelectElement): Promise<void> {
+  const nuevo = select.value as LayoutFormat;
+  if (!editor.book || nuevo === editor.book.layoutFormat) return;
+
+  const ok = window.confirm(
+    `¿Cambiar el libro a ${NOMBRE_FORMATO[nuevo]}?
+
+` +
+      'El contenido de todas las páginas se recoloca para que quepa sin deformarse: ' +
+      'queda centrado y, si hace falta, un poco más pequeño. ' +
+      'Después no se podrá deshacer con Ctrl+Z, pero puedes volver al formato anterior.',
+  );
+  if (!ok) {
+    select.value = editor.book.layoutFormat;
+    return;
+  }
+  const cambiado = await editor.changeFormat(nuevo);
+  if (!cambiado && editor.book) select.value = editor.book.layoutFormat;
+}
 const editor = useEditorStore();
 const preferences = usePreferencesStore();
 
@@ -1008,8 +1091,24 @@ async function saveTitle(): Promise<void> {
           @keyup.enter="saveTitle"
         />
 
-        <span class="rounded bg-slate-100 px-2 py-0.5 text-xs capitalize text-slate-600">
-          {{ editor.book.layoutFormat }}
+        <!--
+          El formato se puede cambiar despues de crear el libro. Antes era solo una
+          etiqueta, y en ingles ("landscape"): quien se equivocaba al crearlo tenia
+          que empezar de cero.
+        -->
+        <select
+          v-if="editor.canEdit"
+          class="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-xs text-slate-700"
+          :value="editor.book.layoutFormat"
+          :disabled="editor.saving"
+          aria-label="Formato de página"
+          title="Cambiar el formato del libro"
+          @change="onChangeFormat(($event.target as HTMLSelectElement))"
+        >
+          <option v-for="(nombre, clave) in NOMBRE_FORMATO" :key="clave" :value="clave">{{ nombre }}</option>
+        </select>
+        <span v-else class="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
+          {{ NOMBRE_FORMATO[editor.book.layoutFormat] }}
         </span>
 
         <!-- Deshacer y rehacer: lo primero que se busca al equivocarse -->
@@ -1061,9 +1160,13 @@ async function saveTitle(): Promise<void> {
           {{ editor.isManager ? 'Valorar' : 'Mis notas' }}
         </button>
 
-        <!-- Entregar: solo tiene sentido con biblioteca y para quien la dirige -->
+        <!--
+          Entregar: solo con biblioteca, para quien la dirige, y solo si la cuenta
+          es de docente o de administracion. `isManager` a secas no basta: en un
+          libro propio vale verdadero para cualquiera, tambien para el alumnado.
+        -->
         <button
-          v-if="editor.book.libraryId && editor.isManager"
+          v-if="editor.book.libraryId && editor.isManager && auth.isTeacher"
           type="button"
           class="btn-secondary"
           @click="showDistribute = true"
@@ -1111,6 +1214,7 @@ async function saveTitle(): Promise<void> {
         <AlertMessage :message="editor.error" />
         <AlertMessage :message="entregaAviso" variant="success" />
         <AlertMessage :message="avisoHistorial" variant="success" />
+        <AlertMessage :message="avisoPaginas" variant="success" />
       </div>
 
       <div class="flex min-h-0 flex-1">
@@ -1122,6 +1226,38 @@ async function saveTitle(): Promise<void> {
             <input v-model="autoShape" type="checkbox" class="h-3.5 w-3.5 rounded" />
             Autoforma
           </label>
+
+          <!--
+            Grabar va lo primero: grabar la pantalla es de lo que mas se usa en clase
+            y, al fondo de la lista de Insertar y dentro de un desplegable, habia que
+            bajar y abrir para encontrarlo. La pantalla queda a la vista; las demas
+            grabaciones, plegadas justo debajo para no empujar Insertar hacia abajo.
+          -->
+          <section v-if="puedeUsar('video')" class="space-y-1.5">
+            <h3 class="label">Grabar</h3>
+            <button type="button" class="btn-primary w-full justify-start" @click="dialog = 'screen'">
+              🖥️ Grabar pantalla
+            </button>
+          </section>
+
+          <details class="space-y-1.5">
+            <summary class="section-toggle">Más grabaciones</summary>
+            <button v-if="puedeUsar('audio')" type="button" class="btn-secondary w-full justify-start" @click="dialog = 'audio'">
+              🎤 Voz
+            </button>
+            <button v-if="puedeUsar('audio')" type="button" class="btn-secondary w-full justify-start" @click="dialog = 'sound'">
+              🔊 Biblioteca de sonidos
+            </button>
+            <button v-if="puedeUsar('image')" type="button" class="btn-secondary w-full justify-start" @click="dialog = 'photo'">
+              📷 Foto
+            </button>
+            <button v-if="puedeUsar('video')" type="button" class="btn-secondary w-full justify-start" @click="dialog = 'video'">
+              🎬 Video
+            </button>
+            <button v-if="puedeUsar('image')" type="button" class="btn-secondary w-full justify-start" @click="dialog = 'clip'">
+              ✂️ Recorte de pantalla
+            </button>
+          </details>
 
           <section class="space-y-1.5">
             <h3 class="label">Insertar</h3>
@@ -1193,27 +1329,7 @@ async function saveTitle(): Promise<void> {
             </p>
           </details>
 
-          <details class="space-y-1.5">
-            <summary class="section-toggle">Grabar</summary>
-            <button v-if="puedeUsar('audio')" type="button" class="btn-secondary w-full justify-start" @click="dialog = 'audio'">
-              🎤 Voz
-            </button>
-            <button v-if="puedeUsar('audio')" type="button" class="btn-secondary w-full justify-start" @click="dialog = 'sound'">
-              🔊 Biblioteca de sonidos
-            </button>
-            <button v-if="puedeUsar('image')" type="button" class="btn-secondary w-full justify-start" @click="dialog = 'photo'">
-              📷 Foto
-            </button>
-            <button v-if="puedeUsar('video')" type="button" class="btn-secondary w-full justify-start" @click="dialog = 'video'">
-              🎬 Video
-            </button>
-            <button v-if="puedeUsar('video')" type="button" class="btn-secondary w-full justify-start" @click="dialog = 'screen'">
-              🖥️ Pantalla
-            </button>
-            <button v-if="puedeUsar('image')" type="button" class="btn-secondary w-full justify-start" @click="dialog = 'clip'">
-              ✂️ Recorte de pantalla
-            </button>
-          </details>
+
 
           <section v-if="puedeUsar('shape') || puedeUsar('icon')">
             <h3 class="label">Formas</h3>
@@ -1415,11 +1531,16 @@ async function saveTitle(): Promise<void> {
                 type="button"
                 class="block overflow-hidden rounded border-2 bg-white transition"
                 :class="[
-                  index === editor.currentPageIndex ? 'border-brand-600' : 'border-slate-300 hover:border-slate-400',
-                  editor.canEdit && 'cursor-grab active:cursor-grabbing',
+                  paginasMarcadas.has(page.id)
+                    ? 'border-emerald-500 ring-2 ring-emerald-300'
+                    : index === editor.currentPageIndex ? 'border-brand-600' : 'border-slate-300 hover:border-slate-400',
+                  editor.canEdit && !seleccionando && 'cursor-grab active:cursor-grabbing',
                 ]"
-                :title="index === 0 ? 'Portada' : `Página ${page.pageNumber}`"
-                @click="editor.goToPage(index)"
+                :title="seleccionando
+                  ? (paginasMarcadas.has(page.id) ? 'Quitar de la selección' : 'Añadir a la selección')
+                  : index === 0 ? 'Portada (Ctrl+clic para seleccionar varias)' : `Página ${page.pageNumber} (Ctrl+clic para seleccionar varias)`"
+                :aria-pressed="seleccionando ? paginasMarcadas.has(page.id) : undefined"
+                @click="onClicMiniatura(page.id, index, $event)"
               >
                 <div class="overflow-hidden" :style="{ width: '58px', aspectRatio: `${editor.aspectRatio}` }">
                   <PagePreview
@@ -1433,6 +1554,14 @@ async function saveTitle(): Promise<void> {
                 <span
                   class="absolute bottom-0 right-0 rounded-tl bg-slate-900/70 px-1 text-[10px] font-bold text-white"
                 >{{ index === 0 ? '★' : page.pageNumber }}</span>
+                <span
+                  v-if="seleccionando || paginasMarcadas.size"
+                  class="absolute left-1 top-1 grid h-4 w-4 place-items-center rounded border text-[10px] font-black leading-none"
+                  :class="paginasMarcadas.has(page.id)
+                    ? 'border-emerald-600 bg-emerald-500 text-white'
+                    : 'border-slate-400 bg-white/90 text-transparent'"
+                  aria-hidden="true"
+                >✓</span>
               </button>
 
               <!--
@@ -1486,6 +1615,42 @@ async function saveTitle(): Promise<void> {
               aria-label="Nueva página"
               @click="editor.addPage()"
             >+</button>
+
+            <!--
+              Copiar y pegar paginas entre libros. "Seleccionar" es un boton a la
+              vista porque Ctrl+clic no lo descubre nadie, y menos el alumnado.
+            -->
+            <div class="ml-2 flex shrink-0 items-center gap-1.5 border-l border-slate-200 pl-3">
+              <template v-if="seleccionando || paginasMarcadas.size">
+                <span class="text-xs font-semibold text-slate-600">
+                  {{ paginasMarcadas.size }} {{ paginasMarcadas.size === 1 ? 'seleccionada' : 'seleccionadas' }}
+                </span>
+                <button
+                  type="button"
+                  class="btn-primary px-2 py-1 text-xs"
+                  :disabled="!paginasMarcadas.size"
+                  @click="copiarMarcadas"
+                >Copiar</button>
+                <button type="button" class="btn-secondary px-2 py-1 text-xs" @click="marcarTodas">Todas</button>
+                <button type="button" class="btn-secondary px-2 py-1 text-xs" @click="terminarSeleccion">Cancelar</button>
+              </template>
+              <button
+                v-else
+                type="button"
+                class="btn-secondary px-2 py-1 text-xs"
+                title="Marca varias páginas para copiarlas y pegarlas en este u otro libro"
+                @click="seleccionando = true"
+              >☐ Seleccionar</button>
+
+              <button
+                v-if="editor.canEdit && editor.paginasCopiadas"
+                type="button"
+                class="btn-secondary px-2 py-1 text-xs"
+                :disabled="editor.saving"
+                :title="`Pega detrás de la página actual las ${editor.paginasCopiadas.pageIds.length} copiadas de «${editor.paginasCopiadas.bookTitle}»`"
+                @click="pegarCopiadas"
+              >📋 Pegar {{ editor.paginasCopiadas.pageIds.length }}</button>
+            </div>
 
             <span
               v-if="auth.isTrial"
@@ -1591,8 +1756,10 @@ async function saveTitle(): Promise<void> {
 
     <IllustrationDialog
       v-if="dialog === 'illustration'"
+      :puede-imagen-ia="puedeGenerarImagenes && puedeUsar('image')"
       @close="dialog = 'none'; rehaciendoIlustracion = null"
       @pick="onPickIllustration"
+      @usar-ia="promptImagenIa = $event; rehaciendoIlustracion = null; dialog = 'magnific'"
     />
 
     <QuestionBlockDialog v-if="dialog === 'question'" @close="dialog = 'none'" @pick="onPickQuestion" />
@@ -1606,7 +1773,12 @@ async function saveTitle(): Promise<void> {
       @pick="onPickImage"
     />
     <MapSearchDialog v-else-if="dialog === 'map'" @close="dialog = 'none'" @pick="onPickMap" />
-    <MagnificDialog v-else-if="dialog === 'magnific'" @close="dialog = 'none'" @pick="onPickGenerada" />
+    <MagnificDialog
+      v-else-if="dialog === 'magnific'"
+      :prompt-inicial="promptImagenIa"
+      @close="dialog = 'none'; promptImagenIa = ''"
+      @pick="onPickGenerada($event); promptImagenIa = ''"
+    />
     <RecorderDialog
       v-else-if="
         dialog === 'audio' ||

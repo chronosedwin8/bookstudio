@@ -15,6 +15,9 @@ import { authApi, booksApi, librariesApi, phidiasApi, usersApi } from '@/service
 import { errorMessage } from '@/services/http';
 import { useAuthStore } from '@/stores/auth';
 import { correoVisible, pedirCorreoNuevo } from '@/utils/correo';
+import { tieneLetrasDanadas } from '@/utils/nombres';
+import EditarNombreDialog from '@/components/EditarNombreDialog.vue';
+import LibrosAlumnadoDialog from '@/components/library/LibrosAlumnadoDialog.vue';
 import type {
   EditorTool,
   ElementType,
@@ -154,6 +157,8 @@ const alumnado = computed(() => {
     ...entrada,
     course: porId.get(entrada.studentId)?.course ?? null,
     email: porId.get(entrada.studentId)?.email ?? null,
+    givenName: porId.get(entrada.studentId)?.givenName ?? null,
+    familyName: porId.get(entrada.studentId)?.familyName ?? null,
   }));
 });
 
@@ -275,6 +280,26 @@ async function deleteStudent(studentId: string, nombre: string): Promise<void> {
  * ------------------------------------------------------------------------ */
 
 const claveOcupada = ref(false);
+
+/** Ventana para crear un libro por alumno (en blanco o copia de uno de Mis libros). */
+const librosAlumnado = ref(false);
+
+async function onLibrosAlumnadoCreados(mensaje: string): Promise<void> {
+  librosAlumnado.value = false;
+  notice.value = mensaje;
+  await loadAll();
+}
+
+/** El alumno cuyo nombre se esta corrigiendo. */
+const editandoNombre = ref<{ id: string; fullName: string; givenName: string | null; familyName: string | null } | null>(
+  null,
+);
+
+async function onNombreGuardado(nombre: string): Promise<void> {
+  notice.value = `Nombre corregido: ${nombre}`;
+  editandoNombre.value = null;
+  await loadAll();
+}
 
 /**
  * Corregir el correo de un alumno, venga de donde venga (a mano o de Phidias).
@@ -875,6 +900,13 @@ function formatDate(value: string | null): string {
               title="Pone la misma contraseña a todo el alumnado de esta biblioteca"
               @click="cambiarClaveDeTodos"
             >🔑 Contraseña para toda la clase</button>
+            <button
+              v-if="resumen.alumnos"
+              type="button"
+              class="btn-secondary px-3 py-1.5 text-sm"
+              title="Crea un libro para cada alumno: en blanco o copiando uno de tus libros"
+              @click="librosAlumnado = true"
+            >📚 Un libro para cada alumno</button>
           </div>
         </div>
 
@@ -937,7 +969,16 @@ function formatDate(value: string | null): string {
             <tbody class="divide-y divide-slate-100">
               <tr v-for="alumno in alumnado" :key="alumno.studentId" class="hover:bg-slate-50">
                 <td class="px-4 py-2">
-                  <span class="block font-medium text-slate-800">{{ alumno.studentName }}</span>
+                  <span class="block font-medium text-slate-800">
+                    {{ alumno.studentName }}
+                    <button
+                      v-if="tieneLetrasDanadas(alumno.studentName)"
+                      type="button"
+                      class="ml-1 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800 hover:bg-amber-200"
+                      title="El nombre tiene letras dañadas: pulsa para corregirlo"
+                      @click="editandoNombre = { id: alumno.studentId, fullName: alumno.studentName, givenName: alumno.givenName, familyName: alumno.familyName }"
+                    >⚠ corregir</button>
+                  </span>
                   <span class="block text-xs text-slate-500">{{ correoVisible(alumno.email) || 'Accede con QR' }}</span>
                 </td>
                 <td class="px-4 py-2">
@@ -967,6 +1008,12 @@ function formatDate(value: string | null): string {
                       :disabled="claveOcupada"
                       @click="cambiarCorreo(alumno.studentId, alumno.studentName, alumno.email)"
                     >Correo</button>
+                    <button
+                      type="button"
+                      class="text-xs font-semibold text-brand-600 hover:underline"
+                      title="Corrige nombres y apellidos"
+                      @click="editandoNombre = { id: alumno.studentId, fullName: alumno.studentName, givenName: alumno.givenName, familyName: alumno.familyName }"
+                    >Nombre</button>
                     <button
                       type="button"
                       class="text-xs font-semibold text-slate-500 hover:underline"
@@ -1209,6 +1256,25 @@ function formatDate(value: string | null): string {
         :book-title="bitacora.title"
         :student-name="bitacora.creatorName ?? undefined"
         @close="bitacora = null"
+      />
+
+      <LibrosAlumnadoDialog
+        v-if="librosAlumnado && library"
+        :library-id="library.id"
+        :library-name="library.name"
+        :student-count="resumen.alumnos"
+        @close="librosAlumnado = false"
+        @done="onLibrosAlumnadoCreados"
+      />
+
+      <EditarNombreDialog
+        v-if="editandoNombre"
+        :user-id="editandoNombre.id"
+        :full-name="editandoNombre.fullName"
+        :given-name="editandoNombre.givenName"
+        :family-name="editandoNombre.familyName"
+        @close="editandoNombre = null"
+        @saved="onNombreGuardado"
       />
     </template>
   </div>
