@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import AlertMessage from '@/components/AlertMessage.vue';
+import AvisoPagoSeguro from '@/components/AvisoPagoSeguro.vue';
 import { usePagoTarjeta, type DatosTarjeta } from '@/composables/usePagoTarjeta';
 import { billingApi, clientsApi } from '@/services/api';
 import { errorMessage } from '@/services/http';
@@ -120,9 +121,15 @@ const enTramite = computed(() =>
             <p class="font-bold">El pago no se pudo completar.</p>
             <p class="mt-1">{{ resultado.statusDetail || resultado.status }}</p>
           </div>
+
+          <!-- Tras un rechazo, lo que ayuda a que el siguiente intento se apruebe -->
+          <AvisoPagoSeguro v-if="!aprobado && !enTramite" tras-rechazo />
         </template>
 
         <template v-else>
+          <!-- Antes del formulario: se lee antes de empezar a escribir la tarjeta -->
+          <AvisoPagoSeguro />
+
           <p v-if="cargando" class="text-sm text-slate-500">Cargando el formulario seguro...</p>
 
           <div v-if="falloFormulario" class="rounded-lg bg-red-50 p-4 text-sm text-red-800">

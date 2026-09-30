@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import AlertMessage from '@/components/AlertMessage.vue';
+import AvisoPagoSeguro from '@/components/AvisoPagoSeguro.vue';
 import { useSeo } from '@/composables/useSeo';
 import { billingApi } from '@/services/api';
 import { errorMessage } from '@/services/http';
@@ -472,6 +473,9 @@ onMounted(async () => {
                   </span>
                 </span>
               </label>
+
+              <!-- Antes del formulario: se lee antes de empezar a escribir la tarjeta -->
+              <AvisoPagoSeguro class="mb-4" />
 
               <p v-if="!datosCompletos" class="mb-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-800">
                 Completa los datos de tu cuenta para poder pagar.

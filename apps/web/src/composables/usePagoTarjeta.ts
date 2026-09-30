@@ -15,7 +15,17 @@ import { nextTick, onBeforeUnmount, ref } from 'vue';
 /** Si en este tiempo no hay formulario, algo lo esta bloqueando. */
 const ESPERA_MAXIMA_MS = 15_000;
 
+/**
+ * Si el propio SDK no llega en este tiempo, se da por perdido. Una peticion colgada
+ * (VPN, red que descarta paquetes) no dispara ni onload ni onerror: sin plazo, la
+ * pantalla se quedaba en "Cargando el formulario seguro..." para siempre. Es el
+ * mismo arreglo que ya tenia la pantalla de contratar.
+ */
+const ESPERA_SDK_MS = 12_000;
+const SDK_URL = 'https://sdk.mercadopago.com/js/v2';
+
 let sdkCargando: Promise<void> | null = null;
+let intentosSdk = 0;
 
 function cargarSdk(): Promise<void> {
   if ((window as unknown as { MercadoPago?: unknown }).MercadoPago) return Promise.resolve();
@@ -23,12 +33,32 @@ function cargarSdk(): Promise<void> {
   if (!sdkCargando) {
     sdkCargando = new Promise<void>((resolve, reject) => {
       const script = document.createElement('script');
-      script.src = 'https://sdk.mercadopago.com/js/v2';
-      script.onload = () => resolve();
-      script.onerror = () => {
+      // En los reintentos, la misma direccion con un parametro distinto: si no, el
+      // navegador reaprovecha la peticion colgada y "Reintentar" no hace nada.
+      intentosSdk++;
+      script.src = intentosSdk === 1 ? SDK_URL : `${SDK_URL}?reintento=${intentosSdk}`;
+
+      // Al fallar se olvida la promesa y se retira el <script> muerto, para que
+      // reintentar vuelva a intentarlo de verdad.
+      const rendirse = (motivo: string) => {
+        window.clearTimeout(plazo);
         sdkCargando = null;
-        reject(new Error('No se pudo cargar la pasarela de pago. Revisa tu conexion.'));
+        script.remove();
+        reject(new Error(motivo));
       };
+      const plazo = window.setTimeout(
+        () => rendirse(
+          'La pasarela de pago no respondio. Si usas una VPN o una red con filtros, ' +
+          'desactivalos para este sitio y reintenta.',
+        ),
+        ESPERA_SDK_MS,
+      );
+
+      script.onload = () => {
+        window.clearTimeout(plazo);
+        resolve();
+      };
+      script.onerror = () => rendirse('No se pudo cargar la pasarela de pago. Revisa tu conexion.');
       document.head.appendChild(script);
     });
   }
@@ -95,6 +125,16 @@ export function usePagoTarjeta(opciones: OpcionesPago) {
     await nextTick();
     desmontar();
 
+    // El reloj va ANTES de cargar el SDK: armado despues, una descarga colgada
+    // impedia que llegara a armarse nunca.
+    temporizador = window.setTimeout(() => {
+      if (mio === generacion && !listo.value) {
+        fallo.value =
+          'El formulario de pago no termino de cargar. Suele ser un bloqueador de anuncios, la ' +
+          'proteccion contra rastreo del navegador o una VPN: desactivalos para este sitio y reintenta.';
+      }
+    }, ESPERA_MAXIMA_MS);
+
     try {
       await cargarSdk();
       if (mio !== generacion) return;
@@ -106,16 +146,6 @@ export function usePagoTarjeta(opciones: OpcionesPago) {
       mercadoPago ??= new (window as unknown as {
         MercadoPago: new (key: string, options: { locale: string }) => unknown;
       }).MercadoPago(clave, { locale: 'es-CO' });
-
-      // Sin esto, un bloqueador de anuncios deja "Cargando..." para siempre y nadie
-      // sabe que ha pasado.
-      temporizador = window.setTimeout(() => {
-        if (mio === generacion && !listo.value) {
-          fallo.value =
-            'El formulario de pago no termino de cargar. Casi siempre es un bloqueador de anuncios ' +
-            'o la proteccion contra rastreo del navegador: desactivalos para este sitio y reintenta.';
-        }
-      }, ESPERA_MAXIMA_MS);
 
       const correo = (opciones.email?.() ?? '').trim();
 
