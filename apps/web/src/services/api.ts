@@ -840,7 +840,14 @@ export const clientsApi = {
   /** Con status 'pagada' se da por pagada (con enlace); paymentReference es el n.º de operacion. */
   async updateCharge(
     id: string,
-    payload: { status?: 'emitida' | 'anulada' | 'pagada'; notes?: string; dueDate?: string | null; paymentReference?: string },
+    payload: {
+      status?: 'emitida' | 'anulada' | 'pagada';
+      concept?: string;
+      items?: ChargeItem[];
+      notes?: string;
+      dueDate?: string | null;
+      paymentReference?: string;
+    },
   ) {
     const { data } = await http.patch<{ charge: Charge }>(`/clients/charges/${id}`, payload);
     return data.charge;

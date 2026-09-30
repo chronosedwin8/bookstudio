@@ -420,7 +420,7 @@ function mailtoComprobante(cobro: Charge): string {
                     v-if="c.status === 'emitida' && c.daysLeft !== null && c.daysLeft !== undefined"
                     :class="c.daysLeft < 0 ? 'font-semibold text-red-600' : ''"
                   >
-                    · {{ c.daysLeft < 0 ? `vencida hace ${-c.daysLeft} días` : `quedan ${c.daysLeft} días` }}
+                    · {{ c.daysLeft < 0 ? `vencida hace ${-c.daysLeft} días` : c.daysLeft === 1 ? 'queda 1 día' : `quedan ${c.daysLeft} días` }}
                   </span>
                 </p>
               </div>

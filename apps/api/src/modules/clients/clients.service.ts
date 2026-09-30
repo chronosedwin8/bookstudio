@@ -808,12 +808,28 @@ export async function updateCharge(chargeId: string, input: UpdateChargeInput): 
   if (input.status === 'pagada' && actual[0].status !== 'emitida') {
     throw HttpError.badRequest('Solo se marca como pagada una cuenta emitida');
   }
+  // Lo que se cobra solo se corrige mientras siga abierta: una pagada ya cuadro con
+  // un pago por ese importe, y una anulada se queda como estaba para el rastro.
+  const cambiaContenido = input.concept !== undefined || input.items !== undefined;
+  if (cambiaContenido && (actual[0].status === 'pagada' || actual[0].status === 'anulada')) {
+    throw HttpError.badRequest('Solo se modifica una cuenta en borrador o por pagar');
+  }
+  if (cambiaContenido && input.status === 'pagada') {
+    throw HttpError.badRequest('Guarda los cambios antes de marcarla como pagada');
+  }
 
   // Pagada a mano: el pago se ve en Mercado Pago y aqui se deja constancia.
   if (input.status === 'pagada') return marcarPagada(chargeId, input);
 
+  const total = input.items ? totalDe(input.items) : undefined;
+  if (total !== undefined && total <= 0) throw HttpError.badRequest('El total debe ser mayor que cero');
+
   const campos: Record<string, unknown> = {
     status: input.status,
+    concept: input.concept,
+    // El total se recalcula aqui, igual que al crearla.
+    items: input.items ? JSON.stringify(input.items) : undefined,
+    amount_cop: total,
     notes: input.notes,
     due_date: input.dueDate,
     // Emitir deja constancia de cuando se le entrego al cliente.

@@ -58,6 +58,8 @@ const visibles = computed(() => {
 const totalPendiente = computed(() => clientes.value.reduce((s, c) => s + c.pendingCop, 0));
 
 async function abrir(cliente: AdminOrganization): Promise<void> {
+  // Una cuenta a medio editar es de este cliente; al cambiar de cliente se suelta.
+  if (abierto.value?.id !== cliente.id) cancelarEdicion();
   abierto.value = cliente;
   cobros.value = [];
   try {
@@ -190,12 +192,21 @@ async function otorgarLicencia(): Promise<void> {
 
 // --- Emitir una cuenta de cobro ---
 
-const nuevaCuenta = ref<{ concept: string; dueDate: string; notes: string; items: ChargeItem[] }>({
+interface CuentaEnFormulario {
+  concept: string;
+  dueDate: string;
+  notes: string;
+  items: ChargeItem[];
+}
+
+const cuentaVacia = (): CuentaEnFormulario => ({
   concept: '',
   dueDate: '',
   notes: '',
   items: [{ description: '', quantity: 1, unitCop: 0 }],
 });
+
+const nuevaCuenta = ref<CuentaEnFormulario>(cuentaVacia());
 const emitiendo = ref(false);
 
 const totalNuevaCuenta = computed(() =>
@@ -238,8 +249,65 @@ async function emitir(ahora: boolean): Promise<void> {
     aviso.value = ahora
       ? `Cuenta ${creada.number} emitida. El cliente ya la ve en su portal.`
       : `Cuenta ${creada.number} guardada como borrador. El cliente todavía no la ve.`;
-    nuevaCuenta.value = { concept: '', dueDate: '', notes: '', items: [{ description: '', quantity: 1, unitCop: 0 }] };
+    nuevaCuenta.value = cuentaVacia();
     await abrir(abierto.value);
+    await cargar();
+  } catch (err) {
+    error.value = errorMessage(err);
+  } finally {
+    emitiendo.value = false;
+  }
+}
+
+// --- Modificar una cuenta de cobro ---
+
+/**
+ * Cuenta que se esta modificando. Se edita en el mismo formulario de emitir, que
+ * ya sabe de lineas y totales; mientras dura, sus botones guardan en vez de crear.
+ */
+const editando = ref<Charge | null>(null);
+const formularioCuenta = ref<HTMLElement | null>(null);
+
+function editarCuenta(cobro: Charge): void {
+  editando.value = cobro;
+  nuevaCuenta.value = {
+    concept: cobro.concept,
+    dueDate: cobro.dueDate ?? '',
+    notes: cobro.notes,
+    items: cobro.items.length
+      ? cobro.items.map((l) => ({ ...l }))
+      : [{ description: cobro.concept, quantity: 1, unitCop: cobro.amountCop }],
+  };
+  formularioCuenta.value?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function cancelarEdicion(): void {
+  editando.value = null;
+  nuevaCuenta.value = cuentaVacia();
+}
+
+async function guardarCambios(): Promise<void> {
+  const cobro = editando.value;
+  if (!cobro || !cuentaValida.value) return;
+  emitiendo.value = true;
+  error.value = null;
+  try {
+    const guardada = await clientsApi.updateCharge(cobro.id, {
+      concept: nuevaCuenta.value.concept.trim(),
+      items: nuevaCuenta.value.items.map((l) => ({
+        description: l.description.trim(),
+        quantity: Number(l.quantity) || 1,
+        unitCop: Number(l.unitCop),
+      })),
+      dueDate: nuevaCuenta.value.dueDate || null,
+      notes: nuevaCuenta.value.notes,
+    });
+    aviso.value =
+      guardada.status === 'emitida'
+        ? `Cuenta ${guardada.number} modificada. El cliente ya ve los cambios en su portal.`
+        : `Cuenta ${guardada.number} modificada.`;
+    cancelarEdicion();
+    if (abierto.value) await abrir(abierto.value);
     await cargar();
   } catch (err) {
     error.value = errorMessage(err);
@@ -301,6 +369,7 @@ async function cambiarEstadoCuenta(cobro: Charge, status: 'emitida' | 'anulada')
   error.value = null;
   try {
     await clientsApi.updateCharge(cobro.id, { status });
+    if (status === 'anulada' && editando.value?.id === cobro.id) cancelarEdicion();
     aviso.value = status === 'emitida' ? `Cuenta ${cobro.number} emitida.` : `Cuenta ${cobro.number} anulada.`;
     if (abierto.value) await abrir(abierto.value);
     await cargar();
@@ -590,8 +659,22 @@ async function cambiarEstadoCuenta(cobro: Charge, status: 'emitida' | 'anulada')
           </section>
 
           <!-- Nueva cuenta de cobro -->
-          <section class="rounded-lg border border-slate-200 p-4">
-            <h3 class="label">Emitir una cuenta de cobro</h3>
+          <section
+            ref="formularioCuenta"
+            class="scroll-mt-4 rounded-lg border p-4"
+            :class="editando ? 'border-brand-300 bg-brand-50/40' : 'border-slate-200'"
+          >
+            <h3 v-if="!editando" class="label">Emitir una cuenta de cobro</h3>
+            <template v-else>
+              <h3 class="label">Modificar la cuenta {{ editando.number }}</h3>
+              <p class="mb-2 text-xs text-slate-500">
+                <template v-if="editando.status === 'emitida'">
+                  El cliente ya la tiene: verá los cambios en su portal en cuanto los guardes. Si cambia el
+                  total, cambia también el enlace de pago que se le ofrece.
+                </template>
+                <template v-else>Es un borrador: el cliente no la ve hasta que la emitas.</template>
+              </p>
+            </template>
 
             <div>
               <label class="label" for="concepto">Concepto</label>
@@ -666,7 +749,18 @@ async function cambiarEstadoCuenta(cobro: Charge, status: 'emitida' | 'anulada')
               <p class="text-sm text-slate-600">
                 Total <strong class="tabular-nums text-slate-900">{{ cop.format(totalNuevaCuenta) }}</strong>
               </p>
-              <div class="ml-auto flex gap-2">
+              <div v-if="editando" class="ml-auto flex gap-2">
+                <button type="button" class="btn-secondary" :disabled="emitiendo" @click="cancelarEdicion">
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  class="btn-primary"
+                  :disabled="!cuentaValida || emitiendo"
+                  @click="guardarCambios"
+                >{{ emitiendo ? 'Guardando...' : 'Guardar cambios' }}</button>
+              </div>
+              <div v-else class="ml-auto flex gap-2">
                 <button
                   type="button"
                   class="btn-secondary"
@@ -718,6 +812,12 @@ async function cambiarEstadoCuenta(cobro: Charge, status: 'emitida' | 'anulada')
                     class="text-xs font-semibold text-emerald-700 hover:underline"
                     @click="marcarPagada(c)"
                   >Marcar como pagada</button>
+                  <button
+                    v-if="c.status === 'borrador' || c.status === 'emitida'"
+                    type="button"
+                    class="text-xs font-semibold text-brand-600 hover:underline"
+                    @click="editarCuenta(c)"
+                  >Modificar</button>
                   <button
                     v-if="c.status !== 'anulada'"
                     type="button"

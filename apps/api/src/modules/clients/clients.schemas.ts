@@ -60,6 +60,9 @@ export const updateChargeSchema = z
      * se cobra con enlaces de pago, BookStudio no se entera solo.
      */
     status: z.enum(['emitida', 'anulada', 'pagada']).optional(),
+    /** Corregir lo que dice la cuenta. Solo mientras nadie la haya pagado ni anulado. */
+    concept: z.string().trim().min(3, 'Escribe de que es la cuenta de cobro').max(200).optional(),
+    items: z.array(chargeItemSchema).min(1, 'Anade al menos una linea').max(30).optional(),
     /** Numero de operacion de Mercado Pago, para poder cuadrar el pago despues. */
     paymentReference: z.string().trim().max(80).optional(),
     notes: z.string().max(2000).optional(),
