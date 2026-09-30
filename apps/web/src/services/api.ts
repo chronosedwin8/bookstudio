@@ -21,6 +21,7 @@ import type {
   QuizStatus,
   QuizSubmitResult,
   AdminBookPage,
+  EstadoPagoMp,
   BillingConfig,
   TransferResult,
   PlanAdmin,
@@ -625,6 +626,31 @@ export const billingApi = {
     );
     return data;
   },
+  /**
+   * Pagar en la pagina de Mercado Pago: prepara el pago y devuelve a donde ir.
+   * `claim` solo llega en altas nuevas y lo guarda el navegador para, al volver,
+   * recibir la sesion de su cuenta.
+   */
+  async mpPlan(payload: {
+    plan: string;
+    payerEmail: string;
+    organization?: string;
+    autoRenew: boolean;
+    fullName?: string;
+    password?: string;
+  }) {
+    const { data } = await http.post<{ reference: string; initPoint: string; claim?: string }>('/billing/mp/plan', payload, {
+      timeout: 30_000,
+    });
+    return data;
+  },
+  /** Como va un pago hecho en Mercado Pago. */
+  async mpEstado(reference: string, claim?: string) {
+    const { data } = await http.get<EstadoPagoMp>(`/billing/mp/${encodeURIComponent(reference)}`, {
+      headers: claim ? { 'x-pago-claim': claim } : {},
+    });
+    return data;
+  },
   async allSubscriptions() {
     const { data } = await http.get<{ subscriptions: Subscription[] }>('/billing/subscriptions');
     return data.subscriptions;
@@ -796,6 +822,15 @@ export const clientsApi = {
       charge: Charge;
       payment: { status: string; statusDetail: string; invoiceNumber: number | null };
     }>(`/clients/charges/${id}/pay`, payload, { timeout: 40_000 });
+    return data;
+  },
+  /** Pagar una cuenta de cobro en la pagina de Mercado Pago: devuelve a donde ir. */
+  async payChargeMp(id: string, payerEmail?: string) {
+    const { data } = await http.post<{ reference: string; initPoint: string }>(
+      `/clients/charges/${id}/mp`,
+      payerEmail ? { payerEmail } : {},
+      { timeout: 30_000 },
+    );
     return data;
   },
 

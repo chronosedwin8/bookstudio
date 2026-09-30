@@ -10,7 +10,8 @@ const auth = useAuthStore();
 const router = useRouter();
 const route = useRoute();
 
-const email = ref('');
+// Al volver de pagar en Mercado Pago se trae el correo con el que se contrato.
+const email = ref(typeof route.query.email === 'string' ? route.query.email.slice(0, 255) : '');
 const password = ref('');
 const error = ref<string | null>(null);
 const loading = ref(false);

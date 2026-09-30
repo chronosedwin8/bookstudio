@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import AlertMessage from '@/components/AlertMessage.vue';
 import AvisoPagoSeguro from '@/components/AvisoPagoSeguro.vue';
 import { usePagoTarjeta, type DatosTarjeta } from '@/composables/usePagoTarjeta';
@@ -7,6 +7,7 @@ import { billingApi, clientsApi } from '@/services/api';
 import { errorMessage } from '@/services/http';
 import { useAuthStore } from '@/stores/auth';
 import type { Charge } from '@/types/api';
+import { guardarPagoPendiente, irAMercadoPago } from '@/utils/pagoMercadoPago';
 
 /**
  * Pago de una cuenta de cobro.
@@ -26,7 +27,7 @@ const publicKey = ref('');
 
 const cop = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 });
 
-const { fallo: falloFormulario, montar: montarFormulario } = usePagoTarjeta({
+const { fallo: falloFormulario, montar: montarFormulario, listo: formularioListo, desmontar } = usePagoTarjeta({
   contenedor: 'mp-brick-cobro',
   publicKey: () => publicKey.value,
   amount: () => props.charge.amountCop,
@@ -42,13 +43,41 @@ onMounted(async () => {
       return;
     }
     publicKey.value = config.publicKey;
-    await montarFormulario();
+    // El formulario de tarjeta solo se carga si se elige pagar con tarjeta aqui.
+    if (metodo.value === 'tarjeta') await montarFormulario();
   } catch (err) {
     error.value = errorMessage(err);
   } finally {
     cargando.value = false;
   }
 });
+
+/**
+ * Como se paga: con la cuenta de Mercado Pago (recomendado, en su pagina: tarjetas
+ * guardadas, saldo, PSE o Efecty) o con tarjeta aqui, como invitado.
+ */
+const metodo = ref<'cuenta' | 'tarjeta'>('cuenta');
+const yendo = ref(false);
+
+watch(metodo, (m) => {
+  if (m === 'tarjeta' && publicKey.value) void montarFormulario();
+  // El hueco del formulario desaparece: se desmonta con el mando de Mercado Pago.
+  else desmontar();
+});
+
+async function pagarEnMercadoPago(): Promise<void> {
+  if (yendo.value) return;
+  yendo.value = true;
+  error.value = null;
+  try {
+    const r = await clientsApi.payChargeMp(props.charge.id, auth.user?.email);
+    guardarPagoPendiente({ reference: r.reference, kind: 'charge', email: auth.user?.email });
+    irAMercadoPago(r.initPoint);
+  } catch (err) {
+    error.value = errorMessage(err);
+    yendo.value = false;
+  }
+}
 
 async function cobrar(datos: DatosTarjeta): Promise<void> {
   pagando.value = true;
@@ -130,17 +159,60 @@ const enTramite = computed(() =>
           <!-- Antes del formulario: se lee antes de empezar a escribir la tarjeta -->
           <AvisoPagoSeguro />
 
-          <p v-if="cargando" class="text-sm text-slate-500">Cargando el formulario seguro...</p>
-
-          <div v-if="falloFormulario" class="rounded-lg bg-red-50 p-4 text-sm text-red-800">
-            <p>{{ falloFormulario }}</p>
-            <button type="button" class="btn-secondary mt-3" @click="montarFormulario()">Reintentar</button>
+          <div class="grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label="Cómo quieres pagar">
+            <button
+              type="button"
+              role="radio"
+              :aria-checked="metodo === 'cuenta'"
+              class="rounded-xl border-2 p-3 text-left transition"
+              :class="metodo === 'cuenta' ? 'border-brand-500 bg-brand-50' : 'border-slate-200 hover:border-slate-300'"
+              @click="metodo = 'cuenta'"
+            >
+              <span class="block text-sm font-bold text-slate-900">Con mi cuenta de Mercado Pago</span>
+              <span class="mt-0.5 inline-block rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-emerald-700">Recomendado</span>
+              <span class="mt-1 block text-xs text-slate-600">Tarjetas guardadas, saldo, PSE o Efecty.</span>
+            </button>
+            <button
+              type="button"
+              role="radio"
+              :aria-checked="metodo === 'tarjeta'"
+              class="rounded-xl border-2 p-3 text-left transition"
+              :class="metodo === 'tarjeta' ? 'border-brand-500 bg-brand-50' : 'border-slate-200 hover:border-slate-300'"
+              @click="metodo = 'tarjeta'"
+            >
+              <span class="block text-sm font-bold text-slate-900">Con tarjeta aquí</span>
+              <span class="mt-1 block text-xs text-slate-600">Crédito o débito, como invitado.</span>
+            </button>
           </div>
 
-          <!-- Mercado Pago monta aquí su formulario; la tarjeta no toca nuestro código -->
-          <div id="mp-brick-cobro"></div>
+          <template v-if="metodo === 'cuenta'">
+            <button
+              type="button"
+              class="btn-primary w-full py-3 text-base"
+              :disabled="cargando || yendo || !publicKey"
+              @click="pagarEnMercadoPago"
+            >{{ yendo ? 'Abriendo Mercado Pago...' : `Pagar ${cop.format(charge.amountCop)} en Mercado Pago →` }}</button>
+            <p class="text-xs leading-relaxed text-slate-500">
+              Te llevamos a la página segura de Mercado Pago. Entra con tu cuenta, paga y vuelve: la cuenta de
+              cobro queda saldada en cuanto el pago se confirme.
+            </p>
+          </template>
 
-          <p v-if="pagando" class="text-sm font-semibold text-brand-600">Procesando el pago...</p>
+          <template v-else>
+            <p v-if="cargando || (!formularioListo && !falloFormulario)" class="text-sm text-slate-500">
+              Cargando el formulario seguro...
+            </p>
+
+            <div v-if="falloFormulario" class="rounded-lg bg-red-50 p-4 text-sm text-red-800">
+              <p>{{ falloFormulario }}</p>
+              <button type="button" class="btn-secondary mt-3" @click="montarFormulario()">Reintentar</button>
+            </div>
+
+            <!-- Mercado Pago monta aquí su formulario; la tarjeta no toca nuestro código -->
+            <div id="mp-brick-cobro"></div>
+
+            <p v-if="pagando" class="text-sm font-semibold text-brand-600">Procesando el pago...</p>
+          </template>
 
           <p class="text-xs leading-relaxed text-slate-500">
             El cobro lo procesa Mercado Pago. En el extracto aparecerá como <strong>BookStudio</strong>.

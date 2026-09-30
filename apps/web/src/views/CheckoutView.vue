@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import AlertMessage from '@/components/AlertMessage.vue';
 import AvisoPagoSeguro from '@/components/AvisoPagoSeguro.vue';
@@ -10,6 +10,7 @@ import { useAuthStore } from '@/stores/auth';
 import { SITE } from '@/utils/site';
 import type { BillingConfig, BillingPlan } from '@/types/api';
 import { duracionTexto, pesos } from '@/utils/precio';
+import { guardarPagoPendiente, irAMercadoPago } from '@/utils/pagoMercadoPago';
 
 /**
  * Contratacion directa: se elige plan, se crean las credenciales y se paga en la
@@ -173,8 +174,52 @@ function vigilanciaCsp(): { bloqueos: () => string[]; parar: () => void } {
   };
 }
 
+/* --------------------------------------------------------------------------
+ * Como se paga
+ *
+ * Con la cuenta de Mercado Pago (recomendado): el cliente va a su pagina, entra
+ * con su cuenta y paga alli con tarjetas guardadas, saldo, PSE o Efecty. Es lo
+ * que recomiendan las pasarelas en Colombia y lo que menos se rechaza.
+ * Con tarjeta aqui: el formulario de siempre, dentro de BookStudio, como invitado.
+ * ----------------------------------------------------------------------- */
+const metodo = ref<'cuenta' | 'tarjeta'>('cuenta');
+const yendoAMercadoPago = ref(false);
+
+// El formulario de tarjeta solo se carga si se elige: ahorra bajar el SDK de pago
+// a quien va a pagar en la pagina de Mercado Pago.
+watch(metodo, (m) => {
+  if (m === 'tarjeta') void mountBrick();
+  else desmontar();
+});
+
+async function pagarEnMercadoPago(): Promise<void> {
+  if (!plan.value || !datosCompletos.value || yendoAMercadoPago.value) return;
+  yendoAMercadoPago.value = true;
+  error.value = null;
+  try {
+    const cuenta = yaTieneCuenta.value;
+    const email = (cuenta ? form.value.email || auth.user?.email || '' : form.value.email).trim();
+    const r = await billingApi.mpPlan({
+      plan: plan.value.id,
+      payerEmail: email,
+      organization: form.value.organization || undefined,
+      autoRenew: form.value.autoRenew,
+      ...(cuenta ? {} : { fullName: form.value.fullName, password: form.value.password }),
+    });
+    guardarPagoPendiente({ reference: r.reference, kind: 'plan', claim: r.claim, email });
+    irAMercadoPago(r.initPoint);
+    // No se apaga "yendo": la pagina se va. Si el navegador bloqueara la salida,
+    // el boton sigue sirviendo tras recargar.
+  } catch (err) {
+    error.value = errorMessage(err);
+    yendoAMercadoPago.value = false;
+  }
+}
+
 async function mountBrick(): Promise<void> {
   if (!plan.value || !config.value?.enabled) return;
+  // Pagando en la pagina de Mercado Pago no hace falta el formulario de tarjeta.
+  if (metodo.value !== 'tarjeta') return;
 
   const mio = ++generacion;
   brickReady.value = false;
@@ -481,23 +526,75 @@ onMounted(async () => {
                 Completa los datos de tu cuenta para poder pagar.
               </p>
 
-              <p v-if="!brickReady && !brickFailed" class="text-sm text-slate-500">
-                Cargando el formulario seguro...
-              </p>
-
-              <div v-if="brickFailed" class="rounded-lg bg-red-50 p-4 text-sm text-red-800">
-                <p>{{ brickFailed }}</p>
-                <button type="button" class="btn-secondary mt-3" @click="mountBrick()">
-                  Reintentar
+              <!-- Como pagar: con la cuenta de Mercado Pago (recomendado) o con tarjeta aqui -->
+              <div class="mb-4 grid gap-3 sm:grid-cols-2" role="radiogroup" aria-label="Cómo quieres pagar">
+                <button
+                  type="button"
+                  role="radio"
+                  :aria-checked="metodo === 'cuenta'"
+                  class="rounded-xl border-2 p-4 text-left transition"
+                  :class="metodo === 'cuenta' ? 'border-brand-500 bg-brand-50' : 'border-slate-200 hover:border-slate-300'"
+                  @click="metodo = 'cuenta'"
+                >
+                  <span class="flex items-center gap-2">
+                    <span class="font-bold text-slate-900">Con mi cuenta de Mercado Pago</span>
+                    <span class="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-emerald-700">Recomendado</span>
+                  </span>
+                  <span class="mt-1 block text-xs text-slate-600">
+                    Tarjetas guardadas, saldo, PSE o Efecty. Es el pago que mejor aprueban los bancos.
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  role="radio"
+                  :aria-checked="metodo === 'tarjeta'"
+                  class="rounded-xl border-2 p-4 text-left transition"
+                  :class="metodo === 'tarjeta' ? 'border-brand-500 bg-brand-50' : 'border-slate-200 hover:border-slate-300'"
+                  @click="metodo = 'tarjeta'"
+                >
+                  <span class="font-bold text-slate-900">Con tarjeta aquí</span>
+                  <span class="mt-1 block text-xs text-slate-600">
+                    Crédito o débito, sin salir de BookStudio (como invitado).
+                  </span>
                 </button>
               </div>
 
-              <!-- Mercado Pago monta aquí su formulario; la tarjeta no toca nuestro código -->
-              <div id="mp-brick"></div>
+              <template v-if="metodo === 'cuenta'">
+                <AlertMessage class="mb-3" :message="error" />
+                <button
+                  type="button"
+                  class="btn-primary w-full py-3 text-base"
+                  :disabled="!datosCompletos || yendoAMercadoPago"
+                  @click="pagarEnMercadoPago"
+                >
+                  {{ yendoAMercadoPago ? 'Abriendo Mercado Pago...' : `Pagar ${cop.format(plan.amountCop)} en Mercado Pago →` }}
+                </button>
+                <p class="mt-2 text-xs leading-relaxed text-slate-500">
+                  Te llevamos a la página segura de Mercado Pago. Entra con tu cuenta, paga y vuelve:
+                  <template v-if="yaTieneCuenta">tu licencia se activa sola en cuanto el pago se confirme.</template>
+                  <template v-else>tu cuenta se crea en cuanto el pago se confirme, con el correo y la contraseña que has escrito arriba.</template>
+                </p>
+              </template>
 
-              <p v-if="paying" class="mt-3 text-sm font-semibold text-brand-600">
-                Procesando el pago y creando tu cuenta...
-              </p>
+              <template v-else>
+                <p v-if="!brickReady && !brickFailed" class="text-sm text-slate-500">
+                  Cargando el formulario seguro...
+                </p>
+
+                <div v-if="brickFailed" class="rounded-lg bg-red-50 p-4 text-sm text-red-800">
+                  <p>{{ brickFailed }}</p>
+                  <button type="button" class="btn-secondary mt-3" @click="mountBrick()">
+                    Reintentar
+                  </button>
+                </div>
+
+                <!-- Mercado Pago monta aquí su formulario; la tarjeta no toca nuestro código -->
+                <div id="mp-brick"></div>
+
+                <p v-if="paying" class="mt-3 text-sm font-semibold text-brand-600">
+                  Procesando el pago y creando tu cuenta...
+                </p>
+              </template>
 
               <p class="mt-4 text-xs leading-relaxed text-slate-500">
                 El cobro lo procesa Mercado Pago. En tu extracto aparecerá como

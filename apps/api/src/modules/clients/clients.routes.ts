@@ -18,6 +18,7 @@ import {
   updateTeacherSchema,
 } from './clients.schemas.js';
 import * as service from './clients.service.js';
+import { crearIntentoCobro } from '../billing/pago-en-mercado-pago.service.js';
 
 export const clientsRouter = Router();
 
@@ -123,6 +124,21 @@ clientsRouter.post(
   validate(payChargeSchema),
   asyncHandler(async (req, res) => {
     res.json(await service.payCharge(req.auth!.userId, req.auth!.role, req.params.id, req.body));
+  }),
+);
+
+/**
+ * Pagar una cuenta de cobro en la pagina de Mercado Pago, con la cuenta del
+ * cliente. Devuelve la direccion a la que mandarlo; la cuenta se salda cuando
+ * Mercado Pago confirma el pago.
+ */
+clientsRouter.post(
+  '/charges/:id/mp',
+  validate(chargeParamsSchema, 'params'),
+  validate(z.object({ payerEmail: z.string().email().max(255).optional() })),
+  asyncHandler(async (req, res) => {
+    const cobro = await service.getCharge(req.auth!.userId, req.auth!.role, req.params.id);
+    res.status(201).json(await crearIntentoCobro(req.auth!.userId, cobro, req.body.payerEmail));
   }),
 );
 

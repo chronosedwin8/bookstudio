@@ -423,5 +423,57 @@ Test-Step 'El plan mensual queda como estaba' {
     if (-not $r.plan.visible) { throw 'Quedo retirado' }
 }
 
+# --- Pagar en la pagina de Mercado Pago ---
+#
+# Crear la pagina de pago NO cobra nada: solo prepara el pago. Aqui se comprueba
+# quien puede prepararlo, que no se cuela un importe y quien puede ver el resultado.
+Write-Host "`n-- Pagar en la pagina de Mercado Pago --" -ForegroundColor Cyan
+
+$nuevoMp = "mp.$suffix@test.local"
+$intento = Test-Step 'Sin cuenta: se prepara el pago y la cuenta aun NO existe' {
+    $r = Invoke-Api POST '/billing/mp/plan' @{ plan = 'mensual'; payerEmail = $nuevoMp; fullName = 'Pago Mp'; password = 'Secreto12345' }
+    if ($r.initPoint -notmatch '^https://www\.mercadopago\.com\.co/') { throw "Pagina: $($r.initPoint)" }
+    if (-not $r.claim) { throw 'Falta el secreto para recibir la sesion' }
+    try { $null = Invoke-Api POST '/auth/login' @{ email = $nuevoMp; password = 'Secreto12345' }; throw 'La cuenta ya existe antes de pagar' }
+    catch { if ($_.Exception.Message -eq 'La cuenta ya existe antes de pagar') { throw } }
+    $r
+}
+
+Test-Step 'El importe no se puede imponer desde el navegador' {
+    # Se manda un importe propio; el servidor lo ignora y usa el del plan.
+    $r = Invoke-Api POST '/billing/mp/plan' @{ plan = 'mensual'; payerEmail = "mp2.$suffix@test.local"; fullName = 'Pago Mp'; password = 'Secreto12345'; amountCop = 1 }
+    $e = Invoke-RestMethod -Uri "$base/billing/mp/$($r.reference)" -Headers @{ 'x-pago-claim' = $r.claim }
+    if ($e.estado -ne 'esperando') { throw "Estado: $($e.estado)" }
+    $fila = npm run --silent sql --workspace @bookstudio/api -- "SELECT amount_cop FROM payment_intents WHERE reference = '$($r.reference)'" | ConvertFrom-Json
+    if ([int64]$fila[0].amount_cop -ne 10000) { throw "Importe guardado: $($fila[0].amount_cop)" }
+}
+
+Test-Step 'Sin el secreto nadie ve ese pago -> 404' {
+    Assert-Status { Invoke-RestMethod -Uri "$base/billing/mp/$($intento.reference)" } 404
+    Assert-Status { Invoke-RestMethod -Uri "$base/billing/mp/$($intento.reference)" -Headers @{ 'x-pago-claim' = 'inventado' } } 404
+}
+
+Test-Step 'Con su secreto ve que aun no se ha pagado' {
+    $e = Invoke-RestMethod -Uri "$base/billing/mp/$($intento.reference)" -Headers @{ 'x-pago-claim' = $intento.claim }
+    if ($e.estado -ne 'esperando') { throw "Estado: $($e.estado)" }
+    if ($e.session) { throw 'Entrega sesion sin haber pagado' }
+}
+
+Test-Step 'Un correo que ya tiene cuenta no puede contratar como alta nueva -> 409' {
+    Assert-Status { Invoke-Api POST '/billing/mp/plan' @{ plan = 'mensual'; payerEmail = "fa.doc.$suffix@test.local"; fullName = 'X Y'; password = 'Secreto12345' } } 409
+}
+
+Test-Step 'Un plan inventado se rechaza -> 400' {
+    Assert-Status { Invoke-Api POST '/billing/mp/plan' @{ plan = 'gratis'; payerEmail = "mp3.$suffix@test.local"; fullName = 'X Y'; password = 'Secreto12345' } } 400
+}
+
+Test-Step 'Con sesion, el pago es para su cuenta y solo el lo consulta' {
+    $r = Invoke-Api POST '/billing/mp/plan' @{ plan = 'mensual'; payerEmail = "fa.doc.$suffix@test.local" } -Token $dToken
+    if ($r.claim) { throw 'Con cuenta no hace falta secreto' }
+    $e = Invoke-Api GET "/billing/mp/$($r.reference)" -Token $dToken
+    if ($e.estado -ne 'esperando') { throw "Estado: $($e.estado)" }
+    Assert-Status { Invoke-Api GET "/billing/mp/$($r.reference)" -Token $tToken } 404
+}
+
 Write-Host "`n== Resultado: $pass OK / $fail FAIL ==" -ForegroundColor $(if ($fail -eq 0) { 'Green' } else { 'Red' })
 if ($fail -gt 0) { exit 1 }

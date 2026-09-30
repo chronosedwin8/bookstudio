@@ -16,6 +16,13 @@ const routes: RouteRecordRaw[] = [
     name: 'checkout',
     component: () => import('@/views/CheckoutView.vue'),
   },
+  {
+    // Vuelta desde la pagina de pago de Mercado Pago. Publica: quien contrata sin
+    // cuenta llega aqui sin sesion y la recibe al aprobarse el pago.
+    path: '/pago/resultado',
+    name: 'pago-resultado',
+    component: () => import('@/views/PagoResultadoView.vue'),
+  },
   // El area de cliente es la facturacion; ya no hay portal de presupuestos.
   { path: '/clientes', redirect: { name: 'billing' } },
   { path: '/login', name: 'login', component: () => import('@/views/LoginView.vue'), meta: { guestOnly: true } },

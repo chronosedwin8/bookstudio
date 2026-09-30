@@ -47,8 +47,8 @@ const CREAR_CUENTA = 'https://www.mercadopago.com.co/';
         número de documento y fecha de vencimiento.
       </li>
       <li>
-        <strong>De ser posible, paga estando conectado a tu cuenta de Mercado Pago</strong> en este
-        navegador: las compras como invitado suelen pasar por controles más estrictos.
+        <strong>De ser posible, paga con tu cuenta de Mercado Pago</strong> (opción «Con mi cuenta de
+        Mercado Pago»): las compras como invitado suelen pasar por controles más estrictos.
       </li>
     </ul>
 

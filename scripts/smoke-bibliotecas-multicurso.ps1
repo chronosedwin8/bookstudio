@@ -38,7 +38,9 @@ Check 'se crean dos alumnos en cursos distintos' ($null -ne $alumnoA.user.id -an
 
 Write-Host "`n== 1. Alumnado de varios cursos en una biblioteca ==" -ForegroundColor Cyan
 
-$busca = Api GET "/libraries/$($mixta.library.id)/students/search?q=Alfa" $null $tokenDoc
+# Con el sufijo: "Alfa" a secas encuentra tambien a las alumnas de ejecuciones
+# anteriores y, con el limite de resultados, la de ahora podia quedar fuera.
+$busca = Api GET "/libraries/$($mixta.library.id)/students/search?q=Alfa+$sufijo" $null $tokenDoc
 Check 'la busqueda encuentra alumnado de otro curso' ($busca.students.Count -ge 1) "$($busca.students.Count)"
 $encontrada = $busca.students | Where-Object { $_.id -eq $alumnoA.user.id }
 Check 'muestra en que cursos ya esta' ($encontrada.libraries -contains "Curso A $sufijo") ($encontrada.libraries -join ',')

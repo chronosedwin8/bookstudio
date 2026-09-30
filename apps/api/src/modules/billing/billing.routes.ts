@@ -4,11 +4,13 @@ import { env } from '../../config/env.js';
 import { asyncHandler } from '../../lib/async-handler.js';
 import { createRateLimiter } from '../../lib/rate-limit.js';
 import { HttpError } from '../../lib/http-error.js';
-import { requireAuth, requireRole } from '../../middleware/auth.js';
+import { optionalAuth, requireAuth, requireRole } from '../../middleware/auth.js';
 import { validate } from '../../middleware/validate.js';
 import * as service from './billing.service.js';
 import { isBillingEnabled, verifyWebhookSignature } from './mercadopago.service.js';
 import { listPlans, listVisiblePlans, updatePlan } from './plans.js';
+import { consultarIntento, crearIntentoPlan } from './pago-en-mercado-pago.service.js';
+import { query } from '../../db/pool.js';
 
 const checkoutSchema = z.object({
   // No es un enum: los planes viven en la base y se comprueban al cobrar, que es
@@ -38,6 +40,15 @@ const autoRenewSchema = z.object({ autoRenew: z.boolean() });
  * de alguien probando numeros de tarjeta robados contra la pasarela.
  */
 const checkoutLimiter = createRateLimiter(6, 10 * 60_000);
+
+/**
+ * Preparar la pagina de pago de Mercado Pago tiene su propio contador. Aqui no
+ * viaja ninguna tarjeta, asi que no hay pruebas de tarjetas robadas que frenar;
+ * solo se evita que alguien llene la tabla de intentos. Compartir el contador del
+ * pago con tarjeta hacia que tres errores con la tarjeta bloquearan tambien la
+ * opcion de pagar con la cuenta de Mercado Pago, que es justo la que mas aprueba.
+ */
+const preparacionLimiter = createRateLimiter(10, 10 * 60_000);
 
 export const billingRouter = Router();
 
@@ -111,6 +122,71 @@ billingRouter.post(
       throw new HttpError(429, 'Demasiados intentos de pago. Espera unos minutos.', 'TOO_MANY_REQUESTS');
     }
     res.status(201).json(await service.signupAndCheckout(req.body));
+  }),
+);
+
+/* ---------------------------------------------------------------------------
+ * Pagar en la pagina de Mercado Pago, con la cuenta del cliente.
+ *
+ * Van antes de requireAuth: se puede contratar sin cuenta (se crea al aprobarse
+ * el pago) y se vuelve de Mercado Pago sin sesion en ese caso. Quien si la tiene
+ * la manda igual y se usa.
+ * ------------------------------------------------------------------------ */
+
+const pagoMpSchema = z.object({
+  plan: z.string().min(2).max(40),
+  payerEmail: z.string().email().max(255).toLowerCase().trim(),
+  organization: z.string().max(160).trim().optional(),
+  autoRenew: z.boolean().default(false),
+  /** Solo para quien aun no tiene cuenta. */
+  fullName: z.string().min(2, 'Escribe tu nombre').max(100).trim().optional(),
+  password: z.string().min(8, 'La contraseña debe tener al menos 8 caracteres').max(128).optional(),
+});
+
+billingRouter.post(
+  '/mp/plan',
+  optionalAuth,
+  validate(pagoMpSchema),
+  asyncHandler(async (req, res) => {
+    if (preparacionLimiter.hit(req.auth?.userId ?? req.ip ?? 'desconocida')) {
+      throw new HttpError(429, 'Demasiados intentos de pago. Espera unos minutos.', 'TOO_MANY_REQUESTS');
+    }
+    // Una cuenta de prueba no es una cuenta de verdad: contrata como alta nueva.
+    let ownerId: string | null = null;
+    if (req.auth?.kind === 'session') {
+      const { rows } = await query<{ is_trial: boolean }>('SELECT is_trial FROM users WHERE id = $1', [req.auth.userId]);
+      if (rows[0] && !rows[0].is_trial) ownerId = req.auth.userId;
+    }
+    const b = req.body as z.infer<typeof pagoMpSchema>;
+    if (!ownerId && (!b.fullName || !b.password)) {
+      throw HttpError.badRequest('Escribe tu nombre y una contraseña para crear tu cuenta');
+    }
+    res.status(201).json(
+      await crearIntentoPlan(ownerId, {
+        plan: b.plan,
+        payerEmail: b.payerEmail,
+        organization: b.organization,
+        autoRenew: b.autoRenew,
+        ...(ownerId ? {} : { signup: { fullName: b.fullName!, password: b.password! } }),
+      }),
+    );
+  }),
+);
+
+/** Como va un pago hecho en Mercado Pago, para la pantalla de vuelta. */
+billingRouter.get(
+  '/mp/:reference',
+  optionalAuth,
+  validate(z.object({ reference: z.string().min(8).max(80) }), 'params'),
+  asyncHandler(async (req, res) => {
+    const claim = req.header('x-pago-claim') ?? undefined;
+    res.json(
+      await consultarIntento(req.params.reference, {
+        userId: req.auth?.userId,
+        role: req.auth?.role,
+        claim: claim && claim.length <= 100 ? claim : undefined,
+      }),
+    );
   }),
 );
 

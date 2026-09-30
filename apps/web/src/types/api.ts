@@ -682,6 +682,16 @@ export interface PlanAdmin extends BillingPlan {
   sortOrder: number;
 }
 
+/** Resultado de un pago hecho en la pagina de Mercado Pago. */
+export interface EstadoPagoMp {
+  estado: 'aprobado' | 'en_tramite' | 'rechazado' | 'esperando' | 'revisar';
+  kind: 'plan' | 'charge';
+  detalle: string | null;
+  initPoint: string | null;
+  autoRenew: boolean;
+  session?: { token: string; user: { id: string; email: string; fullName: string; role: string } };
+}
+
 export interface BillingConfig {
   enabled: boolean;
   publicKey: string;

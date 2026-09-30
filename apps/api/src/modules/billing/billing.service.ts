@@ -4,6 +4,7 @@ import { env } from '../../config/env.js';
 import { HttpError } from '../../lib/http-error.js';
 import { signAccessToken } from '../../lib/tokens.js';
 import * as mp from './mercadopago.service.js';
+import { aplicarPago } from './pago-en-mercado-pago.service.js';
 import { addMonths, getPlan, getPlanParaContratar, nombrePlan, type PlanId } from './plans.js';
 
 /**
@@ -441,6 +442,15 @@ export async function setAutoRenew(
  */
 export async function handlePaymentNotification(paymentId: string): Promise<void> {
   const payment = await mp.getPayment(paymentId);
+
+  /*
+   * Pagos hechos en la pagina de Mercado Pago: su referencia es la de un intento
+   * guardado, y cumplirlo crea la cuenta y la licencia o salda la cuenta de cobro.
+   * Despues se sigue con lo de siempre, que ya encuentra el pago apuntado y solo
+   * actualiza su estado (por ejemplo, si mas adelante se devuelve).
+   */
+  await aplicarPago(payment);
+
   const aprobado = APPROVED.has(payment.status);
 
   const ownerId = (payment.metadata?.owner_id ?? payment.metadata?.ownerId) as string | undefined;

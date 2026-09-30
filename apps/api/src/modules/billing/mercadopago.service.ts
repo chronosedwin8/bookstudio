@@ -91,6 +91,7 @@ export interface MpPayment {
   date_approved?: string | null;
   payer?: { email?: string };
   external_reference?: string;
+  currency_id?: string;
   metadata?: Record<string, unknown>;
 }
 
@@ -140,6 +141,82 @@ export async function createPayment(input: CreatePaymentInput): Promise<MpPaymen
 
 export async function getPayment(paymentId: string | number): Promise<MpPayment> {
   return request<MpPayment>(`/v1/payments/${paymentId}`);
+}
+
+// --- Pago en la pagina de Mercado Pago (Checkout Pro) ---
+
+export interface CreatePreferenceInput {
+  /** Nuestro identificador del intento; vuelve en el pago como external_reference. */
+  externalReference: string;
+  title: string;
+  amountCop: number;
+  payerEmail?: string;
+  /** A donde vuelve el cliente al terminar (aprobado, pendiente o rechazado). */
+  backUrl: string;
+  /** Pasado este tiempo la pagina de pago ya no acepta pagos: el precio podria haber cambiado. */
+  expiresInHours?: number;
+}
+
+export interface MpPreference {
+  id: string;
+  init_point: string;
+  sandbox_init_point?: string;
+}
+
+/**
+ * Crea la pagina de pago de Mercado Pago para un importe.
+ *
+ * Alli el cliente paga con su cuenta (tarjetas guardadas, saldo), o con PSE,
+ * Efecty o una tarjeta nueva. Crearla no cobra nada: solo prepara el pago. El
+ * importe sale del servidor y la referencia es la que luego permite saber, al
+ * llegar el pago, a que intento corresponde.
+ */
+export async function createPreference(input: CreatePreferenceInput): Promise<MpPreference> {
+  const ahora = new Date();
+  const hasta = new Date(ahora.getTime() + (input.expiresInHours ?? 24) * 3_600_000);
+  return request<MpPreference>('/checkout/preferences', {
+    method: 'POST',
+    body: {
+      items: [
+        {
+          id: input.externalReference.slice(0, 60),
+          title: input.title.slice(0, 250),
+          quantity: 1,
+          currency_id: 'COP',
+          unit_price: input.amountCop,
+        },
+      ],
+      ...(input.payerEmail ? { payer: { email: input.payerEmail } } : {}),
+      external_reference: input.externalReference,
+      back_urls: { success: input.backUrl, pending: input.backUrl, failure: input.backUrl },
+      // Solo vuelve solo cuando el pago esta aprobado; si no, el cliente ve el
+      // resultado en Mercado Pago y pulsa volver.
+      auto_return: 'approved',
+      notification_url: env.MP_WEBHOOK_URL || undefined,
+      statement_descriptor: STATEMENT_DESCRIPTOR,
+      expires: true,
+      expiration_date_from: ahora.toISOString(),
+      expiration_date_to: hasta.toISOString(),
+    },
+    // Reintentar la misma creacion no genera dos paginas de pago.
+    idempotencyKey: `pref-${input.externalReference}`,
+  });
+}
+
+/**
+ * Los pagos que Mercado Pago tiene con una referencia nuestra, el mas reciente
+ * primero. Sirve para saber como fue el pago al volver el cliente, sin depender
+ * de que el aviso de Mercado Pago haya llegado ya.
+ */
+export async function searchPaymentsByReference(externalReference: string): Promise<MpPayment[]> {
+  const q = new URLSearchParams({
+    external_reference: externalReference,
+    sort: 'date_created',
+    criteria: 'desc',
+    limit: '10',
+  });
+  const r = await request<{ results?: MpPayment[] }>(`/v1/payments/search?${q.toString()}`);
+  return r.results ?? [];
 }
 
 // --- Suscripciones (renovacion automatica) ---
