@@ -710,6 +710,37 @@ export const useEditorStore = defineStore('editor', () => {
     goToPage(Math.min(target, book.value.pages.length - 1));
   }
 
+  /**
+   * Borra varias hojas de una vez (las marcadas en la tira de paginas).
+   *
+   * Se piden de una en una y se recarga el libro al final, no tras cada una. La
+   * pagina abierta se conserva si sobrevive; si no, se abre la que ocupe su sitio.
+   * Devuelve cuantas se borraron.
+   */
+  async function deletePages(pageIds: string[]): Promise<number> {
+    if (!book.value) return 0;
+    const pages = book.value.pages;
+    const ids = pageIds.filter((id) => pages.some((p) => p.id === id));
+    // Un libro sin paginas no se puede editar: la ultima hoja se queda siempre.
+    if (!ids.length || ids.length >= pages.length) return 0;
+
+    const openId = currentPage.value?.id;
+    const borradasAntes = pages.slice(0, currentPageIndex.value).filter((p) => ids.includes(p.id)).length;
+    let borradas = 0;
+    await withSaving(async () => {
+      for (const id of ids) {
+        await booksApi.deletePage(book.value!.id, id);
+        borradas++;
+      }
+      return true;
+    });
+    if (!borradas) return 0;
+    book.value = await booksApi.get(book.value.id);
+    const sigue = book.value.pages.findIndex((p) => p.id === openId);
+    goToPage(sigue >= 0 ? sigue : Math.min(currentPageIndex.value - borradasAntes, book.value.pages.length - 1));
+    return borradas;
+  }
+
   async function deleteCurrentPage(): Promise<void> {
     if (currentPage.value) await deletePage(currentPage.value.id);
   }
@@ -810,6 +841,7 @@ export const useEditorStore = defineStore('editor', () => {
     pegarPaginas,
     olvidarPaginasCopiadas,
     deletePage,
+    deletePages,
     deleteCurrentPage,
     reorderPages,
     setPageBackground,

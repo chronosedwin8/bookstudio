@@ -68,13 +68,54 @@ function alternarMarca(id: string): void {
   paginasMarcadas.value = s;
 }
 
-/** En modo seleccion, o con Ctrl/Cmd, el clic marca; si no, abre la pagina. */
+/** Hoja desde la que se cuenta un rango con Mayus+clic: la ultima pulsada. */
+let anclaPaginas: number | null = null;
+
+/**
+ * En modo seleccion, o con Ctrl/Cmd, el clic marca; con Mayus marca el tramo
+ * desde la ultima pulsada, como en cualquier explorador de archivos. Sin
+ * modificadores abre la pagina.
+ */
 function onClicMiniatura(id: string, index: number, evento: MouseEvent): void {
+  if (evento.shiftKey && editor.book) {
+    const desde = anclaPaginas ?? editor.currentPageIndex;
+    const [a, b] = desde <= index ? [desde, index] : [index, desde];
+    const s = new Set(paginasMarcadas.value);
+    for (const p of editor.book.pages.slice(a, b + 1)) s.add(p.id);
+    paginasMarcadas.value = s;
+    return;
+  }
+  anclaPaginas = index;
   if (seleccionando.value || evento.ctrlKey || evento.metaKey) {
     alternarMarca(id);
     return;
   }
   editor.goToPage(index);
+}
+
+/**
+ * Supr sobre la tira de paginas: borra las marcadas o, si no hay ninguna, la
+ * que se acaba de pulsar. Pide confirmacion porque se llevan su contenido.
+ */
+async function borrarPaginasConTecla(): Promise<void> {
+  const book = editor.book;
+  if (!book || !editor.canEdit || editor.saving) return;
+  const ids = paginasMarcadas.value.size
+    ? book.pages.filter((p) => paginasMarcadas.value.has(p.id)).map((p) => p.id)
+    : editor.currentPage ? [editor.currentPage.id] : [];
+  if (!ids.length) return;
+  if (ids.length >= book.pages.length) {
+    avisoPaginas.value = 'No se pueden borrar todas las páginas: el libro necesita al menos una.';
+    return;
+  }
+  const pregunta = ids.length === 1
+    ? '¿Eliminar esta página y todo su contenido?'
+    : `¿Eliminar ${ids.length} páginas y todo su contenido?`;
+  if (!window.confirm(pregunta)) return;
+  const n = await editor.deletePages(ids);
+  terminarSeleccion();
+  anclaPaginas = null;
+  if (n > 1) avisoPaginas.value = `${n} páginas eliminadas.`;
 }
 
 function marcarTodas(): void {
@@ -978,6 +1019,20 @@ function onKeydown(event: KeyboardEvent): void {
     }
   }
 
+  /*
+   * Supr sobre la tira de paginas borra hojas, no objetos. Tambien con hojas
+   * marcadas y ningun objeto elegido: si hay un objeto seleccionado en el lienzo,
+   * la tecla sigue siendo para el, que es lo que se tiene delante.
+   */
+  if (editor.canEdit && (event.key === 'Delete' || event.key === 'Backspace')) {
+    const enLaTira = Boolean(target.closest('[data-tira-paginas]'));
+    if (enLaTira || (paginasMarcadas.value.size && !editor.selectedElementId)) {
+      event.preventDefault();
+      void borrarPaginasConTecla();
+      return;
+    }
+  }
+
   if (!editor.selectedElementId || !editor.canEdit) return;
 
   /*
@@ -1515,6 +1570,7 @@ async function saveTitle(): Promise<void> {
             <div
               v-for="(page, index) in editor.book.pages"
               :key="page.id"
+              data-tira-paginas
               class="group relative shrink-0"
               :class="[
                 dropIndex === index && dragIndex !== index && 'ring-2 ring-brand-400 ring-offset-1 rounded',
@@ -1538,7 +1594,7 @@ async function saveTitle(): Promise<void> {
                 ]"
                 :title="seleccionando
                   ? (paginasMarcadas.has(page.id) ? 'Quitar de la selección' : 'Añadir a la selección')
-                  : index === 0 ? 'Portada (Ctrl+clic para seleccionar varias)' : `Página ${page.pageNumber} (Ctrl+clic para seleccionar varias)`"
+                  : `${index === 0 ? 'Portada' : `Página ${page.pageNumber}`} (Ctrl o Mayús+clic para seleccionar varias; Supr las elimina)`"
                 :aria-pressed="seleccionando ? paginasMarcadas.has(page.id) : undefined"
                 @click="onClicMiniatura(page.id, index, $event)"
               >
@@ -1631,6 +1687,14 @@ async function saveTitle(): Promise<void> {
                   :disabled="!paginasMarcadas.size"
                   @click="copiarMarcadas"
                 >Copiar</button>
+                <button
+                  v-if="editor.canEdit"
+                  type="button"
+                  class="btn-secondary px-2 py-1 text-xs text-red-600 hover:border-red-300"
+                  :disabled="!paginasMarcadas.size || editor.saving"
+                  title="Elimina las páginas seleccionadas (también con la tecla Supr)"
+                  @click="borrarPaginasConTecla"
+                >Eliminar</button>
                 <button type="button" class="btn-secondary px-2 py-1 text-xs" @click="marcarTodas">Todas</button>
                 <button type="button" class="btn-secondary px-2 py-1 text-xs" @click="terminarSeleccion">Cancelar</button>
               </template>
@@ -1657,7 +1721,7 @@ async function saveTitle(): Promise<void> {
               class="ml-2 shrink-0 rounded bg-amber-100 px-2 py-1 text-[11px] font-semibold text-amber-800"
             >Prueba: hasta 2 páginas</span>
             <span v-else-if="editor.canEdit" class="ml-2 shrink-0 text-[11px] text-slate-400">
-              Arrastra las páginas para reordenarlas
+              Arrastra las páginas para reordenarlas · Supr elimina las seleccionadas
             </span>
           </nav>
         </div>

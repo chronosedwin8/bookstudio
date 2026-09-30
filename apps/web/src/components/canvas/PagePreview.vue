@@ -346,7 +346,12 @@ function alTerminarAnimacion(element: CanvasElement): void {
           :style="{ ...estiloAnimacion(element), visibility: esperaSuTurno(element) ? 'hidden' : undefined }"
           @animationend="alTerminarAnimacion(element)"
         >
-          <ElementRenderer :element="element" :preview="!interactive" :check-answer="checkAnswer" />
+          <ElementRenderer
+            :element="element"
+            :preview="!interactive"
+            :lectura="interactive"
+            :check-answer="checkAnswer"
+          />
         </div>
       </component>
     </div>

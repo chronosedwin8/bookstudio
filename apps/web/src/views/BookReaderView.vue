@@ -67,6 +67,23 @@ const rotuloPagina = computed(() => {
   return `Páginas ${visibles[0]}-${visibles[visibles.length - 1]}`;
 });
 
+/**
+ * A donde lleva "Salir": a la biblioteca de la que se abrio el libro.
+ *
+ * Primero la pagina de la que se vino, si era una biblioteca: un libro repartido
+ * puede estar en varias y hay que volver a la que se estaba mirando. Si no, la
+ * biblioteca del propio libro. Por enlace compartido no se supone ninguna: quien
+ * lo abre puede no ser miembro. Antes llevaba siempre a la raiz de la cuenta.
+ */
+const salida = computed(() => {
+  const atras = (window.history.state as { back?: unknown } | null)?.back;
+  if (typeof atras === 'string' && /^\/libraries\/[^/?#]+/.test(atras)) return atras;
+  if (!shareToken.value && book.value?.libraryId) {
+    return { name: 'library', params: { id: book.value.libraryId } };
+  }
+  return { name: 'dashboard' };
+});
+
 /** Salto directo (miniaturas, marcadores, inicio y fin): sin giro, seria falso. */
 function goTo(target: number): void {
   index.value = target;
@@ -100,8 +117,9 @@ function onKeydown(event: KeyboardEvent): void {
   if (!action) return;
 
   // Dentro de un campo o de un bloque de pregunta el teclado es para el elemento.
+  // En un video tambien: el espacio lo pausa y las flechas lo adelantan.
   const target = event.target as HTMLElement | null;
-  if (target?.closest('input, textarea, [contenteditable="true"]')) return;
+  if (target?.closest('input, textarea, [contenteditable="true"], video')) return;
 
   event.preventDefault();
   action();
@@ -196,7 +214,7 @@ onBeforeUnmount(() => {
         <div class="flex min-w-0 items-center gap-3">
           <RouterLink
             v-if="auth.isAuthenticated"
-            :to="{ name: 'dashboard' }"
+            :to="salida"
             class="shrink-0 text-sm text-slate-300 hover:text-white"
           >&larr; Salir</RouterLink>
           <span v-else class="shrink-0 font-black text-brand-400">BookStudio</span>

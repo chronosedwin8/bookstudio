@@ -37,6 +37,12 @@ const props = defineProps<{
    * Sin esto una rejilla de paginas crearia una instancia de Leaflet por mapa.
    */
   preview?: boolean;
+  /**
+   * Modo lectura o presentacion. Aqui nada se selecciona ni se arrastra, asi que
+   * el video lleva sus controles y el audio responde siempre al pulsar. Sin esto
+   * esperaban a estar seleccionados y en lectura se veian como una imagen.
+   */
+  lectura?: boolean;
   /** Corrige una pregunta contra el servidor; solo lo aporta el modo lectura. */
   checkAnswer?: (elementId: string, answer: string[]) => Promise<AnswerResult>;
 }>();
@@ -381,7 +387,7 @@ const textLines = computed(() => {
     <button
       type="button"
       class="grid h-full w-full place-items-center rounded-full text-white shadow-lg transition hover:brightness-110"
-      :class="selected ? '' : 'pointer-events-none'"
+      :class="selected || lectura ? '' : 'pointer-events-none'"
       :style="{ backgroundColor: media.hotspotColor }"
       :aria-label="audioPlaying ? 'Pausar audio' : 'Reproducir audio'"
       @pointerdown.stop
@@ -409,6 +415,17 @@ const textLines = computed(() => {
     siempre el gesto y para reproducir hay un boton propio, pequeno y en una
     esquina, que no estorba al arrastre.
   -->
+  <!-- En lectura no hay arrastre que proteger: los controles propios del navegador. -->
+  <video
+    v-else-if="element.type === 'video' && lectura"
+    :src="media.fileUrl"
+    :poster="media.posterUrl"
+    class="h-full w-full rounded bg-black object-cover"
+    controls
+    playsinline
+    preload="metadata"
+  />
+
   <div v-else-if="element.type === 'video'" class="relative h-full w-full">
     <video
       ref="videoRef"
