@@ -1,8 +1,10 @@
 # Ensayo funcional de facturacion, licencias y modo de prueba.
 #
-# NO crea cobros reales: las credenciales de Mercado Pago son de produccion y un
-# pago de verdad moveria dinero. Se comprueba la configuracion, la validacion de
-# entrada, los permisos y los cupos; el cobro end-to-end lo hace una persona.
+# Desde el 30 de septiembre de 2026 BookStudio no cobra: cada plan y cada cuenta
+# de cobro se paga con el enlace de Mercado Pago de su importe, y la
+# administracion activa la licencia o salda la cuenta al ver el pago. Aqui se
+# comprueba que se ofrece el enlace correcto (y nunca uno equivocado), que las
+# rutas que cobraban ya no existen, los permisos y los cupos.
 $ErrorActionPreference = 'Stop'
 $base = if ($env:BOOKSTUDIO_API) { $env:BOOKSTUDIO_API } else { 'http://localhost:4000/api' }
 $pass = 0; $fail = 0
@@ -53,31 +55,26 @@ $aToken = $admin.token
 # --- Configuracion publica ---
 Write-Host "`n-- Configuracion --" -ForegroundColor Cyan
 
-$config = Test-Step 'GET /billing/config expone planes y clave publica' {
+$config = Test-Step 'GET /billing/config expone planes y su enlace de pago' {
     $r = Invoke-RestMethod -Uri "$base/billing/config"
-    if (-not $r.enabled) { throw 'La facturacion deberia estar activa' }
     if ($r.currency -ne 'COP') { throw "Moneda: $($r.currency)" }
-    if ($r.plans.Count -lt 4) { throw "Planes: $($r.plans.Count)" }
+    if ($r.plans.Count -lt 1) { throw "Planes: $($r.plans.Count)" }
+    if (-not $r.contactEmail) { throw 'Falta el correo para el comprobante' }
     $r
 }
 
-Test-Step 'La clave publica se expone; el token de acceso NO' {
+Test-Step 'Ya no se expone ninguna credencial de Mercado Pago' {
     $texto = (Invoke-WebRequest -Uri "$base/billing/config" -UseBasicParsing).Content
+    if ($texto -match 'APP_USR-|TEST-') { throw 'Aparece una credencial en la respuesta' }
+    if ($texto -match 'publicKey') { throw 'Sigue saliendo la clave publica' }
+}
 
-    if ($config.publicKey -notmatch '^APP_USR-') { throw 'Falta la clave publica' }
-
-    # Ninguna credencial se escribe aqui: se comprueba que la unica cadena con
-    # forma de credencial en la respuesta sea exactamente la clave publica.
-    # @() fuerza un array: con un solo resultado, Sort-Object devuelve una cadena
-    # suelta y $encontradas[0] daria su primer caracter en vez de la credencial.
-    $encontradas = @([regex]::Matches($texto, 'APP_USR-[A-Za-z0-9\-]+') |
-        ForEach-Object { $_.Value } | Sort-Object -Unique)
-    if ($encontradas.Count -ne 1) { throw "Hay $($encontradas.Count) credenciales en la respuesta" }
-    if ($encontradas[0] -ne $config.publicKey) { throw 'La credencial expuesta no es la clave publica' }
-
-    # El token de acceso tiene mas segmentos que la clave publica; si apareciera,
-    # la cadena encontrada seria mucho mas larga.
-    if ($encontradas[0].Length -gt 60) { throw 'La credencial expuesta es demasiado larga' }
+Test-Step 'Cada enlace que se ofrece es de Mercado Pago y por https' {
+    foreach ($plan in $config.plans) {
+        if ($plan.paymentLink -and $plan.paymentLink -notmatch '^https://(mpago\.li|mpago\.la|(www\.|link\.)?mercadopago\.com\.co)/') {
+            throw "$($plan.id): $($plan.paymentLink)"
+        }
+    }
 }
 
 # Los importes ya no se escriben aqui: se configuran desde el panel y comprobar
@@ -137,107 +134,36 @@ Test-Step 'Un admin si ve todas las licencias' {
     if ($null -eq $r.subscriptions) { throw 'Sin respuesta' }
 }
 
-Test-Step 'Activar la renovacion sin suscripcion -> 404' {
-    Assert-Status { Invoke-Api PUT '/billing/auto-renew' @{ autoRenew = $true } -Token $dToken } 404
+Test-Step 'Ya no se puede ACTIVAR la renovacion automatica -> 400' {
+    Assert-Status { Invoke-Api PUT '/billing/auto-renew' @{ autoRenew = $true } -Token $dToken } 400
 }
 
-# --- Validacion del cobro (sin cobrar) ---
-Write-Host "`n-- Validacion del cobro --" -ForegroundColor Cyan
+Test-Step 'Apagarla sin tenerla no falla' {
+    $r = Invoke-Api PUT '/billing/auto-renew' @{ autoRenew = $false } -Token $dToken
+    if ($r.subscription -and $r.subscription.autoRenew) { throw 'Sigue activa' }
+}
 
-Test-Step 'Un plan inventado se rechaza -> 400' {
+# --- Lo que cobraba dentro de BookStudio ya no existe ---
+Write-Host "`n-- Ya no se cobra dentro de BookStudio --" -ForegroundColor Cyan
+
+Test-Step 'El cobro con tarjeta ya no existe -> 404' {
     Assert-Status {
-        Invoke-Api POST '/billing/checkout' @{
-            plan = 'plan-premium-inventado'; paymentMethodId = 'visa'; installments = 1
-            payerEmail = 'alguien@test.local'; autoRenew = $false
-        } -Token $dToken
-    } 400
+        Invoke-Api POST '/billing/checkout' @{ plan = 'individual'; paymentMethodId = 'visa'; installments = 1; payerEmail = 'a@b.co' } -Token $dToken
+    } 404
 }
 
-Test-Step 'Un correo invalido se rechaza -> 400' {
+# Con sesion: sin ella responden 401 antes de buscar la ruta, que tampoco procesa
+# nada pero no demostraria que la ruta ha desaparecido.
+Test-Step 'Ni el alta con pago -> 404' {
     Assert-Status {
-        Invoke-Api POST '/billing/checkout' @{
-            plan = 'individual'; paymentMethodId = 'visa'; installments = 1
-            payerEmail = 'no-es-correo'; autoRenew = $false
-        } -Token $dToken
-    } 400
+        Invoke-Api POST '/billing/signup-checkout' @{ plan = 'individual'; fullName = 'X Y'; password = 'Secreto12345'; payerEmail = 'x@y.co'; paymentMethodId = 'visa' } -Token $dToken
+    } 404
 }
 
-Test-Step 'Un numero de cuotas absurdo se rechaza -> 400' {
+Test-Step 'Ni la pagina de Mercado Pago con cuenta -> 404' {
     Assert-Status {
-        Invoke-Api POST '/billing/checkout' @{
-            plan = 'individual'; paymentMethodId = 'visa'; installments = 999
-            payerEmail = 'alguien@test.local'; autoRenew = $false
-        } -Token $dToken
-    } 400
-}
-
-Test-Step 'Cobrar exige sesion -> 401' {
-    Assert-Status {
-        Invoke-RestMethod -Method POST -Uri "$base/billing/checkout" -ContentType 'application/json' `
-            -Body (@{ plan = 'individual'; paymentMethodId = 'visa'; installments = 1; payerEmail = 'a@b.co'; autoRenew = $false } | ConvertTo-Json -Compress)
-    } 401
-}
-
-Test-Step 'El importe no se puede imponer desde el navegador' {
-    # El esquema ignora cualquier campo de importe: el precio sale del catalogo.
-    try {
-        Invoke-Api POST '/billing/checkout' @{
-            plan = 'institucional'; amountCop = 1000; transaction_amount = 1000
-            paymentMethodId = 'visa'; installments = 1
-            payerEmail = "fa.doc.$suffix@test.local"; autoRenew = $false
-        } -Token $dToken | Out-Null
-        throw 'No deberia haber prosperado sin token de tarjeta'
-    } catch {
-        $code = $_.Exception.Response.StatusCode.value__
-        # 400 de Mercado Pago por falta de tarjeta: nunca llego a cobrar 1000 COP.
-        if ($code -ne 400 -and $code -ne 502) { throw "Codigo inesperado: $code" }
-    }
-}
-
-# --- Alta y pago en un solo paso ---
-Write-Host "`n-- Contratacion directa --" -ForegroundColor Cyan
-
-Test-Step 'El alta con pago no exige sesion previa' {
-    # Sin token de tarjeta el cobro no prospera, pero la ruta debe ser publica:
-    # un 401 significaria que exige cuenta, que es justo lo que se quiere evitar.
-    try {
-        Invoke-RestMethod -Method POST -Uri "$base/billing/signup-checkout" -ContentType 'application/json' `
-            -Body (@{ fullName = 'Nueva Persona'; password = 'Secreto12345'; plan = 'individual'
-                      paymentMethodId = 'visa'; installments = 1
-                      payerEmail = "alta.$suffix@test.local"; autoRenew = $false } | ConvertTo-Json -Compress) | Out-Null
-        throw 'No deberia prosperar sin tarjeta'
-    } catch {
-        $code = $_.Exception.Response.StatusCode.value__
-        if ($code -eq 401) { throw 'La ruta exige sesion y deberia ser publica' }
-        if ($code -ne 400 -and $code -ne 502) { throw "Codigo inesperado: $code" }
-    }
-}
-
-Test-Step 'Un cobro fallido no deja la cuenta a medias' {
-    # Tras el intento anterior, ese correo debe seguir libre para reintentar.
-    $r = Invoke-Api POST '/auth/register' @{
-        email = "alta.$suffix@test.local"; password = 'Secreto12345'
-        fullName = 'Nueva Persona'; role = 'teacher'
-    }
-    if (-not $r.token) { throw 'El correo quedo ocupado por una cuenta huerfana' }
-}
-
-Test-Step 'Un correo ya registrado se rechaza -> 409' {
-    Assert-Status {
-        Invoke-RestMethod -Method POST -Uri "$base/billing/signup-checkout" -ContentType 'application/json' `
-            -Body (@{ fullName = 'Otra Vez'; password = 'Secreto12345'; plan = 'individual'
-                      paymentMethodId = 'visa'; installments = 1
-                      payerEmail = "alta.$suffix@test.local"; autoRenew = $false } | ConvertTo-Json -Compress)
-    } 409
-}
-
-Test-Step 'Una contrasena corta se rechaza -> 400' {
-    Assert-Status {
-        Invoke-RestMethod -Method POST -Uri "$base/billing/signup-checkout" -ContentType 'application/json' `
-            -Body (@{ fullName = 'Corta'; password = '123'; plan = 'individual'
-                      paymentMethodId = 'visa'; installments = 1
-                      payerEmail = "corta.$suffix@test.local"; autoRenew = $false } | ConvertTo-Json -Compress)
-    } 400
+        Invoke-Api POST '/billing/mp/plan' @{ plan = 'individual'; payerEmail = 'x@y.co'; fullName = 'X Y'; password = 'Secreto12345' } -Token $dToken
+    } 404
 }
 
 Test-Step 'Ya no existe el circuito de presupuestos -> 404' {
@@ -396,18 +322,11 @@ Test-Step 'El precio cambiado se ve en la portada al momento' {
     if ($m.amountCop -ne 13000) { throw "La portada dice $($m.amountCop)" }
 }
 
-Test-Step 'Un plan retirado deja de ofrecerse y no se puede contratar' {
+Test-Step 'Un plan retirado deja de ofrecerse' {
     $null = Invoke-Api PATCH '/billing/plans/mensual' @{ visible = $false } -Token $aToken
 
     $r = Invoke-RestMethod -Uri "$base/billing/config"
     if ($r.plans | Where-Object { $_.id -eq 'mensual' }) { throw 'Sigue apareciendo en la portada' }
-
-    Assert-Status {
-        Invoke-Api POST '/billing/checkout' @{
-            plan = 'mensual'; paymentMethodId = 'visa'; installments = 1
-            payerEmail = 'prueba@test.local'; autoRenew = $false
-        } -Token $dToken
-    } 400
 
     # Pero la administracion lo sigue viendo: las licencias vendidas apuntan a el.
     $todos = (Invoke-Api GET '/billing/plans' -Token $aToken).plans
@@ -423,56 +342,54 @@ Test-Step 'El plan mensual queda como estaba' {
     if (-not $r.plan.visible) { throw 'Quedo retirado' }
 }
 
-# --- Pagar en la pagina de Mercado Pago ---
+# --- Enlaces de pago ---
 #
-# Crear la pagina de pago NO cobra nada: solo prepara el pago. Aqui se comprueba
-# quien puede prepararlo, que no se cuela un importe y quien puede ver el resultado.
-Write-Host "`n-- Pagar en la pagina de Mercado Pago --" -ForegroundColor Cyan
+# Por IMPORTE: un plan o una cuenta de cobro ofrece el enlace de su importe
+# exacto, y si no lo hay no ofrece ninguno (nunca uno de otro importe).
+Write-Host "`n-- Enlaces de pago --" -ForegroundColor Cyan
 
-$nuevoMp = "mp.$suffix@test.local"
-$intento = Test-Step 'Sin cuenta: se prepara el pago y la cuenta aun NO existe' {
-    $r = Invoke-Api POST '/billing/mp/plan' @{ plan = 'mensual'; payerEmail = $nuevoMp; fullName = 'Pago Mp'; password = 'Secreto12345' }
-    if ($r.initPoint -notmatch '^https://www\.mercadopago\.com\.co/') { throw "Pagina: $($r.initPoint)" }
-    if (-not $r.claim) { throw 'Falta el secreto para recibir la sesion' }
-    try { $null = Invoke-Api POST '/auth/login' @{ email = $nuevoMp; password = 'Secreto12345' }; throw 'La cuenta ya existe antes de pagar' }
-    catch { if ($_.Exception.Message -eq 'La cuenta ya existe antes de pagar') { throw } }
-    $r
+$importePrueba = 1000 * (Get-Random -Minimum 900000 -Maximum 999000)
+
+Test-Step 'Solo la administracion ve y cambia los enlaces -> 403' {
+    Assert-Status { Invoke-Api GET '/billing/payment-links' -Token $dToken } 403
+    Assert-Status { Invoke-Api PUT '/billing/payment-links' @{ amountCop = $importePrueba; url = 'https://mpago.li/prueba' } -Token $dToken } 403
 }
 
-Test-Step 'El importe no se puede imponer desde el navegador' {
-    # Se manda un importe propio; el servidor lo ignora y usa el del plan.
-    $r = Invoke-Api POST '/billing/mp/plan' @{ plan = 'mensual'; payerEmail = "mp2.$suffix@test.local"; fullName = 'Pago Mp'; password = 'Secreto12345'; amountCop = 1 }
-    $e = Invoke-RestMethod -Uri "$base/billing/mp/$($r.reference)" -Headers @{ 'x-pago-claim' = $r.claim }
-    if ($e.estado -ne 'esperando') { throw "Estado: $($e.estado)" }
-    $fila = npm run --silent sql --workspace @bookstudio/api -- "SELECT amount_cop FROM payment_intents WHERE reference = '$($r.reference)'" | ConvertFrom-Json
-    if ([int64]$fila[0].amount_cop -ne 10000) { throw "Importe guardado: $($fila[0].amount_cop)" }
+Test-Step 'Un enlace que no es de Mercado Pago se rechaza -> 400' {
+    foreach ($u in @('https://evil.com/pagar', 'http://mpago.li/x', 'javascript:alert(1)', 'https://mpago.li@evil.com/x')) {
+        Assert-Status { Invoke-Api PUT '/billing/payment-links' @{ amountCop = $importePrueba; url = $u } -Token $aToken } 400
+    }
 }
 
-Test-Step 'Sin el secreto nadie ve ese pago -> 404' {
-    Assert-Status { Invoke-RestMethod -Uri "$base/billing/mp/$($intento.reference)" } 404
-    Assert-Status { Invoke-RestMethod -Uri "$base/billing/mp/$($intento.reference)" -Headers @{ 'x-pago-claim' = 'inventado' } } 404
+$enlace = Test-Step 'La administracion pone un enlace para un importe' {
+    (Invoke-Api PUT '/billing/payment-links' @{ amountCop = $importePrueba; url = 'https://mpago.li/prueba1'; label = 'Prueba' } -Token $aToken).link
 }
 
-Test-Step 'Con su secreto ve que aun no se ha pagado' {
-    $e = Invoke-RestMethod -Uri "$base/billing/mp/$($intento.reference)" -Headers @{ 'x-pago-claim' = $intento.claim }
-    if ($e.estado -ne 'esperando') { throw "Estado: $($e.estado)" }
-    if ($e.session) { throw 'Entrega sesion sin haber pagado' }
+Test-Step 'Un plan con ese importe ofrece ese enlace, y con otro importe ninguno' {
+    $original = (Invoke-Api GET '/billing/plans' -Token $aToken).plans | Where-Object { $_.id -eq 'mensual' }
+    $null = Invoke-Api PATCH '/billing/plans/mensual' @{ amountCop = $importePrueba; visible = $true } -Token $aToken
+    try {
+        $m = (Invoke-RestMethod -Uri "$base/billing/config").plans | Where-Object { $_.id -eq 'mensual' }
+        if ($m.paymentLink -ne 'https://mpago.li/prueba1') { throw "Enlace: $($m.paymentLink)" }
+        $null = Invoke-Api PATCH '/billing/plans/mensual' @{ amountCop = $importePrueba + 1000 } -Token $aToken
+        $m2 = (Invoke-RestMethod -Uri "$base/billing/config").plans | Where-Object { $_.id -eq 'mensual' }
+        if ($m2.paymentLink) { throw "Ofrece un enlace de otro importe: $($m2.paymentLink)" }
+    } finally {
+        $null = Invoke-Api PATCH '/billing/plans/mensual' @{ amountCop = $original.amountCop; visible = $original.visible } -Token $aToken
+    }
 }
 
-Test-Step 'Un correo que ya tiene cuenta no puede contratar como alta nueva -> 409' {
-    Assert-Status { Invoke-Api POST '/billing/mp/plan' @{ plan = 'mensual'; payerEmail = "fa.doc.$suffix@test.local"; fullName = 'X Y'; password = 'Secreto12345' } } 409
+Test-Step 'Cambiar el enlace de un importe lo sustituye, sin duplicar' {
+    $r = (Invoke-Api PUT '/billing/payment-links' @{ amountCop = $importePrueba; url = 'https://mpago.li/prueba2' } -Token $aToken).link
+    if ($r.url -ne 'https://mpago.li/prueba2') { throw "Quedo $($r.url)" }
+    $todos = @((Invoke-Api GET '/billing/payment-links' -Token $aToken).links | Where-Object { $_.amountCop -eq $importePrueba })
+    if ($todos.Count -ne 1) { throw "Hay $($todos.Count) enlaces para el mismo importe" }
 }
 
-Test-Step 'Un plan inventado se rechaza -> 400' {
-    Assert-Status { Invoke-Api POST '/billing/mp/plan' @{ plan = 'gratis'; payerEmail = "mp3.$suffix@test.local"; fullName = 'X Y'; password = 'Secreto12345' } } 400
-}
-
-Test-Step 'Con sesion, el pago es para su cuenta y solo el lo consulta' {
-    $r = Invoke-Api POST '/billing/mp/plan' @{ plan = 'mensual'; payerEmail = "fa.doc.$suffix@test.local" } -Token $dToken
-    if ($r.claim) { throw 'Con cuenta no hace falta secreto' }
-    $e = Invoke-Api GET "/billing/mp/$($r.reference)" -Token $dToken
-    if ($e.estado -ne 'esperando') { throw "Estado: $($e.estado)" }
-    Assert-Status { Invoke-Api GET "/billing/mp/$($r.reference)" -Token $tToken } 404
+Test-Step 'Y se puede quitar' {
+    $null = Invoke-Api DELETE "/billing/payment-links/$($enlace.id)" -Token $aToken
+    $todos = @((Invoke-Api GET '/billing/payment-links' -Token $aToken).links | Where-Object { $_.amountCop -eq $importePrueba })
+    if ($todos.Count -ne 0) { throw 'Sigue ahi' }
 }
 
 Write-Host "`n== Resultado: $pass OK / $fail FAIL ==" -ForegroundColor $(if ($fail -eq 0) { 'Green' } else { 'Red' })

@@ -55,7 +55,13 @@ export const createChargeSchema = z.object({
 
 export const updateChargeSchema = z
   .object({
-    status: z.enum(['emitida', 'anulada']).optional(),
+    /**
+     * 'pagada' la pone la administracion al ver el pago en Mercado Pago: desde que
+     * se cobra con enlaces de pago, BookStudio no se entera solo.
+     */
+    status: z.enum(['emitida', 'anulada', 'pagada']).optional(),
+    /** Numero de operacion de Mercado Pago, para poder cuadrar el pago despues. */
+    paymentReference: z.string().trim().max(80).optional(),
     notes: z.string().max(2000).optional(),
     dueDate: z
       .string()
@@ -83,14 +89,6 @@ export const updateTeacherSchema = z
   })
   .refine((v) => Object.values(v).some((x) => x !== undefined), 'No hay campos para actualizar');
 
-export const payChargeSchema = z.object({
-  token: z.string().max(200).optional(),
-  paymentMethodId: z.string().min(1).max(40),
-  installments: z.number().int().min(1).max(36).default(1),
-  payerEmail: z.string().trim().email('El correo del pagador no es valido').max(255),
-  payerDocType: z.string().max(10).optional(),
-  payerDocNumber: z.string().max(30).optional(),
-});
 
 /**
  * Licencia otorgada por la administracion, sin cobro.
@@ -130,6 +128,5 @@ export type CreateChargeInput = z.infer<typeof createChargeSchema>;
 export type UpdateChargeInput = z.infer<typeof updateChargeSchema>;
 export type CreateTeacherInput = z.infer<typeof createTeacherSchema>;
 export type UpdateTeacherInput = z.infer<typeof updateTeacherSchema>;
-export type PayChargeInput = z.infer<typeof payChargeSchema>;
 export type GrantPlanInput = z.infer<typeof grantPlanSchema>;
 export type ChargeItem = z.infer<typeof chargeItemSchema>;

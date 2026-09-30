@@ -12,32 +12,20 @@ export const CSP_DIRECTIVES = {
   objectSrc: ["'none'"],
   formAction: ["'self'"],
   frameAncestors: ["'self'"],
-  // El formulario de pago trae sus propios estilos y tipografias de mlstatic.
-  styleSrc: ["'self'", "'unsafe-inline'", 'https://*.mlstatic.com'],
-  fontSrc: ["'self'", 'data:', 'https://*.mlstatic.com'],
+  styleSrc: ["'self'", "'unsafe-inline'"],
+  fontSrc: ["'self'", 'data:'],
   imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
   mediaSrc: ["'self'", 'data:', 'blob:', 'https:'],
   workerSrc: ["'self'", 'blob:'],
-  // El cobro lo monta el SDK de Mercado Pago desde sus propios dominios.
-  scriptSrc: [
-    "'self'",
-    'https://sdk.mercadopago.com',
-    'https://*.mercadopago.com',
-    'https://*.mlstatic.com',
-  ],
-  connectSrc: [
-    "'self'",
-    'https://api.mercadopago.com',
-    'https://*.mercadopago.com',
-    // Los bricks piden los medios de pago a la API de Mercado Libre, no a la de
-    // Mercado Pago. Sin esta linea el formulario se queda cargando para siempre y
-    // no da ningun error: es exactamente el fallo que aparecio al pagar una
-    // cuenta de cobro el 3 de septiembre de 2026.
-    'https://api.mercadolibre.com',
-    'https://*.mercadolibre.com',
-    'https://*.mlstatic.com',
-    'https://tile.openstreetmap.org',
-  ],
+  /*
+   * Solo scripts propios. Hasta el 30 de septiembre de 2026 se abria a Mercado
+   * Pago para montar su formulario de tarjeta; desde que se cobra con enlaces de
+   * pago (que se abren en su propia pagina) ya no hace falta, y cada dominio de
+   * menos es una puerta de menos.
+   */
+  scriptSrc: ["'self'"],
+  connectSrc: ["'self'", 'https://tile.openstreetmap.org'],
+
   // Que se puede incrustar lo decide el servidor en embeds.ts, con lista cerrada de
   // proveedores. Aqui basta con exigir https porque PeerTube y H5P se alojan en el
   // servidor de cada centro y no tienen un dominio fijo que enumerar.

@@ -227,13 +227,47 @@ Check 'pero sigue en el historial' (@($trasAnular.charges | Where-Object { $_.id
 
 Check 'un cliente no anula sus cuentas' ((Codigo PATCH "/clients/charges/$($borrador.id)" @{ status = 'anulada' } $tokenCliente) -eq 403)
 
-Write-Host "`n== 12. Pagar ==" -ForegroundColor Cyan
+Write-Host "`n== 12. Pagar con enlace ==" -ForegroundColor Cyan
 
-# Sin tarjeta no se puede completar el cobro, pero si comprobar las puertas.
-Check 'no se paga un borrador' ((Codigo POST "/clients/charges/$($borrador.id)/pay" @{ paymentMethodId = 'visa'; payerEmail = "pagador-$sufijo@test.local" } $tokenAdmin) -in @(400, 502))
-Check 'no se paga una anulada' ((Codigo POST "/clients/charges/$($anulable.id)/pay" @{ paymentMethodId = 'visa'; payerEmail = "pagador-$sufijo@test.local" } $tokenCliente) -eq 400)
-Check 'otro cliente no paga esta cuenta' ((Codigo POST "/clients/charges/$($borrador.id)/pay" @{ paymentMethodId = 'visa'; payerEmail = 'x@test.local' } $tokenAjeno) -eq 404)
-Check 'sin correo del pagador se rechaza' ((Codigo POST "/clients/charges/$($borrador.id)/pay" @{ paymentMethodId = 'visa' } $tokenCliente) -eq 400)
+# Desde el 30 de septiembre de 2026 no se cobra dentro de BookStudio: la cuenta se
+# paga con el enlace de Mercado Pago de su importe y la administracion la da por
+# pagada al ver el pago. Se usa una cuenta aparte de 3.600.000 (el importe que
+# trae enlace cargado) para no mover lo que comprueba el apartado siguiente.
+Check 'pagar dentro de BookStudio ya no existe' ((Codigo POST "/clients/charges/$($borrador.id)/pay" @{ paymentMethodId = 'visa'; payerEmail = 'x@test.local' } $tokenCliente) -eq 404)
+Check 'ni por la pagina de Mercado Pago con cuenta' ((Codigo POST "/clients/charges/$($borrador.id)/mp" @{} $tokenCliente) -eq 404)
+
+$conEnlace = (Llamar POST "/clients/organizations/$($org.id)/charges" @{
+  concept = 'Licencia con enlace'; items = @(@{ description = 'Licencia'; unitCop = 3600000 }); issue = $true; dueDate = '2026-09-30'
+} $tokenAdmin).charge
+$enPortal = (Llamar GET '/clients/portal' $null $tokenCliente).portal.charges | Where-Object { $_.id -eq $conEnlace.id }
+Check 'la cuenta de 3.600.000 ofrece su enlace de pago' ($enPortal.paymentLink -eq 'https://mpago.li/1hazNmq') "$($enPortal.paymentLink)"
+$sinEnlace = (Llamar GET '/clients/portal' $null $tokenCliente).portal.charges | Where-Object { $_.id -eq $borrador.id }
+Check 'una de un importe sin enlace no ofrece ninguno' (-not $sinEnlace.paymentLink) "$($sinEnlace.paymentLink)"
+
+Check 'el cliente no puede darla por pagada' ((Codigo PATCH "/clients/charges/$($conEnlace.id)" @{ status = 'pagada' } $tokenCliente) -eq 403)
+
+$renovada = (Llamar PATCH "/clients/charges/$($conEnlace.id)" @{ dueDate = '2026-10-15' } $tokenAdmin).charge
+Check 'la administracion le cambia el vencimiento' ($renovada.dueDate -eq '2026-10-15') "$($renovada.dueDate)"
+Check 'y sigue por pagar' ($renovada.status -eq 'emitida')
+
+$pagada = (Llamar PATCH "/clients/charges/$($conEnlace.id)" @{ status = 'pagada'; paymentReference = '123456789' } $tokenAdmin).charge
+Check 'la administracion la da por pagada' ($pagada.status -eq 'pagada') "$($pagada.status)"
+Check 'con fecha de pago' ($null -ne $pagada.paidAt)
+
+$facturas = (Llamar GET '/billing/invoices' $null $tokenCliente).invoices
+$factura = $facturas | Where-Object { $_.amountCop -eq 3600000 }
+Check 'y aparece en las facturas del cliente' ($null -ne $factura)
+Check 'con el numero de operacion de Mercado Pago' ($factura.statusDetail -match '123456789') "$($factura.statusDetail)"
+
+$trasPagar = (Llamar GET '/clients/portal' $null $tokenCliente).portal.charges | Where-Object { $_.id -eq $conEnlace.id }
+Check 'ya pagada, no ofrece enlace' (-not $trasPagar.paymentLink)
+Check 'una pagada no cambia de estado' ((Codigo PATCH "/clients/charges/$($conEnlace.id)" @{ status = 'anulada' } $tokenAdmin) -eq 400)
+Check 'ni se paga dos veces' ((Codigo PATCH "/clients/charges/$($conEnlace.id)" @{ status = 'pagada' } $tokenAdmin) -eq 400)
+Check 'una anulada no se da por pagada' ((Codigo PATCH "/clients/charges/$($anulable.id)" @{ status = 'pagada' } $tokenAdmin) -eq 400)
+
+# Un cliente con pagos no se puede borrar (el rastro del dinero se conserva): se
+# retira el pago de prueba para que la limpieza del final pueda borrarlo.
+Sql "DELETE FROM payments WHERE charge_id = '$($conEnlace.id)'"
 
 Write-Host "`n== 13. Vista de administracion ==" -ForegroundColor Cyan
 

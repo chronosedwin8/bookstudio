@@ -11,7 +11,7 @@ import { computed, onMounted, ref } from 'vue';
 import { useSeo } from '@/composables/useSeo';
 import { billingApi } from '@/services/api';
 import { errorMessage } from '@/services/http';
-import type { PlanAdmin } from '@/types/api';
+import type { EnlacePago, PlanAdmin } from '@/types/api';
 import { duracionTexto, pesos } from '@/utils/precio';
 
 useSeo({ title: 'Planes y precios · BookStudio', description: 'Configuración de los planes.' });
@@ -30,7 +30,7 @@ async function cargar(): Promise<void> {
   cargando.value = true;
   error.value = null;
   try {
-    planes.value = await billingApi.plans();
+    [planes.value, enlaces.value] = await Promise.all([billingApi.plans(), billingApi.paymentLinks()]);
   } catch (err) {
     error.value = errorMessage(err);
   } finally {
@@ -39,6 +39,53 @@ async function cargar(): Promise<void> {
 }
 
 onMounted(cargar);
+
+/* --------------------------------------------------------------------------
+ * Enlaces de pago
+ *
+ * Se cobra con enlaces de Mercado Pago, uno por importe. Cada plan y cada cuenta
+ * de cobro ofrece el enlace de su importe EXACTO: si se cambia un precio, hay que
+ * poner el enlace del importe nuevo, o el plan se queda sin enlace (y el cliente
+ * ve que escriba en vez de pagar una cantidad equivocada).
+ * ----------------------------------------------------------------------- */
+const enlaces = ref<EnlacePago[]>([]);
+const nuevoEnlace = ref({ amountCop: 0, url: '', label: '' });
+const guardandoEnlace = ref(false);
+
+async function guardarEnlace(): Promise<void> {
+  guardandoEnlace.value = true;
+  error.value = null;
+  try {
+    const e = await billingApi.savePaymentLink({
+      amountCop: Math.round(nuevoEnlace.value.amountCop),
+      url: nuevoEnlace.value.url.trim(),
+      label: nuevoEnlace.value.label.trim() || undefined,
+    });
+    aviso.value = `Enlace para ${pesos(e.amountCop)} guardado. Ya se ofrece en todo lo que cueste eso.`;
+    nuevoEnlace.value = { amountCop: 0, url: '', label: '' };
+    await cargar();
+  } catch (err) {
+    error.value = errorMessage(err);
+  } finally {
+    guardandoEnlace.value = false;
+  }
+}
+
+function editarEnlace(e: EnlacePago): void {
+  nuevoEnlace.value = { amountCop: e.amountCop, url: e.url, label: e.label };
+}
+
+async function borrarEnlace(e: EnlacePago): Promise<void> {
+  if (!window.confirm(`¿Quitar el enlace de ${pesos(e.amountCop)}? Lo que cueste eso se quedará sin enlace de pago.`)) return;
+  error.value = null;
+  try {
+    await billingApi.deletePaymentLink(e.id);
+    aviso.value = `Enlace de ${pesos(e.amountCop)} quitado.`;
+    await cargar();
+  } catch (err) {
+    error.value = errorMessage(err);
+  }
+}
 
 function abrir(plan: PlanAdmin): void {
   editando.value = plan.id;
@@ -115,8 +162,8 @@ async function guardar(): Promise<void> {
     <header>
       <h1 class="text-2xl font-black text-slate-900">Planes y precios</h1>
       <p class="mt-1 text-sm text-slate-600">
-        Estos importes son los que se cobran y los que se muestran en la portada. Un cambio se ve
-        en la web en menos de un minuto.
+        Estos importes son los que se muestran en la portada. Cada plan se paga con el enlace de Mercado
+        Pago de su importe exacto: si cambias un precio, pon abajo el enlace del importe nuevo.
       </p>
     </header>
 
@@ -236,6 +283,18 @@ async function guardar(): Promise<void> {
               >Retirado</span>
             </p>
             <p class="text-sm text-slate-500">{{ plan.summary }}</p>
+            <p class="mt-1 text-xs">
+              <a
+                v-if="plan.paymentLink"
+                :href="plan.paymentLink"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="font-semibold text-emerald-700 underline"
+              >Enlace de pago ↗</a>
+              <span v-else class="rounded bg-amber-100 px-1.5 py-0.5 font-bold text-amber-800">
+                Sin enlace de pago para {{ pesos(plan.amountCop) }}
+              </span>
+            </p>
           </div>
 
           <div class="flex items-center gap-5">
@@ -253,5 +312,48 @@ async function guardar(): Promise<void> {
         </div>
       </li>
     </ul>
+
+    <!-- Enlaces de pago -->
+    <section class="mt-10">
+      <h2 class="text-xl font-black text-slate-900">Enlaces de pago</h2>
+      <p class="mt-1 text-sm text-slate-600">
+        Uno por importe. Se ofrece en cada plan y en cada cuenta de cobro que cueste exactamente eso. Solo se
+        admiten enlaces de Mercado Pago (https://mpago.li/... o https://www.mercadopago.com.co/...).
+      </p>
+
+      <ul v-if="enlaces.length" class="mt-4 divide-y divide-slate-100 rounded-lg border border-slate-200 bg-white">
+        <li v-for="e in enlaces" :key="e.id" class="flex flex-wrap items-center justify-between gap-3 p-3">
+          <div class="min-w-0">
+            <p class="font-bold tabular-nums text-slate-900">{{ pesos(e.amountCop) }}</p>
+            <p class="truncate text-xs text-slate-500">
+              <span v-if="e.label">{{ e.label }} · </span>
+              <a :href="e.url" target="_blank" rel="noopener noreferrer" class="underline">{{ e.url }}</a>
+            </p>
+          </div>
+          <span class="flex gap-3">
+            <button type="button" class="text-xs font-semibold text-brand-600 hover:underline" @click="editarEnlace(e)">Cambiar</button>
+            <button type="button" class="text-xs font-semibold text-red-600 hover:underline" @click="borrarEnlace(e)">Quitar</button>
+          </span>
+        </li>
+      </ul>
+
+      <form class="card mt-4 grid gap-3 p-4 sm:grid-cols-[10rem_1fr_12rem_auto] sm:items-end" @submit.prevent="guardarEnlace">
+        <label class="block">
+          <span class="label">Importe (COP)</span>
+          <input v-model.number="nuevoEnlace.amountCop" type="number" min="1000" step="1000" class="input" required />
+        </label>
+        <label class="block">
+          <span class="label">Enlace de Mercado Pago</span>
+          <input v-model="nuevoEnlace.url" type="url" class="input" placeholder="https://mpago.li/..." required />
+        </label>
+        <label class="block">
+          <span class="label">Para qué es (opcional)</span>
+          <input v-model="nuevoEnlace.label" type="text" maxlength="120" class="input" placeholder="Plan Escuela" />
+        </label>
+        <button type="submit" class="btn-primary" :disabled="guardandoEnlace">
+          {{ guardandoEnlace ? 'Guardando...' : 'Guardar enlace' }}
+        </button>
+      </form>
+    </section>
   </main>
 </template>

@@ -2,10 +2,9 @@
  * Comprobacion de la politica de contenido. Se ejecuta con:
  *   npx tsx apps/api/src/config/csp.check.mts
  *
- * Existe porque la politica por defecto de helmet (default-src 'self') bloquea el
- * SDK de Mercado Pago sin dar ningun error visible: el formulario de pago se queda
- * cargando para siempre. Es un fallo caro y silencioso, asi que conviene que salte
- * una prueba antes que un cliente.
+ * Vigila que la politica siga cerrada. Desde el 30 de septiembre de 2026 se cobra
+ * con enlaces de pago de Mercado Pago, que se abren en su propia pagina: ya no hay
+ * ningun motivo para dejar entrar scripts ni conexiones de sus dominios aqui.
  */
 import { CSP_DIRECTIVES } from './csp.js';
 
@@ -17,24 +16,13 @@ const check = (nombre: string, ok: boolean, detalle = '') => {
 
 const d = CSP_DIRECTIVES as Record<string, string[]>;
 
-// --- El cobro tiene que poder cargarse ---
-check('el SDK de pago puede cargarse', d.scriptSrc.includes('https://sdk.mercadopago.com'));
-check('el SDK puede llamar a su API', d.connectSrc.includes('https://api.mercadopago.com'));
-// Lo que fallaba el 3 de septiembre de 2026: el formulario cargaba el SDK pero se
-// quedaba en blanco porque no podia pedir los medios de pago ni sus estilos.
-check('el formulario puede pedir los medios de pago', d.connectSrc.includes('https://api.mercadolibre.com'));
+// --- Sin cobro dentro de la aplicacion, nada de Mercado Pago aqui ---
+check('solo scripts propios', d.scriptSrc.length === 1 && d.scriptSrc[0] === "'self'");
 check(
-  'y cargar sus estilos',
-  d.styleSrc.some((o) => o.includes('mlstatic')),
+  'ni conexiones a Mercado Pago',
+  !d.connectSrc.some((o) => /mercadopago|mercadolibre|mlstatic/.test(o)),
 );
-check(
-  'y sus tipografias',
-  d.fontSrc.some((o) => o.includes('mlstatic')),
-);
-check(
-  'los iframes del cobro estan permitidos',
-  d.frameSrc.includes('https:') || d.frameSrc.some((o) => o.includes('mercadopago')),
-);
+check('ni sus estilos o tipografias', ![...d.styleSrc, ...d.fontSrc].some((o) => o.includes('mlstatic')));
 
 // --- El resto de la aplicacion ---
 check('los mapas pueden pedir sus baldosas', d.connectSrc.includes('https://tile.openstreetmap.org'));

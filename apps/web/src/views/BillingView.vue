@@ -63,22 +63,19 @@ async function load(): Promise<void> {
   }
 }
 
-// --- Renovacion automatica ---
+/**
+ * Renovacion automatica: ya no se ofrece (pedia cuenta de Mercado Pago). Quien la
+ * tenga de antes puede apagarla.
+ */
 const savingRenew = ref(false);
 
-async function toggleAutoRenew(value: boolean): Promise<void> {
+async function apagarRenovacion(): Promise<void> {
   savingRenew.value = true;
   error.value = null;
   notice.value = null;
   try {
-    const result = await billingApi.setAutoRenew(value);
-    subscription.value = result.subscription;
-    if (result.authorizationUrl) {
-      notice.value = 'Falta autorizar la renovacion en Mercado Pago. Se abrira en otra pestana.';
-      window.open(result.authorizationUrl, '_blank', 'noopener');
-    } else {
-      notice.value = value ? 'Renovacion automatica activada.' : 'Renovacion automatica desactivada.';
-    }
+    subscription.value = (await billingApi.cancelAutoRenew()).subscription;
+    notice.value = 'Renovación automática desactivada. Tu licencia sigue vigente hasta su fecha.';
   } catch (err) {
     error.value = errorMessage(err);
   } finally {
@@ -118,10 +115,6 @@ onMounted(async () => {
       <p v-if="loading" class="mt-8 text-sm text-slate-500">Cargando...</p>
 
       <template v-else>
-        <p v-if="config && !config.enabled" class="card mt-6 p-6 text-sm text-amber-700">
-          Los pagos no están configurados en este servidor. Escribenos y lo resolvemos.
-        </p>
-
         <!-- Licencia vigente -->
         <section v-if="subscription" class="card mt-6 p-6">
           <div class="flex flex-wrap items-start justify-between gap-4">
@@ -164,38 +157,31 @@ onMounted(async () => {
 
           <p v-if="porVencer" class="mt-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-800">
             Tu licencia vence en {{ subscription.daysLeft }} días.
-            {{ subscription.autoRenew ? 'Se renovará sola.' : 'Activa la renovación o vuelve a contratarla.' }}
+            {{ subscription.autoRenew ? 'Se renovará sola.' : 'Renuévala con el enlace de pago de tu plan.' }}
           </p>
 
-          <!-- Renovación automática -->
-          <label class="mt-5 flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 p-3">
-            <input
-              type="checkbox"
-              class="mt-1 h-4 w-4 rounded"
-              :checked="subscription.autoRenew"
-              :disabled="savingRenew || subscription.status === 'cancelada'"
-              @change="toggleAutoRenew(($event.target as HTMLInputElement).checked)"
-            />
-            <span>
-              <span class="block text-sm font-semibold text-slate-800">Renovar automáticamente al vencer</span>
-              <span class="block text-xs text-slate-500">
-                Se cobrará {{ cop.format(subscription.amountCop) }} al vencimiento. Puedes desactivarlo
-                cuando quieras; la licencia sigue vigente hasta la fecha ya pagada.
-              </span>
+          <!-- Renovacion automatica anterior al cambio: solo se puede apagar -->
+          <div v-if="subscription.autoRenew" class="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 p-3">
+            <span class="text-sm text-slate-700">
+              Tienes activa la renovación automática: se cobrarán {{ cop.format(subscription.amountCop) }} al vencer.
             </span>
-          </label>
+            <button type="button" class="btn-secondary" :disabled="savingRenew" @click="apagarRenovacion">
+              Desactivarla
+            </button>
+          </div>
         </section>
 
         <!-- Contratar o renovar -->
         <section
-          v-if="config?.enabled && (!subscription || subscription.status !== 'activa')"
+          v-if="config && (!subscription || subscription.status !== 'activa' || porVencer)"
           class="card mt-8 p-6"
         >
           <h2 class="text-xl font-black text-slate-900">
             {{ subscription ? 'Renovar o cambiar de plan' : 'Contratar un plan' }}
           </h2>
           <p class="mt-1 text-sm text-slate-600">
-            El pago se hace en la página de contratación, con tarjeta y en un solo paso.
+            Se paga con el enlace de Mercado Pago de tu plan (tarjeta, PSE o Efecty, sin necesidad de cuenta de
+            Mercado Pago) y nos envías el comprobante.
           </p>
           <RouterLink :to="{ name: 'checkout' }" class="btn-primary mt-4 inline-flex">
             {{ subscription ? 'Renovar ahora' : 'Ver planes y contratar' }}

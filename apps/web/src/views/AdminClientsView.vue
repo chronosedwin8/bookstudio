@@ -248,6 +248,55 @@ async function emitir(ahora: boolean): Promise<void> {
   }
 }
 
+/**
+ * Cambiar la fecha limite de pago (por ejemplo, para dar mas plazo). Una fecha
+ * vacia la deja sin vencimiento.
+ */
+async function cambiarVencimiento(cobro: Charge): Promise<void> {
+  const respuesta = window.prompt(
+    `Nueva fecha de vencimiento de la cuenta ${cobro.number} (AAAA-MM-DD).\nDéjala vacía para que no venza.`,
+    cobro.dueDate ?? '',
+  );
+  if (respuesta === null) return;
+  const fecha = respuesta.trim();
+  if (fecha && !/^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
+    error.value = 'La fecha debe tener la forma AAAA-MM-DD, por ejemplo 2026-10-15.';
+    return;
+  }
+  error.value = null;
+  try {
+    await clientsApi.updateCharge(cobro.id, { dueDate: fecha || null });
+    aviso.value = fecha ? `La cuenta ${cobro.number} vence ahora el ${fecha}.` : `La cuenta ${cobro.number} ya no vence.`;
+    if (abierto.value) await abrir(abierto.value);
+    await cargar();
+  } catch (err) {
+    error.value = errorMessage(err);
+  }
+}
+
+/**
+ * Darla por pagada al ver el pago en Mercado Pago. Desde que se cobra con enlaces
+ * de pago, BookStudio no se entera solo: esto deja el pago apuntado, con su
+ * factura, en el historial del cliente.
+ */
+async function marcarPagada(cobro: Charge): Promise<void> {
+  const referencia = window.prompt(
+    `¿Has visto en Mercado Pago el pago de ${cop.format(cobro.amountCop)} de la cuenta ${cobro.number}?\n\n` +
+      'Escribe el número de operación de Mercado Pago (opcional) y acepta para darla por pagada:',
+    '',
+  );
+  if (referencia === null) return;
+  error.value = null;
+  try {
+    await clientsApi.updateCharge(cobro.id, { status: 'pagada', paymentReference: referencia.trim() || undefined });
+    aviso.value = `Cuenta ${cobro.number} pagada.`;
+    if (abierto.value) await abrir(abierto.value);
+    await cargar();
+  } catch (err) {
+    error.value = errorMessage(err);
+  }
+}
+
 async function cambiarEstadoCuenta(cobro: Charge, status: 'emitida' | 'anulada'): Promise<void> {
   error.value = null;
   try {
@@ -656,13 +705,25 @@ async function cambiarEstadoCuenta(cobro: Charge, status: 'emitida' | 'anulada')
                     </span>
                   </div>
                 </div>
-                <div v-if="c.status !== 'pagada'" class="mt-2 flex gap-3">
+                <div v-if="c.status !== 'pagada'" class="mt-2 flex flex-wrap gap-3">
                   <button
                     v-if="c.status === 'borrador'"
                     type="button"
                     class="text-xs font-semibold text-brand-600 hover:underline"
                     @click="cambiarEstadoCuenta(c, 'emitida')"
                   >Emitir</button>
+                  <button
+                    v-if="c.status === 'emitida'"
+                    type="button"
+                    class="text-xs font-semibold text-emerald-700 hover:underline"
+                    @click="marcarPagada(c)"
+                  >Marcar como pagada</button>
+                  <button
+                    v-if="c.status !== 'anulada'"
+                    type="button"
+                    class="text-xs font-semibold text-brand-600 hover:underline"
+                    @click="cambiarVencimiento(c)"
+                  >Cambiar vencimiento</button>
                   <button
                     v-if="c.status !== 'anulada'"
                     type="button"

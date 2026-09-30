@@ -249,10 +249,10 @@ export const FAQS: Faq[] = [
   {
     question: 'Como se contrata y como se factura?',
     answer:
-      'Se paga con tarjeta en la propia web y la cuenta se crea en el mismo paso: al terminar ya ' +
-      'estas dentro del editor. El plan Mensual se cobra una vez y dura un mes; los demas son ' +
-      'anuales, y el Individual se anuncia por mes solo para comparar aunque se cobre el año ' +
-      'completo. En el extracto aparece como BookStudio.',
+      'Eliges el plan y lo pagas con su enlace de Mercado Pago: con tarjeta de crédito o débito, PSE ' +
+      'o Efecty, y sin necesidad de tener cuenta de Mercado Pago. Luego nos envías el comprobante con ' +
+      'el correo de tu cuenta de BookStudio y activamos tu licencia en un máximo de un día hábil. ' +
+      'Los planes son anuales; el Individual se anuncia por mes solo para comparar, pero se paga el año completo.',
   },
   {
     question: 'Que pasa si mi colegio supera los cupos del plan Escuela?',

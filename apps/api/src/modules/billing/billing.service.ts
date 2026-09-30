@@ -1,11 +1,6 @@
-import bcrypt from 'bcryptjs';
 import { query, withTransaction } from '../../db/pool.js';
-import { env } from '../../config/env.js';
-import { HttpError } from '../../lib/http-error.js';
-import { signAccessToken } from '../../lib/tokens.js';
 import * as mp from './mercadopago.service.js';
-import { aplicarPago } from './pago-en-mercado-pago.service.js';
-import { addMonths, getPlan, getPlanParaContratar, nombrePlan, type PlanId } from './plans.js';
+import { nombrePlan, type PlanId } from './plans.js';
 
 /**
  * Suscripciones, licencias y facturas.
@@ -164,272 +159,29 @@ const DURACION_DEL_PLAN = `(
   COALESCE((SELECT p.period_months FROM plans p WHERE p.id = s.plan), 12) * INTERVAL '1 month'
 )`;
 
-export interface CheckoutInput {
-  plan: PlanId;
-  token?: string;
-  paymentMethodId: string;
-  installments: number;
-  payerEmail: string;
-  payerDocType?: string;
-  payerDocNumber?: string;
-  organization?: string;
-  autoRenew: boolean;
-}
-
-export interface CheckoutResult {
-  subscription: Subscription;
-  payment: {
-    status: string;
-    statusDetail: string;
-    invoiceNumber: number | null;
-  };
-  /** Enlace de autorizacion si la renovacion automatica lo necesita. */
-  authorizationUrl?: string;
-  /** Por que no se pudo activar la renovacion, si es que fallo. */
-  autoRenewError?: string;
-}
-
 /** Estados de Mercado Pago que dan derecho a usar la licencia. */
 const APPROVED = new Set(['approved', 'authorized']);
 
-export async function checkout(
-  ownerId: string,
-  ownerEmail: string,
-  input: CheckoutInput,
-): Promise<CheckoutResult> {
-  const plan = await getPlanParaContratar(input.plan);
-
-  const reference = mp.newExternalReference(`bs-${input.plan}`);
-
-  // El importe sale del catalogo, nunca de lo que envie el navegador.
-  const payment = await mp.createPayment({
-    token: input.token,
-    paymentMethodId: input.paymentMethodId,
-    amountCop: plan.amountCop,
-    description: `BookStudio · Plan ${plan.name} (${plan.periodMonths} ${plan.periodMonths === 1 ? 'mes' : 'meses'})`,
-    installments: input.installments,
-    payerEmail: input.payerEmail || ownerEmail,
-    payerDocType: input.payerDocType,
-    payerDocNumber: input.payerDocNumber,
-    externalReference: reference,
-    metadata: { ownerId, plan: input.plan },
-  });
-
-  const aprobado = APPROVED.has(payment.status);
-  const ahora = new Date();
-
-  const { subscription, invoiceNumber } = await withTransaction(async (client) => {
-    const inserted = await client.query<SubscriptionRow>(
-      `INSERT INTO subscriptions
-         (owner_id, organization, plan, status, amount_cop, max_teachers, max_students,
-          auto_renew, payer_email, starts_at, expires_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-       RETURNING ${SUBSCRIPTION_COLUMNS}`,
-      [
-        ownerId,
-        input.organization ?? null,
-        plan.id,
-        aprobado ? 'activa' : 'pendiente',
-        plan.amountCop,
-        plan.maxTeachers,
-        plan.maxStudents,
-        false, // la renovacion se activa despues, solo si el cobro sale bien
-        input.payerEmail || ownerEmail,
-        aprobado ? ahora : null,
-        aprobado ? addMonths(ahora, plan.periodMonths) : null,
-      ],
-    );
-
-    const factura = await client.query<{ invoice_number: string }>(
-      `INSERT INTO payments
-         (subscription_id, owner_id, mp_payment_id, amount_cop, status, status_detail,
-          payment_method, installments, payer_email, paid_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-       RETURNING invoice_number`,
-      [
-        inserted.rows[0].id,
-        ownerId,
-        String(payment.id),
-        plan.amountCop,
-        payment.status,
-        payment.status_detail,
-        payment.payment_method_id ?? null,
-        payment.installments ?? null,
-        payment.payer?.email ?? input.payerEmail,
-        payment.date_approved ?? null,
-      ],
-    );
-
-    return { subscription: inserted.rows[0], invoiceNumber: Number(factura.rows[0].invoice_number) };
-  });
-
-  /**
-   * Renovacion automatica, solo si el primer cobro salio bien.
-   *
-   * NO se reutiliza el token de la tarjeta: Mercado Pago los invalida al cobrar, asi
-   * que pasarlo aqui hacia fallar la suscripcion siempre. Se crea sin tarjeta y
-   * Mercado Pago devuelve un enlace donde la persona la autoriza.
-   */
-  let authorizationUrl: string | undefined;
-  let autoRenewError: string | undefined;
-
-  if (aprobado && input.autoRenew) {
-    try {
-      const preapproval = await mp.createPreapproval({
-        payerEmail: input.payerEmail || ownerEmail,
-        amountCop: plan.amountCop,
-        reason: `BookStudio · Plan ${plan.name}`,
-        periodMonths: plan.periodMonths,
-        externalReference: `renovacion-${reference}`,
-        backUrl: `${env.APP_URL || 'https://bookstudio.uk'}/clientes/facturacion`,
-      });
-
-      await query('UPDATE subscriptions SET mp_preapproval_id = $2 WHERE id = $1', [
-        subscription.id,
-        preapproval.id,
-      ]);
-      // auto_renew queda en falso hasta que Mercado Pago confirme la autorizacion:
-      // decir que esta activa antes de tiempo es peor que no decir nada.
-      authorizationUrl = preapproval.init_point;
-    } catch (error) {
-      // Que falle la renovacion no invalida un pago ya cobrado: la licencia queda
-      // activa. Pero el motivo se devuelve en vez de tragarselo, que es como este
-      // fallo paso inadvertido tanto tiempo.
-      autoRenewError = error instanceof Error ? error.message : 'No se pudo activar la renovacion';
-    }
-  }
-
-  return {
-    subscription: toSubscription(subscription),
-    payment: {
-      status: payment.status,
-      statusDetail: payment.status_detail,
-      invoiceNumber,
-    },
-    authorizationUrl,
-    autoRenewError,
-  };
-}
-
-export interface SignupCheckoutInput extends CheckoutInput {
-  fullName: string;
-  password: string;
-}
-
-export interface SignupCheckoutResult extends CheckoutResult {
-  user: { id: string; email: string; fullName: string; role: 'teacher' };
-  /** Sesion lista: quien paga entra a la aplicacion sin volver a identificarse. */
-  sessionToken: string;
-}
-
-/** Estados en los que la cuenta se conserva aunque el cobro no este confirmado. */
-const KEEP_ACCOUNT = new Set(['approved', 'authorized', 'in_process', 'pending']);
-
 /**
- * Alta y cobro en una sola operacion.
- *
- * El orden importa: primero se crea la cuenta (necesitamos su id para el pago), se
- * cobra, y si la tarjeta se rechaza se borra la cuenta recien creada. Asi el correo
- * queda libre para reintentar y no se acumulan cuentas huerfanas. Si el pago queda
- * en tramite (PSE, Efecty) la cuenta se conserva y el webhook la activa despues.
+ * Apaga la renovacion automatica de una licencia contratada antes del cambio a
+ * enlaces de pago. Ya no se puede encender: pedia cuenta de Mercado Pago.
  */
-export async function signupAndCheckout(input: SignupCheckoutInput): Promise<SignupCheckoutResult> {
-  const plan = await getPlanParaContratar(input.plan);
-
-  const email = input.payerEmail.trim().toLowerCase();
-
-  const existing = await query<{ id: string }>('SELECT id FROM users WHERE email = $1', [email]);
-  if (existing.rowCount) {
-    throw HttpError.conflict('Ya existe una cuenta con ese correo. Inicia sesión y paga desde tu panel.');
-  }
-
-  const passwordHash = await bcrypt.hash(input.password, 12);
-
-  const { rows } = await query<{ id: string; email: string; full_name: string }>(
-    `INSERT INTO users (email, password_hash, full_name, role)
-     VALUES ($1, $2, $3, 'teacher')
-     RETURNING id, email, full_name`,
-    [email, passwordHash, input.fullName.trim()],
-  );
-  const user = rows[0];
-
-  let result: CheckoutResult;
-  try {
-    result = await checkout(user.id, email, { ...input, payerEmail: email });
-  } catch (error) {
-    // El cobro fallo: se retira la cuenta para que pueda reintentar con el mismo correo.
-    await query('DELETE FROM users WHERE id = $1', [user.id]);
-    throw error;
-  }
-
-  if (!KEEP_ACCOUNT.has(result.payment.status)) {
-    await query('DELETE FROM users WHERE id = $1', [user.id]);
-    throw HttpError.badRequest(
-      `El pago fue rechazado (${result.payment.statusDetail}). No se creo la cuenta; puedes intentarlo de nuevo.`,
-    );
-  }
-
-  await query(
-    'INSERT INTO student_portfolios (student_id, name) VALUES ($1, $2) ON CONFLICT DO NOTHING',
-    [user.id, `Portafolio de ${user.full_name}`],
-  );
-
-  return {
-    ...result,
-    user: { id: user.id, email: user.email, fullName: user.full_name, role: 'teacher' },
-    sessionToken: signAccessToken({ sub: user.id, role: 'teacher', kind: 'session' }),
-  };
-}
-
-/** Activa o cancela la renovacion automatica de una suscripcion ya contratada. */
-export async function setAutoRenew(
-  ownerId: string,
-  autoRenew: boolean,
-): Promise<{ subscription: Subscription; authorizationUrl?: string }> {
+export async function cancelAutoRenew(ownerId: string): Promise<{ subscription: Subscription | null }> {
   const { rows } = await query<SubscriptionRow>(
     `SELECT ${SUBSCRIPTION_COLUMNS} FROM subscriptions
-     WHERE owner_id = $1 AND status IN ('activa', 'pendiente')
+     WHERE owner_id = $1 AND auto_renew = TRUE
      ORDER BY created_at DESC LIMIT 1`,
     [ownerId],
   );
-
   const row = rows[0];
-  if (!row) throw HttpError.notFound('No tienes una suscripción vigente');
-
-  let authorizationUrl: string | undefined;
-
-  if (!autoRenew) {
+  if (row) {
     if (row.mp_preapproval_id) {
       // Si en Mercado Pago ya no existe, basta con apagarla de nuestro lado.
       await mp.cancelPreapproval(row.mp_preapproval_id).catch(() => undefined);
     }
-    await query(
-      'UPDATE subscriptions SET auto_renew = FALSE, mp_preapproval_id = NULL WHERE id = $1',
-      [row.id],
-    );
-  } else {
-    // El ritmo del cobro lo dice el plan contratado. Si ese plan ya no existiera,
-    // se asume anual, que es lo que eran todos hasta ahora.
-    const plan = await getPlan(row.plan);
-    const preapproval = await mp.createPreapproval({
-      payerEmail: row.payer_email ?? '',
-      amountCop: Number(row.amount_cop),
-      reason: `BookStudio · Plan ${nombrePlan(row.plan)}`,
-      periodMonths: plan?.periodMonths ?? 12,
-      externalReference: mp.newExternalReference(`bs-renov-${row.id}`),
-      backUrl: `${env.APP_URL || 'https://bookstudio.uk'}/clientes/facturacion`,
-    });
-
-    await query('UPDATE subscriptions SET auto_renew = TRUE, mp_preapproval_id = $2 WHERE id = $1', [
-      row.id,
-      preapproval.id,
-    ]);
-    // Sin tarjeta guardada, Mercado Pago pide autorizacion en su propia pagina.
-    authorizationUrl = preapproval.init_point;
+    await query('UPDATE subscriptions SET auto_renew = FALSE, mp_preapproval_id = NULL WHERE id = $1', [row.id]);
   }
-
-  const actualizada = await getSubscription(ownerId);
-  return { subscription: actualizada!, authorizationUrl };
+  return { subscription: await getSubscription(ownerId) };
 }
 
 // --- Webhook ---
@@ -442,14 +194,6 @@ export async function setAutoRenew(
  */
 export async function handlePaymentNotification(paymentId: string): Promise<void> {
   const payment = await mp.getPayment(paymentId);
-
-  /*
-   * Pagos hechos en la pagina de Mercado Pago: su referencia es la de un intento
-   * guardado, y cumplirlo crea la cuenta y la licencia o salda la cuenta de cobro.
-   * Despues se sigue con lo de siempre, que ya encuentra el pago apuntado y solo
-   * actualiza su estado (por ejemplo, si mas adelante se devuelve).
-   */
-  await aplicarPago(payment);
 
   const aprobado = APPROVED.has(payment.status);
 

@@ -2,7 +2,6 @@
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import AlertMessage from '@/components/AlertMessage.vue';
-import PagarCuentaDialog from '@/components/clients/PagarCuentaDialog.vue';
 import { clientsApi } from '@/services/api';
 import { errorMessage } from '@/services/http';
 import { useAuthStore } from '@/stores/auth';
@@ -28,7 +27,6 @@ const equipo = ref<TeamMember[]>([]);
 const cargando = ref(true);
 const error = ref<string | null>(null);
 const aviso = ref<string | null>(null);
-const pagando = ref<Charge | null>(null);
 
 type Pestana = 'resumen' | 'cobros' | 'equipo' | 'datos';
 const PESTANAS: Array<{ id: Pestana; label: string; icono: string }> = [
@@ -198,9 +196,24 @@ async function guardarDatos(): Promise<void> {
   }
 }
 
-function alPagar(cobro: Charge): void {
-  aviso.value = `La cuenta ${cobro.number} queda pagada.`;
-  void cargar();
+/**
+ * Correo con el comprobante de una cuenta de cobro, ya redactado.
+ *
+ * Desde que se paga con enlaces de Mercado Pago, BookStudio no se entera solo del
+ * pago: la administracion la da por pagada al recibir el comprobante.
+ */
+const CORREO_PAGOS = 'hola@bookstudio.uk';
+function mailtoComprobante(cobro: Charge): string {
+  const asunto = `Comprobante de pago · Cuenta de cobro ${cobro.number}`;
+  const cuerpo = [
+    `Hola, ya pagué la cuenta de cobro ${cobro.number} (${cop.format(cobro.amountCop)}) con el enlace de Mercado Pago.`,
+    '',
+    `Cliente: ${portal.value?.organization.name ?? ''}`,
+    'Número de operación de Mercado Pago: ',
+    '',
+    'Adjunto el comprobante.',
+  ].join('\n');
+  return `mailto:${CORREO_PAGOS}?subject=${encodeURIComponent(asunto)}&body=${encodeURIComponent(cuerpo)}`;
 }
 </script>
 
@@ -432,7 +445,25 @@ function alPagar(cobro: Charge): void {
             <p v-if="c.notes" class="mt-2 text-sm italic text-slate-500">{{ c.notes }}</p>
 
             <div v-if="c.status === 'emitida'" class="mt-3">
-              <button type="button" class="btn-primary" @click="pagando = c">Pagar con Mercado Pago</button>
+              <div class="flex flex-wrap items-center gap-2">
+                <a
+                  v-if="c.paymentLink"
+                  :href="c.paymentLink"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="btn-primary"
+                >Pagar {{ cop.format(c.amountCop) }} en Mercado Pago ↗</a>
+                <a :href="mailtoComprobante(c)" class="btn-secondary">✉️ Enviar el comprobante</a>
+              </div>
+              <p class="mt-2 text-xs text-slate-500">
+                <template v-if="c.paymentLink">
+                  Paga con tarjeta, PSE o Efecty, con o sin cuenta de Mercado Pago. Después envíanos el comprobante
+                  y la damos por pagada.
+                </template>
+                <template v-else>
+                  Esta cuenta todavía no tiene enlace de pago: escríbenos a {{ CORREO_PAGOS }} y te lo enviamos.
+                </template>
+              </p>
             </div>
             <p v-else-if="c.status === 'pagada'" class="mt-3 text-sm font-semibold text-emerald-700">
               Pagada el {{ fecha(c.paidAt) }}
@@ -570,13 +601,6 @@ function alPagar(cobro: Charge): void {
         </form>
       </section>
     </template>
-
-    <PagarCuentaDialog
-      v-if="pagando"
-      :charge="pagando"
-      @close="pagando = null"
-      @pagada="alPagar"
-    />
 
     <!-- Confirmación de salida del equipo -->
     <div

@@ -1,9 +1,14 @@
-import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
+import { createHmac, timingSafeEqual } from 'node:crypto';
 import { env } from '../../config/env.js';
 import { HttpError } from '../../lib/http-error.js';
 
 /**
  * Cliente de Mercado Pago.
+ *
+ * Desde el 30 de septiembre de 2026 BookStudio no crea cobros: se paga con los
+ * enlaces de pago de Mercado Pago. Aqui queda lo necesario para lo que ya
+ * existia: leer un pago que avisa Mercado Pago y cancelar una renovacion
+ * automatica dada de alta antes del cambio.
  *
  * El token de acceso NUNCA sale de aqui: con el se puede cobrar, devolver y leer
  * todas las operaciones de la cuenta. Al navegador solo llega la clave publica.
@@ -14,8 +19,6 @@ import { HttpError } from '../../lib/http-error.js';
 const API = 'https://api.mercadopago.com';
 const TIMEOUT_MS = 25_000;
 
-/** Lo que aparece en el extracto de la tarjeta del cliente. */
-export const STATEMENT_DESCRIPTOR = 'BookStudio';
 
 export function isBillingEnabled(): boolean {
   return env.MP_ACCESS_TOKEN.length > 0;
@@ -95,128 +98,8 @@ export interface MpPayment {
   metadata?: Record<string, unknown>;
 }
 
-export interface CreatePaymentInput {
-  /** Token de la tarjeta generado en el navegador; la PAN nunca toca el servidor. */
-  token?: string;
-  paymentMethodId: string;
-  amountCop: number;
-  description: string;
-  installments: number;
-  payerEmail: string;
-  payerDocType?: string;
-  payerDocNumber?: string;
-  /** Identificador propio para reconciliar despues. */
-  externalReference: string;
-  metadata?: Record<string, unknown>;
-}
-
-export async function createPayment(input: CreatePaymentInput): Promise<MpPayment> {
-  const body: Record<string, unknown> = {
-    transaction_amount: input.amountCop,
-    description: input.description,
-    payment_method_id: input.paymentMethodId,
-    installments: input.installments,
-    external_reference: input.externalReference,
-    // Lo que vera el cliente en el extracto de su tarjeta.
-    statement_descriptor: STATEMENT_DESCRIPTOR,
-    notification_url: env.MP_WEBHOOK_URL || undefined,
-    metadata: input.metadata,
-    payer: {
-      email: input.payerEmail,
-      ...(input.payerDocNumber
-        ? { identification: { type: input.payerDocType ?? 'CC', number: input.payerDocNumber } }
-        : {}),
-    },
-  };
-
-  if (input.token) body.token = input.token;
-
-  return request<MpPayment>('/v1/payments', {
-    method: 'POST',
-    body,
-    // Reintentar la misma compra no genera un segundo cobro.
-    idempotencyKey: input.externalReference,
-  });
-}
-
 export async function getPayment(paymentId: string | number): Promise<MpPayment> {
   return request<MpPayment>(`/v1/payments/${paymentId}`);
-}
-
-// --- Pago en la pagina de Mercado Pago (Checkout Pro) ---
-
-export interface CreatePreferenceInput {
-  /** Nuestro identificador del intento; vuelve en el pago como external_reference. */
-  externalReference: string;
-  title: string;
-  amountCop: number;
-  payerEmail?: string;
-  /** A donde vuelve el cliente al terminar (aprobado, pendiente o rechazado). */
-  backUrl: string;
-  /** Pasado este tiempo la pagina de pago ya no acepta pagos: el precio podria haber cambiado. */
-  expiresInHours?: number;
-}
-
-export interface MpPreference {
-  id: string;
-  init_point: string;
-  sandbox_init_point?: string;
-}
-
-/**
- * Crea la pagina de pago de Mercado Pago para un importe.
- *
- * Alli el cliente paga con su cuenta (tarjetas guardadas, saldo), o con PSE,
- * Efecty o una tarjeta nueva. Crearla no cobra nada: solo prepara el pago. El
- * importe sale del servidor y la referencia es la que luego permite saber, al
- * llegar el pago, a que intento corresponde.
- */
-export async function createPreference(input: CreatePreferenceInput): Promise<MpPreference> {
-  const ahora = new Date();
-  const hasta = new Date(ahora.getTime() + (input.expiresInHours ?? 24) * 3_600_000);
-  return request<MpPreference>('/checkout/preferences', {
-    method: 'POST',
-    body: {
-      items: [
-        {
-          id: input.externalReference.slice(0, 60),
-          title: input.title.slice(0, 250),
-          quantity: 1,
-          currency_id: 'COP',
-          unit_price: input.amountCop,
-        },
-      ],
-      ...(input.payerEmail ? { payer: { email: input.payerEmail } } : {}),
-      external_reference: input.externalReference,
-      back_urls: { success: input.backUrl, pending: input.backUrl, failure: input.backUrl },
-      // Solo vuelve solo cuando el pago esta aprobado; si no, el cliente ve el
-      // resultado en Mercado Pago y pulsa volver.
-      auto_return: 'approved',
-      notification_url: env.MP_WEBHOOK_URL || undefined,
-      statement_descriptor: STATEMENT_DESCRIPTOR,
-      expires: true,
-      expiration_date_from: ahora.toISOString(),
-      expiration_date_to: hasta.toISOString(),
-    },
-    // Reintentar la misma creacion no genera dos paginas de pago.
-    idempotencyKey: `pref-${input.externalReference}`,
-  });
-}
-
-/**
- * Los pagos que Mercado Pago tiene con una referencia nuestra, el mas reciente
- * primero. Sirve para saber como fue el pago al volver el cliente, sin depender
- * de que el aviso de Mercado Pago haya llegado ya.
- */
-export async function searchPaymentsByReference(externalReference: string): Promise<MpPayment[]> {
-  const q = new URLSearchParams({
-    external_reference: externalReference,
-    sort: 'date_created',
-    criteria: 'desc',
-    limit: '10',
-  });
-  const r = await request<{ results?: MpPayment[] }>(`/v1/payments/search?${q.toString()}`);
-  return r.results ?? [];
 }
 
 // --- Suscripciones (renovacion automatica) ---
@@ -227,56 +110,6 @@ export interface MpPreapproval {
   init_point?: string;
   next_payment_date?: string;
   payer_email?: string;
-}
-
-export interface CreatePreapprovalInput {
-  payerEmail: string;
-  amountCop: number;
-  reason: string;
-  externalReference: string;
-  backUrl: string;
-  /**
-   * Cada cuantos meses se vuelve a cobrar. Tiene que coincidir con lo que dura la
-   * licencia: si no, o se cobra antes de que venza o se regala el tiempo de en medio.
-   */
-  periodMonths: number;
-  /** Token de tarjeta: con el la suscripcion queda autorizada sin pasar por MP. */
-  cardTokenId?: string;
-}
-
-/**
- * Crea la suscripcion. Si se envia una tarjeta ya tokenizada queda autorizada
- * directamente; si no, Mercado Pago devuelve un enlace de autorizacion.
- */
-export async function createPreapproval(input: CreatePreapprovalInput): Promise<MpPreapproval> {
-  return request<MpPreapproval>('/preapproval', {
-    method: 'POST',
-    body: {
-      reason: input.reason,
-      external_reference: input.externalReference,
-      payer_email: input.payerEmail,
-      back_url: input.backUrl,
-      ...(input.cardTokenId ? { card_token_id: input.cardTokenId, status: 'authorized' } : {}),
-      auto_recurring: {
-        // Siempre en meses, nunca en anos: Mercado Pago solo admite [days, months]
-        // y rechazaba la suscripcion con 400 "Invalid value for frequency type".
-        // Comprobado contra su API: con years da error, con 12 months pasa.
-        //
-        // Y el numero sale del plan, no es fijo. Estuvo fijo en 12 mientras todos
-        // los planes eran anuales; con el plan de un mes, eso habria cobrado la
-        // renovacion un ano despues de que la licencia venciera.
-        frequency: input.periodMonths,
-        frequency_type: 'months',
-        transaction_amount: input.amountCop,
-        currency_id: 'COP',
-      },
-    },
-    idempotencyKey: input.externalReference,
-  });
-}
-
-export async function getPreapproval(id: string): Promise<MpPreapproval> {
-  return request<MpPreapproval>(`/preapproval/${id}`);
 }
 
 /** Cancela la renovacion automatica; la licencia sigue vigente hasta su vencimiento. */
@@ -322,9 +155,4 @@ export function verifyWebhookSignature(
   const b = Buffer.from(v1, 'utf8');
   // timingSafeEqual exige la misma longitud y no debe filtrar por tiempo.
   return a.length === b.length && timingSafeEqual(a, b);
-}
-
-/** Referencia unica para cada intento de cobro. */
-export function newExternalReference(prefix: string): string {
-  return `${prefix}-${randomUUID()}`;
 }

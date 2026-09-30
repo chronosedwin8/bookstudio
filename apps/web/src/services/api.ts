@@ -21,15 +21,13 @@ import type {
   QuizStatus,
   QuizSubmitResult,
   AdminBookPage,
-  EstadoPagoMp,
   BillingConfig,
+  EnlacePago,
   TransferResult,
   PlanAdmin,
   Book,
   BookActivity,
-  CheckoutResult,
   Invoice,
-  SignupCheckoutResult,
   Subscription,
   TrialSession,
   ManagedUser,
@@ -581,74 +579,11 @@ export const billingApi = {
     return data.invoices;
   },
   /**
-   * El navegador envia el identificador del plan, nunca el importe: el precio lo
-   * decide el servidor a partir de su propio catalogo.
+   * Apaga una renovacion automatica anterior al cambio a enlaces de pago. Ya no
+   * se puede encender.
    */
-  /** Alta y pago a la vez, para quien todavia no tiene cuenta. */
-  async signupCheckout(payload: {
-    fullName: string;
-    password: string;
-    plan: string;
-    token?: string;
-    paymentMethodId: string;
-    installments: number;
-    payerEmail: string;
-    payerDocType?: string;
-    payerDocNumber?: string;
-    organization?: string;
-    autoRenew: boolean;
-  }) {
-    const { data } = await http.post<SignupCheckoutResult>('/billing/signup-checkout', payload, {
-      timeout: 60_000,
-    });
-    return data;
-  },
-  async checkout(payload: {
-    plan: string;
-    token?: string;
-    paymentMethodId: string;
-    installments: number;
-    payerEmail: string;
-    payerDocType?: string;
-    payerDocNumber?: string;
-    organization?: string;
-    autoRenew: boolean;
-  }) {
-    const { data } = await http.post<CheckoutResult>('/billing/checkout', payload, {
-      timeout: 60_000,
-    });
-    return data;
-  },
-  async setAutoRenew(autoRenew: boolean) {
-    const { data } = await http.put<{ subscription: Subscription; authorizationUrl?: string }>(
-      '/billing/auto-renew',
-      { autoRenew },
-    );
-    return data;
-  },
-  /**
-   * Pagar en la pagina de Mercado Pago: prepara el pago y devuelve a donde ir.
-   * `claim` solo llega en altas nuevas y lo guarda el navegador para, al volver,
-   * recibir la sesion de su cuenta.
-   */
-  async mpPlan(payload: {
-    plan: string;
-    payerEmail: string;
-    organization?: string;
-    autoRenew: boolean;
-    fullName?: string;
-    password?: string;
-  }) {
-    const { data } = await http.post<{ reference: string; initPoint: string; claim?: string }>('/billing/mp/plan', payload, {
-      timeout: 30_000,
-    });
-    return data;
-  },
-  /** Como va un pago hecho en Mercado Pago. */
-  async mpEstado(reference: string, claim?: string) {
-    const { data } = await http.get<EstadoPagoMp>(`/billing/mp/${encodeURIComponent(reference)}`, {
-      headers: claim ? { 'x-pago-claim': claim } : {},
-    });
+  async cancelAutoRenew() {
+    const { data } = await http.put<{ subscription: Subscription | null }>('/billing/auto-renew', { autoRenew: false });
     return data;
   },
   async allSubscriptions() {
@@ -661,9 +596,22 @@ export const billingApi = {
     const { data } = await http.get<{ plans: PlanAdmin[] }>('/billing/plans');
     return data.plans;
   },
-  async updatePlan(id: string, cambio: Partial<Omit<PlanAdmin, 'id'>>) {
+  async updatePlan(id: string, cambio: Partial<Omit<PlanAdmin, 'id' | 'paymentLink'>>) {
     const { data } = await http.patch<{ plan: PlanAdmin }>(`/billing/plans/${id}`, cambio);
     return data.plan;
+  },
+
+  /** Administracion: enlaces de pago de Mercado Pago, uno por importe. */
+  async paymentLinks() {
+    const { data } = await http.get<{ links: EnlacePago[] }>('/billing/payment-links');
+    return data.links;
+  },
+  async savePaymentLink(payload: { amountCop: number; url: string; label?: string }) {
+    const { data } = await http.put<{ link: EnlacePago }>('/billing/payment-links', payload);
+    return data.link;
+  },
+  async deletePaymentLink(id: string) {
+    await http.delete(`/billing/payment-links/${id}`);
   },
 };
 
@@ -807,33 +755,6 @@ export const clientsApi = {
     const { data } = await http.get<{ charge: Charge }>(`/clients/charges/${id}`);
     return data.charge;
   },
-  async payCharge(
-    id: string,
-    payload: {
-      token?: string;
-      paymentMethodId: string;
-      installments: number;
-      payerEmail: string;
-      payerDocType?: string;
-      payerDocNumber?: string;
-    },
-  ) {
-    const { data } = await http.post<{
-      charge: Charge;
-      payment: { status: string; statusDetail: string; invoiceNumber: number | null };
-    }>(`/clients/charges/${id}/pay`, payload, { timeout: 40_000 });
-    return data;
-  },
-  /** Pagar una cuenta de cobro en la pagina de Mercado Pago: devuelve a donde ir. */
-  async payChargeMp(id: string, payerEmail?: string) {
-    const { data } = await http.post<{ reference: string; initPoint: string }>(
-      `/clients/charges/${id}/mp`,
-      payerEmail ? { payerEmail } : {},
-      { timeout: 30_000 },
-    );
-    return data;
-  },
-
   // --- Administracion de BookStudio ---
   async organizations() {
     const { data } = await http.get<{ organizations: AdminOrganization[] }>('/clients/organizations');
@@ -916,7 +837,11 @@ export const clientsApi = {
     );
     return data.charge;
   },
-  async updateCharge(id: string, payload: { status?: 'emitida' | 'anulada'; notes?: string; dueDate?: string | null }) {
+  /** Con status 'pagada' se da por pagada (con enlace); paymentReference es el n.º de operacion. */
+  async updateCharge(
+    id: string,
+    payload: { status?: 'emitida' | 'anulada' | 'pagada'; notes?: string; dueDate?: string | null; paymentReference?: string },
+  ) {
     const { data } = await http.patch<{ charge: Charge }>(`/clients/charges/${id}`, payload);
     return data.charge;
   },

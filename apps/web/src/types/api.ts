@@ -674,6 +674,8 @@ export interface BillingPlan {
   summary: string;
   maxTeachers: number | null;
   maxStudents: number | null;
+  /** Enlace de Mercado Pago para pagar exactamente este importe; null si no hay. */
+  paymentLink: string | null;
 }
 
 /** Un plan tal y como lo administra el panel, con los campos que solo ve la administracion. */
@@ -682,21 +684,20 @@ export interface PlanAdmin extends BillingPlan {
   sortOrder: number;
 }
 
-/** Resultado de un pago hecho en la pagina de Mercado Pago. */
-export interface EstadoPagoMp {
-  estado: 'aprobado' | 'en_tramite' | 'rechazado' | 'esperando' | 'revisar';
-  kind: 'plan' | 'charge';
-  detalle: string | null;
-  initPoint: string | null;
-  autoRenew: boolean;
-  session?: { token: string; user: { id: string; email: string; fullName: string; role: string } };
+export interface BillingConfig {
+  currency: string;
+  /** A donde se manda el comprobante tras pagar con el enlace. */
+  contactEmail: string;
+  plans: BillingPlan[];
 }
 
-export interface BillingConfig {
-  enabled: boolean;
-  publicKey: string;
-  currency: string;
-  plans: BillingPlan[];
+/** Enlace de pago de Mercado Pago para un importe exacto. */
+export interface EnlacePago {
+  id: string;
+  amountCop: number;
+  url: string;
+  label: string;
+  updatedAt: string;
 }
 
 export interface Subscription {
@@ -726,17 +727,6 @@ export interface Invoice {
   payerEmail: string | null;
   paidAt: string | null;
   createdAt: string;
-}
-
-export interface CheckoutResult {
-  subscription: Subscription;
-  payment: { status: string; statusDetail: string; invoiceNumber: number | null };
-  authorizationUrl?: string;
-}
-
-export interface SignupCheckoutResult extends CheckoutResult {
-  user: { id: string; email: string; fullName: string; role: UserRole };
-  sessionToken: string;
 }
 
 export interface TrialSession {
@@ -931,6 +921,8 @@ export interface Charge {
   createdAt: string;
   /** Dias que faltan para el vencimiento; negativo si ya vencio. */
   daysLeft?: number | null;
+  /** Enlace de Mercado Pago para pagarla (el de su importe); null si no hay. */
+  paymentLink?: string | null;
 }
 
 export interface ClientUsage {

@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs';
 import { query, withTransaction } from '../../db/pool.js';
 import { HttpError } from '../../lib/http-error.js';
 import { getPlan, nombrePlan, type PlanId } from '../billing/plans.js';
-import * as mp from '../billing/mercadopago.service.js';
+import { enlaceParaImporte } from '../billing/payment-links.service.js';
 import type {
   BillingDataInput,
   GrantPlanInput,
@@ -11,7 +11,6 @@ import type {
   CreateChargeInput,
   CreateTeacherInput,
   OrganizationInput,
-  PayChargeInput,
   UpdateChargeInput,
   UpdateTeacherInput,
 } from './clients.schemas.js';
@@ -111,6 +110,11 @@ export interface Charge {
   createdAt: string;
   /** Dias que faltan para el vencimiento; negativo si ya vencio. */
   daysLeft?: number | null;
+  /**
+   * El enlace de Mercado Pago para pagarla: el que corresponde a su importe
+   * exacto. null si no hay, y entonces la interfaz ofrece escribir.
+   */
+  paymentLink?: string | null;
 }
 
 interface ChargeRow {
@@ -350,7 +354,7 @@ export async function getPortal(userId: string, role: string, organizationId?: s
     [org.owner_id, org.id],
   );
 
-  const charges = cobros.map(toCharge);
+  const charges = await conEnlace(cobros.map(toCharge));
 
   return {
     organization: toOrganization(org),
@@ -604,6 +608,16 @@ export async function removeTeacher(
 
 // --- Cuentas de cobro ---
 
+/** Pone a cada cuenta por pagar el enlace de pago de su importe. */
+async function conEnlace(cobros: Charge[]): Promise<Charge[]> {
+  return Promise.all(
+    cobros.map(async (c) => ({
+      ...c,
+      paymentLink: c.status === 'emitida' ? await enlaceParaImporte(c.amountCop) : null,
+    })),
+  );
+}
+
 export async function getCharge(userId: string, role: string, chargeId: string): Promise<Charge> {
   const { rows } = await query<ChargeRow & { organization_name: string }>(
     `SELECT ${CHARGE_COLUMNS}, o.name AS organization_name
@@ -623,92 +637,7 @@ export async function getCharge(userId: string, role: string, chargeId: string):
     throw HttpError.notFound('Cuenta de cobro no encontrada');
   }
 
-  return toCharge(fila);
-}
-
-export interface PayResult {
-  charge: Charge;
-  payment: { status: string; statusDetail: string; invoiceNumber: number | null };
-}
-
-/**
- * Paga una cuenta de cobro con Mercado Pago.
- *
- * El importe sale de la base de datos, nunca del navegador. Si viniera en la
- * peticion, cualquiera podria liquidar cinco millones con un peso.
- */
-export async function payCharge(
-  userId: string,
-  role: string,
-  chargeId: string,
-  input: PayChargeInput,
-): Promise<PayResult> {
-  if (!mp.isBillingEnabled()) throw HttpError.badRequest('Los pagos no estan configurados');
-
-  const charge = await getCharge(userId, role, chargeId);
-  if (charge.status === 'pagada') throw HttpError.badRequest('Esta cuenta ya esta pagada');
-  if (charge.status === 'anulada') throw HttpError.badRequest('Esta cuenta esta anulada');
-  if (charge.status === 'borrador') throw HttpError.badRequest('Esta cuenta aun no se ha emitido');
-
-  const { rows: duenio } = await query<{ owner_id: string | null }>(
-    'SELECT owner_id FROM organizations WHERE id = $1',
-    [charge.organizationId],
-  );
-
-  const payment = await mp.createPayment({
-    token: input.token,
-    paymentMethodId: input.paymentMethodId,
-    amountCop: charge.amountCop,
-    description: `BookStudio · Cuenta de cobro ${charge.number}`,
-    installments: input.installments,
-    payerEmail: input.payerEmail,
-    payerDocType: input.payerDocType,
-    payerDocNumber: input.payerDocNumber,
-    externalReference: mp.newExternalReference(`bs-cobro-${charge.number}`),
-    metadata: { chargeId: charge.id, organizationId: charge.organizationId },
-  });
-
-  const aprobado = APROBADO.has(payment.status);
-
-  const { invoiceNumber, actualizada } = await withTransaction(async (client) => {
-    const factura = await client.query<{ invoice_number: string }>(
-      `INSERT INTO payments
-         (subscription_id, owner_id, charge_id, mp_payment_id, amount_cop, status,
-          status_detail, payment_method, installments, payer_email, paid_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-       RETURNING invoice_number`,
-      [
-        charge.subscriptionId,
-        duenio[0]?.owner_id ?? null,
-        charge.id,
-        String(payment.id),
-        charge.amountCop,
-        payment.status,
-        payment.status_detail,
-        payment.payment_method_id ?? null,
-        payment.installments ?? null,
-        payment.payer?.email ?? input.payerEmail,
-        payment.date_approved ?? null,
-      ],
-    );
-
-    // Solo se da por pagada si el cobro se aprobo. Con PSE o Efecty llega mas
-    // tarde, y de eso se encarga el aviso de Mercado Pago.
-    const cobro = aprobado
-      ? await client.query<ChargeRow>(
-          `UPDATE charges SET status = 'pagada', paid_at = CURRENT_TIMESTAMP
-           WHERE id = $1 RETURNING ${CHARGE_COLUMNS.replace(/c\./g, '')}`,
-          [charge.id],
-        )
-      : null;
-
-    return { invoiceNumber: Number(factura.rows[0].invoice_number), actualizada: cobro?.rows[0] };
-  });
-
-  return {
-    charge: actualizada ? toCharge(actualizada) : charge,
-    payment: { status: payment.status, statusDetail: payment.status_detail, invoiceNumber },
-  };
+  return (await conEnlace([toCharge(fila)]))[0];
 }
 
 // --- Administracion de BookStudio ---
@@ -876,6 +805,12 @@ export async function updateCharge(chargeId: string, input: UpdateChargeInput): 
   if (actual[0].status === 'pagada' && input.status) {
     throw HttpError.badRequest('Una cuenta ya pagada no cambia de estado');
   }
+  if (input.status === 'pagada' && actual[0].status !== 'emitida') {
+    throw HttpError.badRequest('Solo se marca como pagada una cuenta emitida');
+  }
+
+  // Pagada a mano: el pago se ve en Mercado Pago y aqui se deja constancia.
+  if (input.status === 'pagada') return marcarPagada(chargeId, input);
 
   const campos: Record<string, unknown> = {
     status: input.status,
@@ -895,6 +830,44 @@ export async function updateCharge(chargeId: string, input: UpdateChargeInput): 
     [chargeId, ...entradas.map(([, valor]) => valor)],
   );
   return toCharge(rows[0]);
+}
+
+/**
+ * Da por pagada una cuenta de cobro que el cliente pago con su enlace.
+ *
+ * Ademas de cambiar el estado se apunta el pago, con su numero de factura: asi
+ * aparece en las facturas del cliente igual que cuando BookStudio cobraba solo.
+ * Todo en una transaccion, para que no quede pagada sin factura ni al reves.
+ */
+async function marcarPagada(chargeId: string, input: UpdateChargeInput): Promise<Charge> {
+  const fila = await withTransaction(async (client) => {
+    const conNotas = input.notes !== undefined;
+    const { rows } = await client.query<ChargeRow & { owner_id: string | null }>(
+      `UPDATE charges c SET status = 'pagada', paid_at = NOW()${conNotas ? ', notes = $2' : ''}
+         FROM organizations o
+        WHERE c.id = $1 AND o.id = c.organization_id AND c.status = 'emitida'
+        RETURNING c.id, c.number, c.organization_id, c.subscription_id, c.concept, c.items, c.amount_cop,
+                  c.status, c.due_date, c.issued_at, c.paid_at, c.notes, c.created_at, o.owner_id`,
+      conNotas ? [chargeId, input.notes] : [chargeId],
+    );
+    const cobro = rows[0];
+    if (!cobro) throw HttpError.badRequest('Solo se marca como pagada una cuenta emitida');
+
+    await client.query(
+      `INSERT INTO payments
+         (subscription_id, owner_id, charge_id, amount_cop, status, status_detail, payment_method, paid_at)
+       VALUES ($1, $2, $3, $4, 'approved', $5, 'enlace_mercadopago', NOW())`,
+      [
+        cobro.subscription_id,
+        cobro.owner_id,
+        cobro.id,
+        cobro.amount_cop,
+        input.paymentReference ? `Mercado Pago n.º ${input.paymentReference}` : 'Pagada con enlace de Mercado Pago',
+      ],
+    );
+    return cobro;
+  });
+  return toCharge(fila);
 }
 
 /**
