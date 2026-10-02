@@ -57,6 +57,7 @@ import type {
   LibraryMembers,
   MediaSearchResponse,
   Page,
+  PageNumbering,
   ShareState,
   ShareVisibility,
   SharedBook,
@@ -230,11 +231,15 @@ export const librariesApi = {
     payload: {
       sourceBookId: string;
       pageId?: string;
+      /** Varias paginas; gana sobre pageId. */
+      pageIds?: string[];
       studentIds?: string[];
       title?: string;
       /** nuevo: libro propio de la entrega. existentes: dentro de los que ya tienen. */
       target?: 'nuevo' | 'existentes';
-      position?: 'inicio' | 'final';
+      /** despues: justo detras de la pagina afterPage. */
+      position?: 'inicio' | 'final' | 'despues';
+      afterPage?: number;
     },
   ) {
     const { data } = await http.post<DistributeResult>(`/libraries/${id}/distribute`, payload);
@@ -294,7 +299,10 @@ export const booksApi = {
     const { data } = await http.put<{ book: Book }>(`/books/${id}/format`, { layoutFormat });
     return data.book;
   },
-  async update(id: string, payload: { title?: string; isPublished?: boolean; isTemplate?: boolean }) {
+  async update(
+    id: string,
+    payload: { title?: string; isPublished?: boolean; isTemplate?: boolean; pageNumbering?: PageNumbering | null },
+  ) {
     const { data } = await http.patch<{ book: Book }>(`/books/${id}`, payload);
     return data.book;
   },

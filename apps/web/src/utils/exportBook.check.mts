@@ -290,5 +290,28 @@ const conEscenaRota = bookToHtml(
 check('una escena rota no rompe la copia', conEscenaRota.includes('<svg'));
 check('y el texto del usuario sigue escapado', !conEscenaRota.includes('<b>x</b>'));
 
+// --- Numeracion de paginas ---
+const tresHojas = (numbering: unknown) =>
+  bookToHtml({
+    ...libro([]),
+    pageNumbering: numbering,
+    pages: [1, 2, 3].map((n) => ({
+      id: `p${n}`, bookId: 'b1', pageNumber: n, backgroundColor: '#FFFFFF', backgroundPattern: null, elements: [],
+    })),
+  } as unknown as BookDetail);
+const numerado = tresHojas({ format: 'pagina' });
+check('sin numeracion no hay numeros', !tresHojas(null).includes('class="num"'));
+check('numerado: dos numeros (la portada no lleva)', (numerado.match(/class="num"/g) ?? []).length === 2);
+check('con el texto del formato', numerado.includes('>Página 2<') && numerado.includes('>Página 3<'));
+
+// --- Graficas de funciones ---
+const conGrafica = bookToHtml(
+  libro([elemento({ type: 'plot', properties: { title: '<b>t</b>', functions: [{ kind: 'y', expr: 'x^2', color: '#2563EB' }] } })]),
+);
+check('la grafica de funciones viaja dibujada', conGrafica.includes('<svg') && /<path d="M-?[\d.]+,-?[\d.]+L/.test(conGrafica));
+check('y su titulo, escapado', !conGrafica.includes('<b>t</b>') && conGrafica.includes('&lt;b&gt;t&lt;/b&gt;'));
+const conSuperficie = bookToHtml(libro([elemento({ type: 'plot', properties: { mode: '3d', functions: [{ kind: 'z', expr: 'x y' }] } })]));
+check('la superficie 3D tambien', (conSuperficie.match(/<path d="M/g) ?? []).length > 100);
+
 console.log(fallos === 0 ? '\nTodo correcto' : `\n${fallos} comprobacion(es) fallidas`);
 process.exit(fallos === 0 ? 0 : 1);

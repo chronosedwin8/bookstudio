@@ -257,7 +257,7 @@ export type LayoutFormat = 'portrait' | 'square' | 'landscape';
 export type ElementType =
   | 'text' | 'shape' | 'drawing' | 'image' | 'audio' | 'video'
   | 'map' | 'icon' | 'embed' | 'question' | 'chart' | 'math' | 'button'
-  | 'illustration' | 'table';
+  | 'illustration' | 'table' | 'plot';
 
 /** Boton del lienzo: se pulsa y lleva a otra pagina del libro o a una web. */
 export interface ButtonProperties {
@@ -574,6 +574,26 @@ export interface BookPermissions {
   isManager: boolean;
 }
 
+/** Numeracion de paginas del libro. Ver utils/numeracion.ts. */
+export interface PageNumbering {
+  format: 'numero' | 'pagina' | 'pag' | 'de-total' | 'guiones' | 'romano' | 'romano-mayus';
+  position:
+    | 'abajo-centro' | 'abajo-derecha' | 'abajo-izquierda' | 'exterior-abajo'
+    | 'arriba-centro' | 'arriba-derecha' | 'arriba-izquierda' | 'exterior-arriba';
+  /** Distancia al borde, en % de la hoja. */
+  margin: number;
+  fontFamily: string;
+  /** px del lienzo logico de 1000 de ancho. */
+  fontSize: number;
+  color: string;
+  bold: boolean;
+  decoration: 'ninguno' | 'circulo' | 'pastilla' | 'linea';
+  accentColor: string;
+  skipCover: boolean;
+  /** Numero que lleva la primera hoja numerada. */
+  startAt: number;
+}
+
 export interface Book {
   id: string;
   title: string;
@@ -585,6 +605,8 @@ export interface Book {
   isTemplate: boolean;
   isPublished: boolean;
   publishingSettings: Record<string, unknown> | null;
+  /** Numeracion de paginas; null si el libro no la lleva. */
+  pageNumbering?: PageNumbering | null;
   createdAt: string;
   updatedAt: string;
   pageCount?: number;

@@ -11,9 +11,40 @@ export const createBookSchema = z.object({
   isTemplate: z.boolean().default(false),
 });
 
+/**
+ * Numeracion de paginas. La pinta el navegador encima de cada hoja; aqui solo se
+ * valida que lo guardado sea algo que sepa pintar. null la quita.
+ */
+export const pageNumberingSchema = z.object({
+  /** numero: 7 · pagina: Página 7 · pag: Pág. 7 · de-total: 7 de 20 · guiones: — 7 — · romano: vii · romano-mayus: VII */
+  format: z.enum(['numero', 'pagina', 'pag', 'de-total', 'guiones', 'romano', 'romano-mayus']).default('numero'),
+  /** exterior-*: a la derecha en las impares y a la izquierda en las pares, como en un libro impreso. */
+  position: z
+    .enum([
+      'abajo-centro', 'abajo-derecha', 'abajo-izquierda', 'exterior-abajo',
+      'arriba-centro', 'arriba-derecha', 'arriba-izquierda', 'exterior-arriba',
+    ])
+    .default('abajo-centro'),
+  /** Distancia al borde, en % de la hoja. */
+  margin: z.number().min(0).max(20).default(4),
+  fontFamily: z.string().trim().max(80).default('Lato'),
+  /** En px del lienzo logico de 1000 de ancho, como el resto de textos. */
+  fontSize: z.number().int().min(8).max(120).default(22),
+  color: z.string().regex(/^#[0-9a-fA-F]{6}$/).default('#334155'),
+  bold: z.boolean().default(false),
+  /** ninguno · circulo · pastilla · linea (una raya encima) */
+  decoration: z.enum(['ninguno', 'circulo', 'pastilla', 'linea']).default('ninguno'),
+  accentColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).default('#E2E8F0'),
+  /** La portada no lleva numero, como en un libro impreso. */
+  skipCover: z.boolean().default(true),
+  /** Numero que lleva la primera hoja numerada. */
+  startAt: z.number().int().min(0).max(9999).default(2),
+});
+
 export const updateBookSchema = z
   .object({
     title: z.string().min(1).max(255).trim().optional(),
+    pageNumbering: pageNumberingSchema.nullable().optional(),
     isPublished: z.boolean().optional(),
     isTemplate: z.boolean().optional(),
     publishingSettings: z

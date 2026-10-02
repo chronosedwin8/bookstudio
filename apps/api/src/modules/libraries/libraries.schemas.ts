@@ -69,9 +69,12 @@ export const addStudentsSchema = z.object({
  * Sin `studentIds` va a toda la biblioteca; es el caso habitual y evita tener que
  * marcar treinta casillas.
  */
-export const distributeSchema = z.object({
+export const distributeSchema = z
+  .object({
   sourceBookId: z.string().uuid(),
   pageId: z.string().uuid().optional(),
+  /** Varias paginas a la vez, en el orden del libro de origen. Gana sobre `pageId`. */
+  pageIds: z.array(z.string().uuid()).min(1).max(500).optional(),
   studentIds: z.array(z.string().uuid()).max(500).optional(),
   title: z.string().min(1).max(255).trim().optional(),
   /**
@@ -80,9 +83,18 @@ export const distributeSchema = z.object({
    *   existentes -> dentro de los libros que el alumno ya tiene en la biblioteca
    */
   target: z.enum(['nuevo', 'existentes']).default('nuevo'),
-  /** Al principio del libro o detras de lo que ya haya. */
-  position: z.enum(['inicio', 'final']).default('final'),
-});
+  /**
+   * Al principio del libro, detras de lo que ya haya, o justo detras de la pagina
+   * `afterPage` (0 = antes de la portada). Si el libro del alumno es mas corto,
+   * va al final.
+   */
+  position: z.enum(['inicio', 'final', 'despues']).default('final'),
+  afterPage: z.number().int().min(0).max(10_000).optional(),
+})
+  .refine((v) => v.position !== 'despues' || v.afterPage !== undefined, {
+    message: 'Indica detrás de qué página va',
+    path: ['afterPage'],
+  });
 
 /**
  * Libros para el alumnado de una biblioteca, de una vez.

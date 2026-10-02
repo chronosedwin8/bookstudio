@@ -38,6 +38,11 @@ export const EDITOR_TOOLS: Tool[] = [
   { id: 'question', label: 'Preguntas', hint: 'Bloques de pregunta, incluidas las abiertas.' },
   { id: 'chart', label: 'Graficas', hint: 'Graficos de barras, lineas y sectores.' },
   { id: 'math', label: 'Formulas', hint: 'Expresiones matematicas.' },
+  {
+    id: 'plot',
+    label: 'Graficas de funciones',
+    hint: 'Funciones en 2D y 3D con deslizadores, cortes, area y tangente.',
+  },
   { id: 'table', label: 'Tablas', hint: 'Tablas de datos con disenos y cabeceras.' },
   {
     id: 'illustration',

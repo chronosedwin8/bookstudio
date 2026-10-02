@@ -68,6 +68,8 @@ export interface Book {
   isTemplate: boolean;
   isPublished: boolean;
   publishingSettings: Record<string, unknown> | null;
+  /** Numeracion de paginas; null si el libro no la lleva. */
+  pageNumbering: Record<string, unknown> | null;
   createdAt: string;
   updatedAt: string;
   pageCount?: number;
@@ -96,6 +98,7 @@ interface BookRow {
   is_template: boolean;
   is_published: boolean;
   publishing_settings: Record<string, unknown> | null;
+  page_numbering?: Record<string, unknown> | null;
   created_at: Date;
   updated_at: Date;
   page_count?: string;
@@ -111,7 +114,7 @@ interface BookRow {
 }
 
 const BOOK_COLUMNS = `id, title, library_id, portfolio_id, creator_id, layout_format,
-  is_template, is_published, publishing_settings, created_at, updated_at,
+  is_template, is_published, publishing_settings, page_numbering, created_at, updated_at,
   share_visibility, share_token, collaborative`;
 
 function toBook(row: BookRow): Book {
@@ -125,6 +128,7 @@ function toBook(row: BookRow): Book {
     isTemplate: row.is_template,
     isPublished: row.is_published,
     publishingSettings: row.publishing_settings,
+    pageNumbering: row.page_numbering ?? null,
     createdAt: row.created_at.toISOString(),
     updatedAt: row.updated_at.toISOString(),
     ...(row.share_visibility !== undefined
@@ -180,7 +184,7 @@ async function loadContext(bookId: string, userId: string): Promise<BookContext>
     }
   >(
     `SELECT b.id, b.title, b.library_id, b.portfolio_id, b.creator_id, b.layout_format,
-            b.is_template, b.is_published, b.publishing_settings, b.created_at, b.updated_at,
+            b.is_template, b.is_published, b.publishing_settings, b.page_numbering, b.created_at, b.updated_at,
             b.share_visibility, b.share_token, b.collaborative,
             l.student_editable, l.student_publishable, l.students_see_peers, l.disabled_tools,
             -- El material que reparte el profesorado se ve siempre, aunque el resto
@@ -408,8 +412,9 @@ export async function transferBook(
     creator_id: string | null;
     layout_format: string;
     is_template: boolean;
+    page_numbering: Record<string, unknown> | null;
   }>(
-    `SELECT id, title, library_id, portfolio_id, creator_id, layout_format, is_template
+    `SELECT id, title, library_id, portfolio_id, creator_id, layout_format, is_template, page_numbering
      FROM books WHERE id = $1`,
     [bookId],
   );
@@ -457,9 +462,17 @@ export async function transferBook(
       // La copia nace privada y fuera del mural: publicar es una decision que se
       // toma en cada biblioteca, no algo que se herede sin darse cuenta.
       const nueva = await client.query<{ id: string }>(
-        `INSERT INTO books (title, library_id, portfolio_id, creator_id, layout_format, is_template)
-         VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-        [libro.title, libraryId, libro.portfolio_id, userId, libro.layout_format, libro.is_template],
+        `INSERT INTO books (title, library_id, portfolio_id, creator_id, layout_format, is_template, page_numbering)
+         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+        [
+          libro.title,
+          libraryId,
+          libro.portfolio_id,
+          userId,
+          libro.layout_format,
+          libro.is_template,
+          libro.page_numbering ? JSON.stringify(libro.page_numbering) : null,
+        ],
       );
       await copiarPaginas(client, paginas, nueva.rows[0].id, 'final');
       copies.push({ libraryId, libraryName: nombre.get(libraryId)!, bookId: nueva.rows[0].id });
@@ -539,7 +552,7 @@ export async function listBooks(userId: string, filters: ListBooksQuery): Promis
   // La portada viaja con la lista para no pedir el detalle de cada libro por separado.
   const { rows } = await query<BookRow>(
     `SELECT b.id, b.title, b.library_id, b.portfolio_id, b.creator_id, b.layout_format,
-            b.is_template, b.is_published, b.publishing_settings, b.created_at, b.updated_at,
+            b.is_template, b.is_published, b.publishing_settings, b.page_numbering, b.created_at, b.updated_at,
             b.share_visibility, b.share_token, b.collaborative, b.origin_book_id,
             (SELECT COUNT(*) FROM pages p WHERE p.book_id = b.id) AS page_count,
             autor.full_name AS creator_name,
@@ -816,7 +829,7 @@ export interface SharedBook extends BookDetail {
 export async function getSharedBook(token: string, userId?: string): Promise<SharedBook> {
   const { rows } = await query<BookRow & { author_name: string | null }>(
     `SELECT b.id, b.title, b.library_id, b.portfolio_id, b.creator_id, b.layout_format,
-            b.is_template, b.is_published, b.publishing_settings, b.created_at, b.updated_at,
+            b.is_template, b.is_published, b.publishing_settings, b.page_numbering, b.created_at, b.updated_at,
             b.share_visibility, b.share_token, b.collaborative, u.full_name AS author_name
      FROM books b
      LEFT JOIN users u ON u.id = b.creator_id
@@ -1006,6 +1019,7 @@ export async function updateBook(bookId: string, userId: string, input: UpdateBo
     isPublished: 'is_published',
     isTemplate: 'is_template',
     publishingSettings: 'publishing_settings',
+    pageNumbering: 'page_numbering',
   };
 
   const sets: string[] = [];
@@ -1013,7 +1027,7 @@ export async function updateBook(bookId: string, userId: string, input: UpdateBo
   for (const [key, column] of Object.entries(columns)) {
     const value = input[key as keyof UpdateBookInput];
     if (value === undefined) continue;
-    values.push(key === 'publishingSettings' ? JSON.stringify(value) : value);
+    values.push(key === 'publishingSettings' || key === 'pageNumbering' ? JSON.stringify(value) : value);
     sets.push(`${column} = $${values.length}`);
   }
 
@@ -1333,10 +1347,15 @@ export async function deletePage(bookId: string, pageId: string, userId: string)
     );
     if (!deleted.rows[0]) throw HttpError.notFound('Página no encontrada');
 
-    await client.query('UPDATE pages SET page_number = page_number - 1 WHERE book_id = $1 AND page_number > $2', [
+    // En dos pasos, por negativos, como al insertar o reordenar. UNIQUE (book_id,
+    // page_number) no es diferible y Postgres lo comprueba fila a fila: restar 1 de
+    // golpe chocaba ("El registro ya existe") cuando el orden fisico de las filas
+    // no era el de las paginas, que es lo normal tras reordenar o duplicar.
+    await client.query('UPDATE pages SET page_number = -(page_number - 1) WHERE book_id = $1 AND page_number > $2', [
       bookId,
       deleted.rows[0].page_number,
     ]);
+    await client.query('UPDATE pages SET page_number = -page_number WHERE book_id = $1 AND page_number < 0', [bookId]);
     await touchBook(client, bookId);
   });
 }

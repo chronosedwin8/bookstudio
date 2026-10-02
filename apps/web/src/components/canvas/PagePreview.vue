@@ -2,8 +2,9 @@
 import { computed, ref, watch } from 'vue';
 import ElementRenderer from './ElementRenderer.vue';
 import InteractionLayer from './InteractionLayer.vue';
+import PageNumberMark from './PageNumberMark.vue';
 import { paperStyle } from '@/utils/papers';
-import type { AnswerResult, CanvasElement, ElementInteraction } from '@/types/api';
+import type { AnswerResult, CanvasElement, ElementInteraction, PageNumbering } from '@/types/api';
 
 /**
  * Miniatura no interactiva de una pagina. Reutiliza el mismo lienzo logico de 1000px
@@ -34,6 +35,10 @@ const props = defineProps<{
    * pulsar y se pintaba todo.
    */
   respetarOcultos?: boolean;
+  /** Numeracion del libro; con ella y el numero de la hoja, se pinta encima. */
+  numbering?: PageNumbering | null;
+  pageNumber?: number;
+  totalPages?: number;
 }>();
 
 /** Salto a otra pagina del propio libro, desde un marcador. */
@@ -354,6 +359,13 @@ function alTerminarAnimacion(element: CanvasElement): void {
           />
         </div>
       </component>
+
+      <PageNumberMark
+        v-if="numbering && pageNumber"
+        :numbering="numbering"
+        :page-number="pageNumber"
+        :total="totalPages ?? pageNumber"
+      />
     </div>
 
     <p

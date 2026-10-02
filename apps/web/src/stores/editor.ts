@@ -14,6 +14,7 @@ import type {
   Page,
   ShareVisibility,
   TransformMatrix,
+  PageNumbering,
 } from '@/types/api';
 
 /** Relacion de aspecto ancho/alto por formato de maquetacion fija. */
@@ -793,6 +794,15 @@ export const useEditorStore = defineStore('editor', () => {
     if (updated) book.value.collaborative = updated.collaborative;
   }
 
+  /** Numeracion de paginas del libro entero; null la quita. */
+  async function setPageNumbering(numbering: PageNumbering | null): Promise<boolean> {
+    if (!book.value) return false;
+    const updated = await withSaving(() => booksApi.update(book.value!.id, { pageNumbering: numbering }));
+    if (!updated) return false;
+    book.value.pageNumbering = updated.pageNumbering ?? null;
+    return true;
+  }
+
   async function renameBook(title: string): Promise<void> {
     if (!book.value) return;
     const updated = await withSaving(() => booksApi.update(book.value!.id, { title }));
@@ -849,6 +859,7 @@ export const useEditorStore = defineStore('editor', () => {
     applyShareState,
     setCollaborative,
     renameBook,
+    setPageNumbering,
 
     // Deshacer y rehacer
     puedeDeshacer: historial.puedeDeshacer,

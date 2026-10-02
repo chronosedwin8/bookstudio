@@ -1,11 +1,20 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import AlertMessage from '@/components/AlertMessage.vue';
+import OpcionesEntregaForm from '@/components/library/OpcionesEntrega.vue';
 import { useCierreExterior } from '@/composables/useCierreExterior';
 import { booksApi, librariesApi } from '@/services/api';
 import { errorMessage } from '@/services/http';
 import { useAuthStore } from '@/stores/auth';
-import type { Book, Library, TransferResult } from '@/types/api';
+import type { Book, BookDetail, DestinoTransferencia, Library, TransferResult } from '@/types/api';
+import {
+  cuerpoEntrega,
+  entregaPorDefecto,
+  faltaEnEntrega,
+  type EntregaEnBiblioteca,
+  type OpcionesEntrega,
+} from '@/utils/entrega';
+
 
 /**
  * Pasar un libro de "Mis libros" a una o varias bibliotecas.
@@ -14,9 +23,13 @@ import type { Book, Library, TransferResult } from '@/types/api';
  * sigue en Mis libros. Si se desmarca "conservar", el libro se MUEVE a la primera
  * biblioteca marcada (con su enlace, su sitio en el mural y su historial) y en las
  * demas queda una copia.
+ *
+ * El profesorado puede ademas entregarlo al alumnado en el mismo paso: lo que se
+ * entrega es lo que queda en cada biblioteca, como si despues se pulsara
+ * "Entregar" en cada una, con las mismas opciones de que paginas y donde caen.
  */
 const props = defineProps<{ book: Book }>();
-const emit = defineEmits<{ close: []; done: [resultado: TransferResult] }>();
+const emit = defineEmits<{ close: []; done: [resultado: TransferResult, entregas: EntregaEnBiblioteca[]] }>();
 const cierre = useCierreExterior(() => emit('close'));
 const auth = useAuthStore();
 
@@ -32,6 +45,24 @@ const elegidas = ref<string[]>([]);
  * quedarse con el original. Moverlo es la excepcion y hay que pedirlo.
  */
 const conservar = ref(true);
+
+/** El alumnado no entrega material: solo puede llevar libros a sus bibliotecas. */
+const puedeEntregar = computed(() => auth.user?.role !== 'student');
+const entregar = ref(false);
+const opciones = ref<OpcionesEntrega>(entregaPorDefecto(props.book.title));
+/** El libro con sus paginas, para poder marcar cuales se entregan. */
+const detalle = ref<BookDetail | null>(null);
+
+watch(entregar, async (activo) => {
+  if (!activo || detalle.value) return;
+  try {
+    detalle.value = await booksApi.get(props.book.id);
+  } catch (err) {
+    error.value = errorMessage(err);
+  }
+});
+
+const faltaEntrega = computed(() => (entregar.value ? faltaEnEntrega(opciones.value) : null));
 
 onMounted(async () => {
   try {
@@ -70,8 +101,33 @@ const resumen = computed(() => {
   return `Se moverá a ${destino} y ${resto}. Dejará de estar en Mis libros.`;
 });
 
+/**
+ * Entrega lo que acaba de quedar en una biblioteca. Las paginas marcadas son las
+ * del original; en la copia estan en el mismo orden, asi que se traducen por
+ * posicion.
+ */
+async function entregarEn(destino: DestinoTransferencia): Promise<EntregaEnBiblioteca> {
+  try {
+    let pageIds: string[] = [];
+    if (opciones.value.alcance === 'paginas') {
+      const posiciones = (detalle.value?.pages ?? [])
+        .map((p, i) => (opciones.value.pageIds.includes(p.id) ? i : -1))
+        .filter((i) => i >= 0);
+      const copia = destino.bookId === props.book.id ? detalle.value : await booksApi.get(destino.bookId);
+      pageIds = posiciones.map((i) => copia?.pages[i]?.id).filter((id): id is string => Boolean(id));
+    }
+    const result = await librariesApi.distribute(destino.libraryId, {
+      sourceBookId: destino.bookId,
+      ...cuerpoEntrega(opciones.value, pageIds),
+    });
+    return { libraryName: destino.libraryName, result };
+  } catch (err) {
+    return { libraryName: destino.libraryName, error: errorMessage(err) };
+  }
+}
+
 async function transferir(): Promise<void> {
-  if (!elegidas.value.length) return;
+  if (!elegidas.value.length || faltaEntrega.value) return;
   enviando.value = true;
   error.value = null;
   try {
@@ -79,7 +135,14 @@ async function transferir(): Promise<void> {
       libraryIds: elegidas.value,
       keepPersonal: conservar.value,
     });
-    emit('done', resultado);
+    const entregas: EntregaEnBiblioteca[] = [];
+    if (entregar.value) {
+      // Una tras otra: cada entrega copia paginas para toda una clase.
+      for (const destino of [...(resultado.moved ? [resultado.moved] : []), ...resultado.copies]) {
+        entregas.push(await entregarEn(destino));
+      }
+    }
+    emit('done', resultado, entregas);
   } catch (err) {
     error.value = errorMessage(err);
   } finally {
@@ -98,7 +161,7 @@ async function transferir(): Promise<void> {
     @mouseup="cierre.onMouseup"
     @keydown.esc="emit('close')"
   >
-    <div class="mx-auto w-full max-w-lg rounded-xl bg-white shadow-2xl">
+    <div class="mx-auto w-full rounded-xl bg-white shadow-2xl" :class="entregar ? 'max-w-2xl' : 'max-w-lg'">
       <header class="flex items-start justify-between gap-4 border-b border-slate-200 p-5">
         <div class="min-w-0">
           <h2 id="transferir-titulo" class="text-lg font-black text-slate-900">Pasar a biblioteca</h2>
@@ -161,6 +224,32 @@ async function transferir(): Promise<void> {
             {{ resumen }}
           </p>
 
+          <!-- Entregar al alumnado en el mismo paso -->
+          <div v-if="puedeEntregar" class="mt-4 rounded-lg border border-slate-200 p-3">
+            <label class="flex items-start gap-2">
+              <input v-model="entregar" type="checkbox" class="mt-0.5 h-4 w-4 rounded" />
+              <span class="text-sm text-slate-700">
+                Entregarlo también a los alumnos
+                <span class="block text-xs text-slate-500">
+                  Cada alumno de {{ elegidas.length > 1 ? 'cada biblioteca marcada' : 'la biblioteca' }} recibe su
+                  propia copia, como con «Entregar». Para elegir alumnos uno a uno, entrega luego desde la biblioteca.
+                </span>
+              </span>
+            </label>
+
+            <div v-if="entregar" class="mt-4">
+              <p v-if="!detalle" class="text-sm text-slate-500">Cargando las páginas...</p>
+              <OpcionesEntregaForm
+                v-else
+                v-model="opciones"
+                :pages="detalle.pages"
+                :layout-format="detalle.layoutFormat"
+              />
+            </div>
+          </div>
+
+          <p v-if="faltaEntrega" class="mt-3 text-sm text-amber-700">{{ faltaEntrega }}</p>
+
           <div class="mt-5 flex justify-end gap-2">
             <button type="button" class="btn-secondary" :disabled="enviando" @click="emit('close')">
               Cancelar
@@ -168,9 +257,13 @@ async function transferir(): Promise<void> {
             <button
               type="button"
               class="btn-primary"
-              :disabled="enviando || !elegidas.length"
+              :disabled="enviando || !elegidas.length || Boolean(faltaEntrega) || (entregar && !detalle)"
               @click="transferir"
-            >{{ enviando ? 'Pasando...' : conservar ? 'Copiar' : 'Pasar' }}</button>
+            >{{
+              enviando
+                ? entregar ? 'Pasando y entregando...' : 'Pasando...'
+                : `${conservar ? 'Copiar' : 'Pasar'}${entregar ? ' y entregar' : ''}`
+            }}</button>
           </div>
         </template>
       </div>

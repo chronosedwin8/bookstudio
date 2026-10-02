@@ -4,7 +4,9 @@ import AlertMessage from '@/components/AlertMessage.vue';
 import { librariesApi } from '@/services/api';
 import { errorMessage } from '@/services/http';
 import { useCierreExterior } from '@/composables/useCierreExterior';
-import type { DistributeResult, LibraryMembers, Page } from '@/types/api';
+import OpcionesEntregaForm from './OpcionesEntrega.vue';
+import type { DistributeResult, LayoutFormat, LibraryMembers, Page } from '@/types/api';
+import { cuerpoEntrega, entregaPorDefecto, faltaEnEntrega, type OpcionesEntrega } from '@/utils/entrega';
 
 /**
  * Entrega material al alumnado de la biblioteca.
@@ -22,6 +24,8 @@ const props = defineProps<{
   pages?: Page[];
   /** Pagina abierta cuando se llama desde el editor. */
   currentPageId?: string;
+  /** Para pintar las miniaturas con la proporcion del libro. */
+  layoutFormat?: LayoutFormat;
 }>();
 
 const emit = defineEmits<{
@@ -31,16 +35,10 @@ const emit = defineEmits<{
 
 const cierre = useCierreExterior(() => emit('close'));
 
-type Alcance = 'libro' | 'pagina';
-
-const alcance = ref<Alcance>(props.currentPageId ? 'pagina' : 'libro');
-const pageId = ref<string>(props.currentPageId ?? props.pages?.[0]?.id ?? '');
-const titulo = ref(props.sourceTitle);
-
-/** Donde cae: en un libro propio de la entrega o dentro de los que ya tienen. */
-const destino = ref<'nuevo' | 'existentes'>('nuevo');
-/** Al principio o detras de lo que ya haya. */
-const posicion = ref<'inicio' | 'final'>('final');
+/** Desde el editor sale marcada la pagina abierta, que es lo que mas se entrega. */
+const opciones = ref<OpcionesEntrega>(
+  entregaPorDefecto(props.sourceTitle, props.currentPageId ? [props.currentPageId] : []),
+);
 
 const members = ref<LibraryMembers | null>(null);
 const aTodos = ref(true);
@@ -52,9 +50,8 @@ const error = ref<string | null>(null);
 
 const alumnos = computed(() => members.value?.students ?? []);
 const destinatarios = computed(() => (aTodos.value ? alumnos.value.length : selected.value.size));
-const puedeEnviar = computed(
-  () => destinatarios.value > 0 && (alcance.value === 'libro' || Boolean(pageId.value)) && !sending.value,
-);
+const falta = computed(() => faltaEnEntrega(opciones.value));
+const puedeEnviar = computed(() => destinatarios.value > 0 && !falta.value && !sending.value);
 
 onMounted(async () => {
   try {
@@ -73,20 +70,14 @@ function alternar(id: string): void {
   selected.value = copia;
 }
 
-const etiquetaPagina = (pagina: Page, indice: number) =>
-  indice === 0 ? 'Portada' : `Página ${pagina.pageNumber}`;
-
 async function enviar(): Promise<void> {
   sending.value = true;
   error.value = null;
   try {
     const resultado = await librariesApi.distribute(props.libraryId, {
       sourceBookId: props.sourceBookId,
-      pageId: alcance.value === 'pagina' ? pageId.value : undefined,
+      ...cuerpoEntrega(opciones.value),
       studentIds: aTodos.value ? undefined : [...selected.value],
-      title: destino.value === 'nuevo' ? titulo.value.trim() || undefined : undefined,
-      target: destino.value,
-      position: posicion.value,
     });
     emit('done', resultado);
   } catch (err) {
@@ -121,95 +112,7 @@ async function enviar(): Promise<void> {
       <div class="space-y-6 p-5">
         <AlertMessage :message="error" />
 
-        <!-- Qué se entrega -->
-        <fieldset>
-          <legend class="text-xs font-bold uppercase tracking-wide text-slate-500">Qué entregas</legend>
-          <div class="mt-2 grid gap-2 sm:grid-cols-2">
-            <label
-              class="flex cursor-pointer items-start gap-3 rounded-lg border-2 p-3"
-              :class="alcance === 'libro' ? 'border-brand-500 bg-brand-50' : 'border-slate-200'"
-            >
-              <input v-model="alcance" type="radio" value="libro" class="mt-1 h-4 w-4" />
-              <span>
-                <span class="block text-sm font-semibold text-slate-800">El libro entero</span>
-                <span class="block text-xs text-slate-500">
-                  {{ pages?.length ?? 0 }} páginas, tal y como está ahora.
-                </span>
-              </span>
-            </label>
-
-            <label
-              class="flex cursor-pointer items-start gap-3 rounded-lg border-2 p-3"
-              :class="alcance === 'pagina' ? 'border-brand-500 bg-brand-50' : 'border-slate-200'"
-            >
-              <input v-model="alcance" type="radio" value="pagina" class="mt-1 h-4 w-4" :disabled="!pages?.length" />
-              <span>
-                <span class="block text-sm font-semibold text-slate-800">Una sola página</span>
-                <span class="block text-xs text-slate-500">Se añade al final de lo que ya tengan.</span>
-              </span>
-            </label>
-          </div>
-
-          <select v-if="alcance === 'pagina' && pages?.length" v-model="pageId" class="input mt-2" aria-label="Página a entregar">
-            <option v-for="(pagina, indice) in pages" :key="pagina.id" :value="pagina.id">
-              {{ etiquetaPagina(pagina, indice) }}
-            </option>
-          </select>
-        </fieldset>
-
-        <!-- Dónde cae -->
-        <fieldset>
-          <legend class="text-xs font-bold uppercase tracking-wide text-slate-500">Dónde cae</legend>
-          <div class="mt-2 grid gap-2 sm:grid-cols-2">
-            <label
-              class="flex cursor-pointer items-start gap-3 rounded-lg border-2 p-3"
-              :class="destino === 'nuevo' ? 'border-brand-500 bg-brand-50' : 'border-slate-200'"
-            >
-              <input v-model="destino" type="radio" value="nuevo" class="mt-1 h-4 w-4" />
-              <span>
-                <span class="block text-sm font-semibold text-slate-800">En un libro propio de la entrega</span>
-                <span class="block text-xs text-slate-500">
-                  Cada alumno recibe un libro aparte. Si entregas más páginas de este material, se añaden a ese mismo.
-                </span>
-              </span>
-            </label>
-
-            <label
-              class="flex cursor-pointer items-start gap-3 rounded-lg border-2 p-3"
-              :class="destino === 'existentes' ? 'border-brand-500 bg-brand-50' : 'border-slate-200'"
-            >
-              <input v-model="destino" type="radio" value="existentes" class="mt-1 h-4 w-4" />
-              <span>
-                <span class="block text-sm font-semibold text-slate-800">Dentro de los libros que ya tienen</span>
-                <span class="block text-xs text-slate-500">
-                  Se inserta en todos los libros que cada alumno tenga en esta biblioteca.
-                </span>
-              </span>
-            </label>
-          </div>
-
-          <div class="mt-2 flex flex-wrap gap-4 rounded-lg bg-slate-50 p-3">
-            <label class="flex cursor-pointer items-center gap-2 text-sm text-slate-700">
-              <input v-model="posicion" type="radio" value="inicio" class="h-4 w-4" />
-              Al principio del libro
-            </label>
-            <label class="flex cursor-pointer items-center gap-2 text-sm text-slate-700">
-              <input v-model="posicion" type="radio" value="final" class="h-4 w-4" />
-              Detrás de lo que ya haya
-            </label>
-          </div>
-        </fieldset>
-
-        <!-- Nombre del libro que recibirán -->
-        <div v-if="destino === 'nuevo'">
-          <label class="label" for="entregar-titulo-libro">Título del libro que recibirán</label>
-          <input id="entregar-titulo-libro" v-model="titulo" type="text" maxlength="255" class="input" />
-        </div>
-
-        <p v-else class="rounded-lg bg-amber-50 p-3 text-sm text-amber-800">
-          A quien no tenga ningún libro propio en esta biblioteca no se le entrega nada: no hay dónde insertarlo.
-          Te diré cuántos han quedado así.
-        </p>
+        <OpcionesEntregaForm v-model="opciones" :pages="pages" :layout-format="layoutFormat" />
 
         <!-- A quién -->
         <fieldset>
@@ -249,7 +152,7 @@ async function enviar(): Promise<void> {
 
       <footer class="flex items-center justify-between gap-3 border-t border-slate-200 p-5">
         <p class="text-sm text-slate-500">
-          {{ destinatarios ? `${destinatarios} destinatarios` : 'Nadie seleccionado' }}
+          {{ falta ?? (destinatarios ? `${destinatarios} destinatarios` : 'Nadie seleccionado') }}
         </p>
         <button type="button" class="btn-primary" :disabled="!puedeEnviar" @click="enviar">
           {{ sending ? 'Entregando...' : 'Entregar' }}

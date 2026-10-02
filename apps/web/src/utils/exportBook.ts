@@ -10,8 +10,10 @@ import { normalizarEscena, resumirEscena } from './ilustracion/escena';
 import { normalizarTabla } from './tablas';
 import { svgCompleto } from './ilustracion/primitivas';
 import { paperStyle } from './papers';
+import { estiloNumeroEnLinea, normalizarNumeracion, numeroDeHoja } from './numeracion';
+import { dibujar2D, dibujar3D, normalizarGrafica } from './graficas';
 import { SHAPES, type ShapeName } from './shapes';
-import type { BookDetail, CanvasElement, Page, RichBlock, RichSpan } from '@/types/api';
+import type { BookDetail, CanvasElement, Page, PageNumbering, RichBlock, RichSpan } from '@/types/api';
 
 const ASPECT = { square: 1, portrait: 3 / 4, landscape: 4 / 3 } as const;
 
@@ -118,7 +120,8 @@ function chartSvgPlaceholder(element: CanvasElement): string {
     <table>${rows}</table></figure>`;
 }
 
-function elementHtml(element: CanvasElement): string {
+/** `ratio` es el ancho entre el alto de la hoja: hace falta para dibujar a escala. */
+function elementHtml(element: CanvasElement, ratio = 1): string {
   const t = element.transformMatrix;
   const wrapperStyle = styleAttr({
     left: `${t.x}%`,
@@ -202,6 +205,15 @@ function elementHtml(element: CanvasElement): string {
     case 'chart':
       inner = chartSvgPlaceholder(element);
       break;
+    case 'plot': {
+      // La grafica viaja dibujada, con los valores del autor: en la copia no hay
+      // deslizadores ni zoom, pero se ve igual que en el libro.
+      const g = normalizarGrafica(p);
+      const w = Math.max(80, Math.round(t.width * 10));
+      const h = Math.max(60, Math.round((t.height * 10) / ratio));
+      inner = g.mode === '3d' ? dibujar3D(g, { w, h }).svg : dibujar2D(g, { w, h }).svg;
+      break;
+    }
     case 'table': {
       /*
        * La tabla viaja como <table> de verdad, no como una imagen ni una
@@ -411,22 +423,31 @@ function blocksHtml(blocks: RichBlock[]): string {
     .join('');
 }
 
-function pageHtml(page: Page, index: number): string {
+/** El numero de la hoja, si el libro va numerado. Mismo texto y sitio que en la app. */
+function numeroHtml(numbering: PageNumbering | null, page: Page, total: number): string {
+  if (!numbering) return '';
+  const texto = numeroDeHoja(numbering, page.pageNumber, total);
+  if (!texto) return '';
+  return `<span class="num" style="${escapeHtml(estiloNumeroEnLinea(numbering, page.pageNumber))}">${escapeHtml(texto)}</span>`;
+}
+
+function pageHtml(page: Page, index: number, numbering: PageNumbering | null = null, total = 0, ratio = 1): string {
   const style = styleAttr({
     backgroundColor: page.backgroundColor,
     ...paperStyle(page.backgroundPattern),
   });
   const elements = [...page.elements]
     .sort((a, b) => a.zIndex - b.zIndex)
-    .map(elementHtml)
+    .map((e) => elementHtml(e, ratio))
     .join('');
-  return `<section class="pg" id="p${index}" data-n="${index}"${style}>${elements}</section>`;
+  return `<section class="pg" id="p${index}" data-n="${index}"${style}>${elements}${numeroHtml(numbering, page, total)}</section>`;
 }
 
 /** Documento completo, con navegacion propia y sin dependencias externas. */
 export function bookToHtml(book: BookDetail): string {
   const ratio = ASPECT[book.layoutFormat];
-  const pages = book.pages.map(pageHtml).join('');
+  const numbering = normalizarNumeracion(book.pageNumbering);
+  const pages = book.pages.map((p, i) => pageHtml(p, i, numbering, book.pages.length, ratio)).join('');
 
   return `<!doctype html>
 <html lang="es">

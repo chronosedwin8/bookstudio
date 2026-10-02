@@ -279,6 +279,7 @@ onBeforeUnmount(() => {
             :aspect-ratio="aspectRatio"
             :available="stageSize"
             :check-answer="checkAnswer"
+            :numbering="book.pageNumbering"
             @ir-a-pagina="irAPaginaNumero"
           />
         </div>

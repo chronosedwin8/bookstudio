@@ -155,6 +155,7 @@ export const NOMBRE_TIPO: Record<ElementType, string> = {
   question: 'pregunta',
   chart: 'gráfica',
   math: 'fórmula',
+  plot: 'gráfica de funciones',
   button: 'botón',
 };
 

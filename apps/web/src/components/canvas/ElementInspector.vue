@@ -25,6 +25,8 @@ import {
   type Tabla,
 } from '@/utils/tablas';
 import ChartInspector from './ChartInspector.vue';
+import PlotInspector from './PlotInspector.vue';
+import LatexEditor from './LatexEditor.vue';
 import InteractionContentDialog from './InteractionContentDialog.vue';
 import QuestionInspector from './QuestionInspector.vue';
 import {
@@ -66,6 +68,8 @@ const emit = defineEmits<{
   ];
   move: [direction: 'front' | 'forward' | 'backward' | 'back'];
   remove: [];
+  /** Insertar una grafica de funciones con esta expresion (desde una formula). */
+  graficar: [expresion: string];
   /**
    * Cambia OTRO elemento de la pagina, no el seleccionado.
    *
@@ -258,7 +262,8 @@ function describir(el: CanvasElement): string {
 const TIPOS: Record<string, string> = {
   text: 'Texto', shape: 'Forma', drawing: 'Dibujo', image: 'Imagen', audio: 'Audio',
   video: 'Vídeo', map: 'Mapa', icon: 'Icono', embed: 'Incrustado', question: 'Pregunta',
-  chart: 'Gráfica', math: 'Fórmula', button: 'Botón',
+  chart: 'Gráfica', math: 'Fórmula', button: 'Botón', plot: 'Gráfica de funciones',
+  table: 'Tabla', illustration: 'Ilustración',
 };
 
 /** Los demas objetos de la pagina; uno no puede actuar sobre si mismo. */
@@ -574,7 +579,7 @@ const SOFT_BACKGROUNDS = ['transparent', '#F7F4EC', '#EDF2F0', '#FBF3E4', '#EFEA
 
     <template v-else>
       <div>
-        <h2 class="text-sm font-bold capitalize text-slate-800">{{ element.type }}</h2>
+        <h2 class="text-sm font-bold text-slate-800">{{ TIPOS[element.type] ?? element.type }}</h2>
         <p class="mt-0.5 text-xs text-slate-400">
           {{ Math.round(element.transformMatrix.width) }}% × {{ Math.round(element.transformMatrix.height) }}% ·
           {{ Math.round(element.transformMatrix.angle) }}°
@@ -1038,13 +1043,15 @@ const SOFT_BACKGROUNDS = ['transparent', '#F7F4EC', '#EDF2F0', '#FBF3E4', '#EFEA
 
       <!-- Formula matemática -->
       <section v-if="element.type === 'math'">
-        <label class="label" :for="`latex-${element.id}`">Formula (LaTeX)</label>
-        <textarea
-          :id="`latex-${element.id}`"
-          class="input min-h-[5rem] resize-y font-mono text-xs"
-          :value="String(element.properties.latex ?? '')"
-          @change="patchProperty('latex', ($event.target as HTMLTextAreaElement).value)"
+        <h3 class="label">Formula (LaTeX)</h3>
+        <!-- Se ve en la hoja mientras se escribe y se guarda al parar de teclear. -->
+        <LatexEditor
+          :key="element.id"
+          :latex="String(element.properties.latex ?? '')"
+          @update="patchPropertyVivo('latex', $event)"
+          @graficar="emit('graficar', $event)"
         />
+        <p class="mt-2 text-[10px] font-bold uppercase tracking-wide text-slate-400">Fórmulas listas</p>
         <!--
           Cincuenta formulas no caben en una fila de botones, asi que van por
           materia y en una zona que se desplaza: se buscan por donde uno las
@@ -1074,6 +1081,12 @@ const SOFT_BACKGROUNDS = ['transparent', '#F7F4EC', '#EDF2F0', '#FBF3E4', '#EFEA
           />
           Formula en bloque (centrada y grande)
         </label>
+      </section>
+
+      <!-- Gráfica de funciones -->
+      <section v-if="element.type === 'plot'">
+        <h3 class="label">Gráfica de funciones</h3>
+        <PlotInspector :properties="element.properties" @patch="emit('patch', { properties: $event })" />
       </section>
 
       <!-- Gráfica -->

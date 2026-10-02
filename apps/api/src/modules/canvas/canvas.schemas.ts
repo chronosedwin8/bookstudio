@@ -367,10 +367,84 @@ export const mathPropertiesSchema = z.object({
   backgroundColor: z.union([hexColor, z.literal('transparent')]).default('transparent'),
 });
 
+/**
+ * Grafica de funciones, al estilo de GeoGebra: varias funciones en un plano,
+ * parametricas, puntos, deslizadores, area bajo la curva, tangente, y superficies
+ * en 3D. Se guardan las EXPRESIONES como texto; las interpreta en el navegador un
+ * analizador propio con una lista cerrada de funciones, nunca `eval`.
+ */
+const expresion = z.string().max(300);
+const finito = (min: number, max: number) => z.number().finite().min(min).max(max);
+
+export const plotPropertiesSchema = z
+  .object({
+    mode: z.enum(['2d', '3d']).default('2d'),
+    title: z.string().max(200).default(''),
+    functions: z
+      .array(
+        z.object({
+          kind: z.enum(['y', 'param', 'z']).default('y'),
+          expr: expresion.default('x'),
+          exprY: expresion.default(''),
+          tMin: finito(-1e6, 1e6).default(0),
+          tMax: finito(-1e6, 1e6).default(6.283),
+          domainMin: finito(-1e9, 1e9).nullable().default(null),
+          domainMax: finito(-1e9, 1e9).nullable().default(null),
+          color: hexColor.default('#2563EB'),
+          width: finito(1, 10).default(3),
+          dashed: z.boolean().default(false),
+          visible: z.boolean().default(true),
+          label: z.string().max(80).default(''),
+        }),
+      )
+      .max(8)
+      .default([]),
+    points: z
+      .array(z.object({ x: expresion, y: expresion, label: z.string().max(60).default(''), color: hexColor.default('#0F172A') }))
+      .max(20)
+      .default([]),
+    params: z
+      .array(
+        z.object({
+          // Una letra minuscula que no sea x, y, z, t ni e: esas ya significan algo.
+          name: z.string().regex(/^[a-df-su-w]$/, 'Un deslizador se llama con una letra (no x, y, z, t ni e)'),
+          value: finito(-1e6, 1e6),
+          min: finito(-1e6, 1e6),
+          max: finito(-1e6, 1e6),
+          step: finito(1e-6, 1e6).default(0.1),
+        }),
+      )
+      .max(8)
+      .default([]),
+    xMin: finito(-1e9, 1e9).default(-5),
+    xMax: finito(-1e9, 1e9).default(5),
+    yMin: finito(-1e9, 1e9).default(-5),
+    yMax: finito(-1e9, 1e9).default(5),
+    showGrid: z.boolean().default(true),
+    showAxes: z.boolean().default(true),
+    xLabel: z.string().max(40).default('x'),
+    yLabel: z.string().max(40).default('y'),
+    markRoots: z.boolean().default(false),
+    markIntersections: z.boolean().default(false),
+    area: z
+      .object({ enabled: z.boolean(), fn: z.number().int().min(0).max(7), a: expresion, b: expresion, color: hexColor })
+      .default({ enabled: false, fn: 0, a: '-1', b: '1', color: '#2563EB' }),
+    tangent: z
+      .object({ enabled: z.boolean(), fn: z.number().int().min(0).max(7), x0: expresion, color: hexColor })
+      .default({ enabled: false, fn: 0, x0: '1', color: '#DC2626' }),
+    interactive: z.boolean().default(true),
+    backgroundColor: hexColor.default('#FFFFFF'),
+    rotZ: finito(-3600, 3600).default(35),
+    rotX: finito(-90, 90).default(60),
+    colorMap: z.enum(['arcoiris', 'frio', 'calor', 'uniforme']).default('arcoiris'),
+  })
+  .refine((p) => p.xMax > p.xMin && p.yMax > p.yMin, 'El rango de los ejes no es válido: el máximo debe ser mayor que el mínimo')
+  .refine((p) => new Set(p.params.map((d) => d.name)).size === p.params.length, 'Hay dos deslizadores con el mismo nombre');
+
 export const elementType = z.enum([
   'text', 'shape', 'drawing', 'image', 'audio', 'video',
   'map', 'icon', 'embed', 'question', 'chart', 'math', 'button',
-  'illustration', 'table',
+  'illustration', 'table', 'plot',
 ]);
 export type ElementType = z.infer<typeof elementType>;
 
@@ -390,6 +464,7 @@ const PROPERTY_SCHEMAS = {
   math: mathPropertiesSchema,
   illustration: illustrationPropertiesSchema,
   table: tablePropertiesSchema,
+  plot: plotPropertiesSchema,
 } as const;
 
 /** Valida `properties` contra el esquema del `type` declarado; rechaza mezclas invalidas. */

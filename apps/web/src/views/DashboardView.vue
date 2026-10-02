@@ -13,6 +13,7 @@ import { errorMessage } from '@/services/http';
 import { useAuthStore } from '@/stores/auth';
 import { useLibrariesStore } from '@/stores/libraries';
 import type { Book, LayoutFormat, PhidiasImportResult, TransferResult } from '@/types/api';
+import type { EntregaEnBiblioteca } from '@/utils/entrega';
 
 const ASPECT: Record<LayoutFormat, number> = { square: 1, portrait: 3 / 4, landscape: 4 / 3 };
 
@@ -91,7 +92,7 @@ async function removePersonalBook(book: Book): Promise<void> {
 // --- Pasar un libro de Mis libros a bibliotecas ---
 const transfiriendo = ref<Book | null>(null);
 
-async function onTransferido(resultado: TransferResult): Promise<void> {
+async function onTransferido(resultado: TransferResult, entregas: EntregaEnBiblioteca[] = []): Promise<void> {
   const titulo = transfiriendo.value?.title ?? 'El libro';
   transfiriendo.value = null;
 
@@ -101,8 +102,21 @@ async function onTransferido(resultado: TransferResult): Promise<void> {
     const nombres = resultado.copies.map((c) => `«${c.libraryName}»`).join(', ');
     partes.push(`${resultado.moved ? 'con copia' : `Copia de «${titulo}»`} en ${nombres}`);
   }
-  notice.value = `${partes.join(', ')}.`;
-  formError.value = null;
+  // Lo entregado, biblioteca a biblioteca: si en una fallo, el libro ya esta alli
+  // y basta con entregarlo desde ella.
+  const entregado = entregas
+    .filter((e) => e.result)
+    .map((e) => {
+      const r = e.result!;
+      const sinLibro = r.withoutBooks ? `, ${r.withoutBooks} sin libro donde insertarlo` : '';
+      return `entregado en «${e.libraryName}» a ${r.delivered} alumnos (${r.pages} páginas${sinLibro})`;
+    });
+  notice.value = `${[...partes, ...entregado].join('; ')}.`;
+  const fallidas = entregas.filter((e) => e.error);
+  formError.value = fallidas.length
+    ? `No se pudo entregar en ${fallidas.map((e) => `«${e.libraryName}» (${e.error})`).join(', ')}. ` +
+      'El libro ya está en la biblioteca: puedes entregarlo desde allí.'
+    : null;
   await loadBooks();
 }
 

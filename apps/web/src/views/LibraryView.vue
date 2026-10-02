@@ -1236,6 +1236,7 @@ function formatDate(value: string | null): string {
         :source-book-id="entregando.id"
         :source-title="entregando.title"
         :pages="entregaPaginas"
+        :layout-format="entregando.layoutFormat"
         @close="entregando = null"
         @done="onDistributed"
       />

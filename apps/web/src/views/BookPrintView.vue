@@ -82,6 +82,9 @@ onMounted(async () => {
             :aspect-ratio="ASPECT[book.layoutFormat]"
             :width="PAGE_WIDTH"
             :respetar-ocultos="!mostrarOcultos"
+            :numbering="book.pageNumbering"
+            :page-number="page.pageNumber"
+            :total-pages="book.pages.length"
           />
         </div>
       </div>

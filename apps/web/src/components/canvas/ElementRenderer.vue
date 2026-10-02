@@ -8,6 +8,7 @@ import IllustrationRenderer from './IllustrationRenderer.vue';
 import TableRenderer from './TableRenderer.vue';
 import type { Tabla } from '@/utils/tablas';
 import MathRenderer from './MathRenderer.vue';
+import PlotRenderer from './PlotRenderer.vue';
 import QuestionRenderer from './QuestionRenderer.vue';
 import ShapeRenderer from './ShapeRenderer.vue';
 import StrokeRenderer from './StrokeRenderer.vue';
@@ -314,6 +315,14 @@ const textLines = computed(() => {
     :display-mode="math.displayMode"
     :color="math.color"
     :background-color="math.backgroundColor"
+  />
+
+  <!-- Gráfica de funciones (2D/3D), interactiva al leer -->
+  <PlotRenderer
+    v-else-if="element.type === 'plot'"
+    :properties="element.properties"
+    :lectura="lectura"
+    :preview="preview"
   />
 
   <!-- Gráfica estadistica -->

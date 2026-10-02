@@ -3,8 +3,9 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import CanvasElementBox from './CanvasElementBox.vue';
 import DrawingLayer from './DrawingLayer.vue';
 import ElementRenderer from './ElementRenderer.vue';
+import PageNumberMark from './PageNumberMark.vue';
 import { paperStyle } from '@/utils/papers';
-import type { CanvasElement, Page, TransformMatrix } from '@/types/api';
+import type { CanvasElement, Page, PageNumbering, TransformMatrix } from '@/types/api';
 import type { Tabla } from '@/utils/tablas';
 
 const props = defineProps<{
@@ -21,6 +22,9 @@ const props = defineProps<{
   onionElements?: CanvasElement[];
   /** Texto recien insertado: se abre para escribir sin tener que buscarlo. */
   autoEditId?: string | null;
+  /** Numeracion del libro: se ve mientras se edita, igual que al leer. */
+  numbering?: PageNumbering | null;
+  totalPages?: number;
 }>();
 
 const emit = defineEmits<{
@@ -267,6 +271,13 @@ function onWheel(event: WheelEvent): void {
             @group-drag="onGroupDrag"
             @group-commit="onGroupCommit"
             @select-only="emit('selectOnly', $event)"
+          />
+
+          <PageNumberMark
+            v-if="numbering"
+            :numbering="numbering"
+            :page-number="page.pageNumber"
+            :total="totalPages ?? page.pageNumber"
           />
 
           <!-- Rectangulo de selección -->

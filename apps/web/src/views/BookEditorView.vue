@@ -8,6 +8,7 @@ import FixedCanvas from '@/components/canvas/FixedCanvas.vue';
 import ShapeRenderer from '@/components/canvas/ShapeRenderer.vue';
 import PagePreview from '@/components/canvas/PagePreview.vue';
 import PagesPanel from '@/components/canvas/PagesPanel.vue';
+import NumeracionDialog from '@/components/canvas/NumeracionDialog.vue';
 import ShareDialog from '@/components/ShareDialog.vue';
 import BookGradesPanel from '@/components/library/BookGradesPanel.vue';
 import DistributeDialog from '@/components/library/DistributeDialog.vue';
@@ -38,6 +39,7 @@ import type {
   ElementType,
   LayoutFormat,
   MediaResult,
+  PageNumbering,
   TransformMatrix,
 } from '@/types/api';
 import { MIN_SCORE, recognize, type Candidate } from '@/utils/recognize';
@@ -46,6 +48,7 @@ import { cajaMidiendo, cajaParaImagen } from '@/utils/encajarImagen';
 import type { Escena } from '@/utils/ilustracion/escena';
 import type { Tabla } from '@/utils/tablas';
 import { PAPER_CATALOGUE, PAPER_GROUPS, paperStyle } from '@/utils/papers';
+import { COLORES_GRAFICA, GRAFICA_POR_DEFECTO, funcionNueva } from '@/utils/graficas';
 import { SHAPES, ratioOf, type ShapeName } from '@/utils/shapes';
 import type { QuestionBlock } from '@/utils/questions';
 import type { PageTemplate } from '@/utils/templates';
@@ -268,6 +271,20 @@ async function addButtonElement(): Promise<void> {
       linkUrl: '',
       shadow: true,
     },
+  );
+}
+
+/**
+ * Grafica de funciones. Sin argumento nace con la de serie; desde una formula
+ * llega con la funcion ya escrita.
+ */
+async function addPlotElement(expr?: string): Promise<void> {
+  const propiedades = { ...GRAFICA_POR_DEFECTO };
+  if (expr) propiedades.functions = [funcionNueva('y', expr, COLORES_GRAFICA[0])];
+  await editor.addElement(
+    'plot',
+    { x: 15, y: 15, width: 60, height: heightForRatio(60, 1.45), angle: 0 },
+    propiedades as unknown as Record<string, unknown>,
   );
 }
 
@@ -689,6 +706,11 @@ async function onPageDrop(index: number): Promise<void> {
 }
 
 const showPages = ref(false);
+const showNumeracion = ref(false);
+
+async function guardarNumeracion(numbering: PageNumbering | null): Promise<void> {
+  if (await editor.setPageNumbering(numbering)) showNumeracion.value = false;
+}
 /**
  * Deshacer y rehacer.
  *
@@ -1196,6 +1218,14 @@ async function saveTitle(): Promise<void> {
           v-if="editor.canEdit"
           type="button"
           class="btn-secondary"
+          title="Números de página: formato, estilo y ubicación"
+          @click="showNumeracion = true"
+        >Nº de página</button>
+
+        <button
+          v-if="editor.canEdit"
+          type="button"
+          class="btn-secondary"
           @click="showShare = true"
         >
           Compartir
@@ -1358,6 +1388,9 @@ async function saveTitle(): Promise<void> {
             </button>
             <button v-if="puedeUsar('math')" type="button" class="btn-secondary w-full justify-start" @click="addMathElement">
               ∑ Formula
+            </button>
+            <button v-if="puedeUsar('plot')" type="button" class="btn-secondary w-full justify-start" @click="addPlotElement()">
+              📈 Gráfica de funciones
             </button>
             <button v-if="puedeUsar('button')" type="button" class="btn-secondary w-full justify-start" @click="addButtonElement">
               ⬢ Botón
@@ -1542,6 +1575,8 @@ async function saveTitle(): Promise<void> {
               :onion-elements="onionElements"
               :auto-edit-id="editor.editingElementId"
               :selected-ids="editor.selectedIds"
+              :numbering="editor.book.pageNumbering"
+              :total-pages="editor.book.pages.length"
               @select="(id, additive) => editor.select(id, additive)"
               @select-many="editor.selectMany($event)"
               @select-only="editor.selectMany([$event])"
@@ -1737,6 +1772,7 @@ async function saveTitle(): Promise<void> {
           @duplicar="editor.duplicarSeleccion().then((n) => anunciar(n ? 'Duplicado' : null))"
           @rehacer-ilustracion="onRehacerIlustracion"
           @patch-otro="onPatchOtro"
+          @graficar="addPlotElement($event)"
           @move="editor.selectedElementId && editor.moveLayer(editor.selectedElementId, $event)"
           @remove="editor.selectedElementId && editor.removeElement(editor.selectedElementId)"
           :page-numbers="editor.book?.pages.map((p) => p.pageNumber) ?? []"
@@ -1784,8 +1820,19 @@ async function saveTitle(): Promise<void> {
       :source-title="editor.book.title"
       :pages="editor.book.pages"
       :current-page-id="editor.currentPage?.id"
+      :layout-format="editor.book.layoutFormat"
       @close="showDistribute = false"
       @done="onDistributed"
+    />
+
+    <NumeracionDialog
+      v-if="showNumeracion && editor.book"
+      :numbering="editor.book.pageNumbering"
+      :pages="editor.book.pages"
+      :aspect-ratio="editor.aspectRatio"
+      :busy="editor.saving"
+      @close="showNumeracion = false"
+      @save="guardarNumeracion"
     />
 
     <PagesPanel

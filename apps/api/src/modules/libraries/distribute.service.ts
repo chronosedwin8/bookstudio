@@ -1,5 +1,5 @@
 import type pg from 'pg';
-import { copiarPaginas, type PaginaRow } from '../books/copiar-paginas.js';
+import { copiarPaginas, type PaginaRow, type PosicionCopia } from '../books/copiar-paginas.js';
 import { query, withTransaction } from '../../db/pool.js';
 import { HttpError } from '../../lib/http-error.js';
 import type { DistributeInput } from './libraries.schemas.js';
@@ -40,6 +40,7 @@ interface FuenteRow {
   layout_format: string;
   library_id: string | null;
   creator_id: string | null;
+  page_numbering: Record<string, unknown> | null;
 }
 
 
@@ -49,7 +50,7 @@ interface FuenteRow {
  */
 async function cargarFuente(sourceBookId: string, teacherId: string): Promise<FuenteRow> {
   const { rows } = await query<FuenteRow>(
-    `SELECT b.id, b.title, b.layout_format, b.library_id, b.creator_id
+    `SELECT b.id, b.title, b.layout_format, b.library_id, b.creator_id, b.page_numbering
      FROM books b WHERE b.id = $1`,
     [sourceBookId],
   );
@@ -63,20 +64,40 @@ async function cargarFuente(sourceBookId: string, teacherId: string): Promise<Fu
   return fuente;
 }
 
-/** Las paginas a copiar: una sola si se indica, o el libro entero en orden. */
-async function cargarPaginas(sourceBookId: string, pageId?: string): Promise<PaginaRow[]> {
+/**
+ * Las paginas a copiar: las indicadas, o el libro entero. Siempre en el orden
+ * del libro de origen, se marcaran en el orden que se marcaran.
+ */
+async function cargarPaginas(sourceBookId: string, pageIds: string[] | null): Promise<PaginaRow[]> {
   const { rows } = await query<PaginaRow>(
     `SELECT id, page_number, background_color, background_pattern
      FROM pages
-     WHERE book_id = $1 AND ($2::uuid IS NULL OR id = $2)
+     WHERE book_id = $1 AND ($2::uuid[] IS NULL OR id = ANY($2::uuid[]))
      ORDER BY page_number`,
-    [sourceBookId, pageId ?? null],
+    [sourceBookId, pageIds],
   );
 
   if (!rows.length) {
-    throw HttpError.notFound(pageId ? 'Esa pagina no esta en el libro de origen' : 'El libro de origen no tiene paginas');
+    throw HttpError.notFound(pageIds ? 'Esas paginas no estan en el libro de origen' : 'El libro de origen no tiene paginas');
+  }
+  if (pageIds && rows.length !== new Set(pageIds).size) {
+    throw HttpError.badRequest('Alguna de las paginas no esta en el libro de origen');
   }
   return rows;
+}
+
+/**
+ * Donde caen las paginas en un libro concreto. "Detras de la pagina N" se ajusta
+ * a lo que mida cada libro: si el de un alumno es mas corto, van al final en vez
+ * de dejar un hueco en la numeracion.
+ */
+async function posicionEn(client: pg.PoolClient, destinoId: string, input: DistributeInput): Promise<PosicionCopia> {
+  if (input.position !== 'despues') return input.position;
+  const { rows } = await client.query<{ ultima: number }>(
+    'SELECT COALESCE(MAX(page_number), 0) AS ultima FROM pages WHERE book_id = $1',
+    [destinoId],
+  );
+  return { despuesDe: Math.min(input.afterPage ?? 0, Number(rows[0].ultima)) };
 }
 
 
@@ -88,7 +109,10 @@ export async function distribute(
   await requireManager(libraryId, teacherId);
 
   const fuente = await cargarFuente(input.sourceBookId, teacherId);
-  const paginas = await cargarPaginas(input.sourceBookId, input.pageId);
+  const paginas = await cargarPaginas(
+    input.sourceBookId,
+    input.pageIds ?? (input.pageId ? [input.pageId] : null),
+  );
   const titulo = input.title ?? fuente.title;
 
   // Sin lista explicita va a toda la clase, que es el caso normal.
@@ -147,9 +171,17 @@ export async function distribute(
           resultado.updated += 1;
         } else {
           const creado = await client.query<{ id: string }>(
-            `INSERT INTO books (title, library_id, creator_id, layout_format, origin_book_id)
-             VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-            [titulo, libraryId, alumnoId, fuente.layout_format, fuente.id],
+            `INSERT INTO books (title, library_id, creator_id, layout_format, origin_book_id, page_numbering)
+             VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+            [
+              titulo,
+              libraryId,
+              alumnoId,
+              fuente.layout_format,
+              fuente.id,
+              // El libro de la entrega se numera como el material del que sale.
+              fuente.page_numbering ? JSON.stringify(fuente.page_numbering) : null,
+            ],
           );
           destinos.push(creado.rows[0].id);
           resultado.created += 1;
@@ -157,7 +189,7 @@ export async function distribute(
       }
 
       for (const destinoId of destinos) {
-        resultado.pages += await copiarPaginas(client, paginas, destinoId, input.position);
+        resultado.pages += await copiarPaginas(client, paginas, destinoId, await posicionEn(client, destinoId, input));
         await client.query('UPDATE books SET updated_at = CURRENT_TIMESTAMP WHERE id = $1', [destinoId]);
       }
       resultado.books += destinos.length;

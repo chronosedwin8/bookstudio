@@ -2,7 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import PagePreview from './PagePreview.vue';
 import { construirVistas, paginaDe, vistaDe, type Vista } from '@/utils/pliegos';
-import type { AnswerResult, Page } from '@/types/api';
+import type { AnswerResult, Page, PageNumbering } from '@/types/api';
 
 /**
  * El libro abierto del lector: doble pagina y hoja que gira sobre el lomo.
@@ -22,6 +22,8 @@ const props = defineProps<{
   /** Pagina abierta ahora mismo, por indice. */
   modelValue: number;
   checkAnswer?: (elementId: string, answer: string[]) => Promise<AnswerResult>;
+  /** Numeracion de paginas del libro. */
+  numbering?: PageNumbering | null;
 }>();
 
 const emit = defineEmits<{
@@ -232,6 +234,9 @@ const medidas = computed(() => ({ width: `${anchoPagina.value}px`, height: `${al
         :background-color="pagina(fondo.izquierda)!.backgroundColor"
         :background-pattern="pagina(fondo.izquierda)!.backgroundPattern"
         :elements="pagina(fondo.izquierda)!.elements"
+        :numbering="numbering"
+        :page-number="pagina(fondo.izquierda)!.pageNumber"
+        :total-pages="pages.length"
         :aspect-ratio="aspectRatio"
         :width="anchoPagina"
         interactive
@@ -248,6 +253,9 @@ const medidas = computed(() => ({ width: `${anchoPagina.value}px`, height: `${al
         :background-color="pagina(fondo.derecha)!.backgroundColor"
         :background-pattern="pagina(fondo.derecha)!.backgroundPattern"
         :elements="pagina(fondo.derecha)!.elements"
+        :numbering="numbering"
+        :page-number="pagina(fondo.derecha)!.pageNumber"
+        :total-pages="pages.length"
         :aspect-ratio="aspectRatio"
         :width="anchoPagina"
         interactive
@@ -275,6 +283,9 @@ const medidas = computed(() => ({ width: `${anchoPagina.value}px`, height: `${al
           :background-color="pagina(giro.frente)!.backgroundColor"
           :background-pattern="pagina(giro.frente)!.backgroundPattern"
           :elements="pagina(giro.frente)!.elements"
+          :numbering="numbering"
+          :page-number="pagina(giro.frente)!.pageNumber"
+          :total-pages="pages.length"
           :aspect-ratio="aspectRatio"
           :width="anchoPagina"
           en-vuelo
@@ -288,6 +299,9 @@ const medidas = computed(() => ({ width: `${anchoPagina.value}px`, height: `${al
           :background-color="pagina(giro.dorso)!.backgroundColor"
           :background-pattern="pagina(giro.dorso)!.backgroundPattern"
           :elements="pagina(giro.dorso)!.elements"
+          :numbering="numbering"
+          :page-number="pagina(giro.dorso)!.pageNumber"
+          :total-pages="pages.length"
           :aspect-ratio="aspectRatio"
           :width="anchoPagina"
           en-vuelo
