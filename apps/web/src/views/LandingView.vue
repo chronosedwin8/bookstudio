@@ -8,6 +8,7 @@ import { billingApi } from '@/services/api';
 import type { BillingPlan } from '@/types/api';
 import { FAQS, FEATURES, MARKETING_POR_DEFECTO, PLAN_MARKETING, SITE, STEPS, USE_CASES } from '@/utils/site';
 import { notaDelPrecio, periodoTexto, pesos, precioDestacado } from '@/utils/precio';
+import { DOCUMENTOS_LEGALES, TITULAR } from '@/utils/legal';
 
 const auth = useAuthStore();
 const router = useRouter();
@@ -427,7 +428,7 @@ const NAV = [
     </main>
 
     <footer class="border-t border-slate-200 bg-slate-50 py-10">
-      <div class="mx-auto grid max-w-6xl gap-8 px-4 sm:grid-cols-3">
+      <div class="mx-auto grid max-w-6xl gap-8 px-4 sm:grid-cols-2 lg:grid-cols-4">
         <div>
           <p class="flex items-center gap-2 font-black text-brand-700">
             <span class="grid h-7 w-7 place-items-center rounded-lg bg-brand-600 text-sm text-white">B</span>
@@ -452,10 +453,22 @@ const NAV = [
             <li><RouterLink :to="{ name: 'billing' }" class="hover:text-brand-700">Mi licencia y facturas</RouterLink></li>
           </ul>
         </nav>
+
+        <nav aria-label="Legal">
+          <h2 class="text-sm font-bold text-slate-800">Legal</h2>
+          <ul class="mt-2 space-y-1 text-sm text-slate-600">
+            <li v-for="d in DOCUMENTOS_LEGALES" :key="d.slug">
+              <RouterLink :to="{ name: d.ruta }" class="hover:text-brand-700">{{ d.titulo }}</RouterLink>
+            </li>
+            <li>
+              <a :href="`mailto:${TITULAR.correo}`" class="hover:text-brand-700">{{ TITULAR.correo }}</a>
+            </li>
+          </ul>
+        </nav>
       </div>
 
       <p class="mt-8 text-center text-xs text-slate-500">
-        {{ SITE.name }} · Libros interactivos para el aula y el trabajo.
+        © {{ new Date().getFullYear() }} {{ TITULAR.nombre }} · {{ SITE.name }}, libros interactivos para el aula y el trabajo.
       </p>
     </footer>
   </div>

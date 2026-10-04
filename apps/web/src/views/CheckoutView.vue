@@ -7,6 +7,7 @@ import { billingApi } from '@/services/api';
 import { errorMessage } from '@/services/http';
 import { useAuthStore } from '@/stores/auth';
 import { SITE } from '@/utils/site';
+import { DIAS_REEMBOLSO } from '@/utils/legal';
 import type { BillingConfig, BillingPlan } from '@/types/api';
 import { duracionTexto, pesos } from '@/utils/precio';
 
@@ -160,6 +161,15 @@ onMounted(async () => {
                 Este plan todavía no tiene enlace de pago. Escríbenos a
                 <a :href="`mailto:${correo}`" class="font-semibold underline">{{ correo }}</a>
                 y te lo enviamos.
+              </p>
+
+              <p class="mt-3 text-xs leading-relaxed text-slate-500">
+                Al pagar aceptas los
+                <RouterLink :to="{ name: 'legal-terminos' }" class="underline hover:text-brand-700">términos del servicio</RouterLink>
+                y el
+                <RouterLink :to="{ name: 'legal-privacidad' }" class="underline hover:text-brand-700">aviso de privacidad</RouterLink>.
+                Tienes {{ DIAS_REEMBOLSO }} días para pedir la devolución:
+                <RouterLink :to="{ name: 'legal-reembolsos' }" class="underline hover:text-brand-700">política de reembolsos</RouterLink>.
               </p>
             </div>
           </section>
