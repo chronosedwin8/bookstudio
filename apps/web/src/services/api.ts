@@ -58,7 +58,6 @@ import type {
   MediaSearchResponse,
   Page,
   PageNumbering,
-  IntentoPaddle,
   ShareState,
   ShareVisibility,
   SharedBook,
@@ -577,22 +576,6 @@ export const phidiasApi = {
 export const billingApi = {
   async config() {
     const { data } = await http.get<BillingConfig>('/billing/config');
-    return data;
-  },
-  /** Abre el pago de un plan con Paddle (hace falta sesion). */
-  async paddlePlan(plan: string, organization?: string) {
-    const { data } = await http.post<IntentoPaddle>('/billing/paddle/plan', { plan, organization });
-    return data;
-  },
-  /** Abre el pago de una cuenta de cobro con Paddle. */
-  async paddleCharge(chargeId: string) {
-    const { data } = await http.post<IntentoPaddle>(`/billing/paddle/charge/${chargeId}`);
-    return data;
-  },
-  async paddleIntent(reference: string) {
-    const { data } = await http.get<{ estado: 'pagado' | 'esperando' | 'revisar'; kind: 'plan' | 'charge' }>(
-      `/billing/paddle/intents/${reference}`,
-    );
     return data;
   },
   async subscription() {

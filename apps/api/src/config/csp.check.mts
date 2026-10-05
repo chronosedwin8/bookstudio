@@ -17,17 +17,7 @@ const check = (nombre: string, ok: boolean, detalle = '') => {
 const d = CSP_DIRECTIVES as Record<string, string[]>;
 
 // --- Sin cobro dentro de la aplicacion, nada de Mercado Pago aqui ---
-check(
-  'solo scripts propios y Paddle.js',
-  d.scriptSrc.length === 2 && d.scriptSrc.includes("'self'") && d.scriptSrc.includes('https://cdn.paddle.com'),
-);
-check('ni scripts de Mercado Pago', !d.scriptSrc.some((o) => /mercadopago|mlstatic/.test(o)));
-check('Paddle puede hablar con su API', d.connectSrc.includes('https://*.paddle.com'));
-check(
-  'sin la analitica de Paddle (ProfitWell): el aviso de privacidad dice que no hay',
-  ![...d.scriptSrc, ...d.connectSrc].some((o) => /profitwell/.test(o)),
-);
-check('y su ventana de pago cabe en un iframe', d.frameSrc.includes('https:'));
+check('solo scripts propios', d.scriptSrc.length === 1 && d.scriptSrc[0] === "'self'");
 check(
   'ni conexiones a Mercado Pago',
   !d.connectSrc.some((o) => /mercadopago|mercadolibre|mlstatic/.test(o)),

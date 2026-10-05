@@ -710,16 +710,7 @@ export interface BillingConfig {
   currency: string;
   /** A donde se manda el comprobante tras pagar con el enlace. */
   contactEmail: string;
-  /** Paddle, segundo medio de pago. El token es publico: lo usa Paddle.js. */
-  paddle?: { enabled: boolean; clientToken: string | null; environment: 'production' | 'sandbox' };
   plans: BillingPlan[];
-}
-
-/** Un pago abierto en Paddle: el cobro que abre su ventana de pago. */
-export interface IntentoPaddle {
-  reference: string;
-  transactionId: string;
-  email: string | null;
 }
 
 /** Enlace de pago de Mercado Pago para un importe exacto. */

@@ -9,7 +9,7 @@ import { DOCUMENTOS_LEGALES, TITULAR, VIGENCIA } from '@/utils/legal';
  *
  * Una sola vista para los tres: la ruta dice cual (`meta.documento`). Son
  * paginas publicas, sin sesion, y se enlazan desde el pie de la portada y desde
- * la pagina de contratar, que es lo que pide la revision de dominio de Paddle.
+ * la pagina de contratar.
  */
 const route = useRoute();
 

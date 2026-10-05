@@ -16,7 +16,7 @@ const cambiarClave = ref(false);
  * Si ademas se pintaba esta, quien tenia la sesion abierta veia dos barras
  * apiladas, las dos con el mismo logotipo. Manda la de la pagina.
  */
-const SIN_CABECERA = new Set(['landing', 'legal-terminos', 'legal-privacidad', 'legal-reembolsos', 'paddle-pay']);
+const SIN_CABECERA = new Set(['landing', 'legal-terminos', 'legal-privacidad', 'legal-reembolsos']);
 const conCabecera = computed(
   () => auth.isAuthenticated && !SIN_CABECERA.has(String(route.name ?? '')),
 );

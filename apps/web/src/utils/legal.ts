@@ -4,7 +4,7 @@
  *
  * Viven aqui, como contenido, y no dentro de la vista: asi se revisan y se
  * cambian en un solo sitio, y la portada, el pie y la pagina de contratar
- * enlazan a lo mismo. Paddle exige que la web los enlace desde la portada.
+ * enlazan a lo mismo.
  *
  * Lo que se afirma sobre el tratamiento de datos tiene que ser cierto en el
  * codigo: si se añade un proveedor que reciba datos, va en ENCARGADOS.
@@ -46,7 +46,7 @@ const ENCARGADOS = [
   'Microsoft (Entra ID): solo si el centro activa el acceso con la cuenta institucional; recibimos el nombre y el correo de quien entra.',
   'Phidias: solo si el centro conecta su sistema académico; de ahí importamos nombres, correos y cursos del alumnado y del profesorado.',
   'Magnific y Anthropic: solo al usar las funciones de creación de imágenes e ilustraciones con inteligencia artificial; reciben la descripción que se escribe, no los datos de la cuenta.',
-  'Paddle y Mercado Pago: procesan los pagos. Los datos de la tarjeta o de la cuenta bancaria los reciben ellos directamente; nosotros no los vemos ni los guardamos.',
+  'Mercado Pago: procesa los pagos. Los datos de la tarjeta o de la cuenta bancaria los recibe directamente; nosotros no los vemos ni los guardamos.',
   'OpenStreetMap y Openverse: sirven los mapas y el buscador de imágenes libres; reciben la búsqueda y la dirección IP de quien la hace.',
 ];
 
@@ -82,8 +82,7 @@ export const TERMINOS: DocumentoLegal = {
       titulo: '4. Planes, precios y pago',
       parrafos: [
         'Los planes, sus cupos y sus precios son los que se publican en la portada y en la página de contratar en el momento de la compra. Las licencias se contratan por periodos (normalmente un año) y dan acceso al servicio durante ese periodo.',
-        'Nuestro proceso de pedidos lo lleva a cabo nuestro revendedor en línea Paddle.com. Paddle.com es el comerciante registrado (Merchant of Record) de todos los pedidos que se pagan a través de Paddle, y gestiona las consultas sobre esos pagos y sus devoluciones.',
-        `Las cuentas de cobro institucionales también pueden pagarse mediante enlaces de pago de Mercado Pago. En ese caso el pago lo procesa Mercado Pago y el vendedor es ${nombre}.`,
+        `Las licencias y las cuentas de cobro institucionales se pagan mediante enlaces de pago de Mercado Pago. El pago lo procesa Mercado Pago y el vendedor es ${nombre}.`,
         'Los impuestos aplicables se indican en el momento del pago. Si una licencia se renueva, el precio de la renovación será el vigente en ese momento, y lo verás antes de pagar.',
       ],
     },
@@ -166,7 +165,7 @@ export const PRIVACIDAD: DocumentoLegal = {
         'Datos académicos que aporta el centro: curso o grupo y bibliotecas a las que perteneces.',
         'Contenido: los libros, páginas, textos, imágenes, grabaciones de voz, de cámara o de pantalla y respuestas a preguntas que creas o subes.',
         'Seguimiento del trabajo: valoraciones y notas que pone el profesorado, y el registro de cuándo y cuánto tiempo se trabaja en cada libro.',
-        'Datos de facturación: nombre o razón social, NIT o documento, dirección y correo de facturación, y el historial de pagos. Los datos de la tarjeta no los recibimos: los tratan directamente Paddle o Mercado Pago.',
+        'Datos de facturación: nombre o razón social, NIT o documento, dirección y correo de facturación, y el historial de pagos. Los datos de la tarjeta no los recibimos: los trata directamente Mercado Pago.',
         'Datos técnicos: dirección IP y registros del servidor necesarios para la seguridad y para resolver errores.',
       ],
     },
@@ -251,14 +250,13 @@ export const REEMBOLSOS: DocumentoLegal = {
       titulo: '2. Cómo pedirla',
       lista: [
         `Escríbenos a ${correo} desde el correo de la cuenta o el de facturación, indicando el plan y la fecha de compra (o el número de la cuenta de cobro).`,
-        'Si pagaste a través de Paddle, también puedes pedirla directamente a Paddle desde el correo de confirmación de tu compra: Paddle es el comerciante registrado de esos pedidos y tramita su devolución.',
         'Confirmaremos la solicitud en un plazo de tres días hábiles.',
       ],
     },
     {
       titulo: '3. Cómo se devuelve',
       parrafos: [
-        'Devolvemos el dinero por el mismo medio con el que se pagó (Paddle o Mercado Pago). Una vez aprobada, el abono suele verse en tu cuenta o tarjeta en un plazo de 5 a 10 días hábiles, según tu banco.',
+        'Devolvemos el dinero por el mismo medio con el que se pagó, a través de Mercado Pago. Una vez aprobada, el abono suele verse en tu cuenta o tarjeta en un plazo de 5 a 10 días hábiles, según tu banco.',
         'Al reembolsar una licencia, esta se cancela y dejan de estar disponibles las funciones del plan. Tus libros no se borran: puedes exportarlos o volver a contratar más adelante.',
       ],
     },

@@ -121,9 +121,7 @@ const routes: RouteRecordRaw[] = [
     name: 'book-shared',
     component: () => import('@/views/BookReaderView.vue'),
   },
-  // Enlace de pago por defecto de Paddle: abre la ventana de pago de ?_ptxn=.
-  { path: '/pagar', name: 'paddle-pay', component: () => import('@/views/PagarView.vue') },
-  // Textos legales: publicos y enlazados desde la portada (lo exige Paddle).
+  // Textos legales: publicos y enlazados desde la portada.
   { path: '/terminos', name: 'legal-terminos', component: () => import('@/views/LegalView.vue'), meta: { documento: 'terminos' } },
   { path: '/privacidad', name: 'legal-privacidad', component: () => import('@/views/LegalView.vue'), meta: { documento: 'privacidad' } },
   { path: '/reembolsos', name: 'legal-reembolsos', component: () => import('@/views/LegalView.vue'), meta: { documento: 'reembolsos' } },

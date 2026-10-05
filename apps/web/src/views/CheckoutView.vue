@@ -10,7 +10,6 @@ import { SITE } from '@/utils/site';
 import { DIAS_REEMBOLSO } from '@/utils/legal';
 import type { BillingConfig, BillingPlan } from '@/types/api';
 import { duracionTexto, pesos } from '@/utils/precio';
-import { abrirPago, esperarConfirmacion } from '@/utils/paddle';
 
 /**
  * Contratar: elegir plan, pagarlo con su enlace de Mercado Pago y mandar el
@@ -65,43 +64,6 @@ const mailtoComprobante = computed(() => {
   return `mailto:${correo.value}?subject=${encodeURIComponent(asunto)}&body=${encodeURIComponent(cuerpo)}`;
 });
 
-/* --- Pagar con Paddle, la alternativa a Mercado Pago --- */
-
-const paddle = computed(() => (config.value?.paddle?.enabled && config.value.paddle.clientToken ? config.value.paddle : null));
-const pagandoPaddle = ref(false);
-/** null: sin empezar · esperando: cobrado en la ventana, confirmando · pagado · revisar */
-const estadoPaddle = ref<'esperando' | 'pagado' | 'revisar' | null>(null);
-const errorPaddle = ref<string | null>(null);
-
-/** Volver aqui, con el plan elegido, despues de entrar o crear la cuenta. */
-const vueltaTrasEntrar = computed(() => ({ name: 'login', query: { redirect: `/contratar?plan=${plan.value?.id ?? ''}` } }));
-
-async function pagarConPaddle(): Promise<void> {
-  if (!plan.value || !paddle.value) return;
-  pagandoPaddle.value = true;
-  errorPaddle.value = null;
-  estadoPaddle.value = null;
-  try {
-    const intento = await billingApi.paddlePlan(plan.value.id);
-    const fin = await abrirPago(
-      { clientToken: paddle.value.clientToken!, environment: paddle.value.environment },
-      intento.transactionId,
-      intento.email,
-      () => (estadoPaddle.value = 'esperando'),
-    );
-    if (fin !== 'completado') {
-      if (fin === 'error') errorPaddle.value = 'Paddle no pudo completar el pago. No se te ha cobrado; puedes intentarlo de nuevo.';
-      return;
-    }
-    estadoPaddle.value = 'esperando';
-    estadoPaddle.value = await esperarConfirmacion(() => billingApi.paddleIntent(intento.reference));
-  } catch (err) {
-    errorPaddle.value = errorMessage(err);
-  } finally {
-    pagandoPaddle.value = false;
-  }
-}
-
 onMounted(async () => {
   try {
     config.value = await billingApi.config();
@@ -135,7 +97,6 @@ onMounted(async () => {
       <p class="mt-2 text-slate-600">
         Elige tu plan y págalo con el enlace seguro de Mercado Pago. <strong>No necesitas cuenta de Mercado
         Pago</strong>: puedes pagar con tarjeta de crédito o débito, PSE o Efecty.
-        <span v-if="paddle"> También puedes pagar con <strong>Paddle</strong>, con tarjeta internacional, y la licencia se activa sola.</span>
       </p>
 
       <AlertMessage class="mt-4" :message="error" />
@@ -174,9 +135,7 @@ onMounted(async () => {
         <template v-else>
           <!-- 2. Pagar -->
           <section class="mt-10">
-            <h2 class="text-sm font-bold uppercase tracking-wide text-slate-500">
-              2 · Paga con Mercado Pago{{ paddle ? ' o con Paddle' : '' }}
-            </h2>
+            <h2 class="text-sm font-bold uppercase tracking-wide text-slate-500">2 · Paga con Mercado Pago</h2>
             <div class="card mt-3 p-5">
               <div class="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
                 <p class="font-bold text-slate-800">Plan {{ plan.name }}</p>
@@ -203,45 +162,6 @@ onMounted(async () => {
                 <a :href="`mailto:${correo}`" class="font-semibold underline">{{ correo }}</a>
                 y te lo enviamos.
               </p>
-
-              <!-- Paddle: tarjeta internacional y otros medios, sin comprobante que enviar -->
-              <div v-if="paddle" class="mt-5 border-t border-slate-100 pt-4">
-                <p class="text-sm font-semibold text-slate-700">O paga con Paddle</p>
-                <p class="mt-0.5 text-xs leading-relaxed text-slate-500">
-                  Tarjeta de crédito o débito (también internacional) y los demás medios que ofrezca Paddle en tu país.
-                  La licencia se activa sola al confirmarse el pago: no hace falta enviar comprobante.
-                </p>
-
-                <AlertMessage class="mt-3" :message="errorPaddle" />
-                <p v-if="estadoPaddle === 'pagado'" class="mt-3 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">
-                  ¡Pago confirmado! Tu licencia del plan {{ plan.name }} ya está activa.
-                  <RouterLink :to="{ name: 'dashboard' }" class="font-semibold underline">Ir a mis libros</RouterLink>
-                </p>
-                <p v-else-if="estadoPaddle === 'revisar'" class="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-800">
-                  Hemos recibido el pago, pero hay que revisarlo a mano antes de activar la licencia. Te escribimos en
-                  menos de un día hábil; si quieres, escríbenos a <a :href="`mailto:${correo}`" class="underline">{{ correo }}</a>.
-                </p>
-                <p v-else-if="estadoPaddle === 'esperando'" class="mt-3 rounded-lg bg-sky-50 p-3 text-sm text-sky-800">
-                  {{ pagandoPaddle ? 'Confirmando el pago con Paddle…' : 'Paddle todavía no nos ha confirmado el pago. Se activará solo en cuanto llegue; puedes cerrar esta página.' }}
-                </p>
-
-                <template v-if="estadoPaddle !== 'pagado'">
-                  <button
-                    v-if="tieneCuenta"
-                    type="button"
-                    class="btn-secondary mt-3 w-full py-3 text-base"
-                    :disabled="pagandoPaddle"
-                    @click="pagarConPaddle"
-                  >{{ pagandoPaddle ? 'Abriendo el pago…' : `Pagar ${pesos(plan.amountCop)} con Paddle` }}</button>
-                  <p v-else class="mt-3 rounded-lg bg-slate-50 p-3 text-sm text-slate-600">
-                    Para pagar con Paddle, la licencia se activa en tu cuenta:
-                    <RouterLink :to="vueltaTrasEntrar" class="font-semibold text-brand-700 underline">entra</RouterLink>
-                    o
-                    <RouterLink :to="{ name: 'register' }" class="font-semibold text-brand-700 underline">crea tu cuenta</RouterLink>
-                    y vuelve aquí.
-                  </p>
-                </template>
-              </div>
 
               <p class="mt-3 text-xs leading-relaxed text-slate-500">
                 Al pagar aceptas los
