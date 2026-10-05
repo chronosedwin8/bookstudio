@@ -102,7 +102,11 @@ billingRouter.post(
     }
     const evento = String(req.body?.event_type ?? '');
     const id = String(req.body?.data?.id ?? '');
-    if (evento.startsWith('transaction.') && id.startsWith('txn_')) {
+    // El cuerpo ya esta firmado, asi que se puede filtrar por el: los cobros de los
+    // otros productos de la cuenta no llevan nuestra referencia y no cuestan ni
+    // una consulta a Paddle.
+    const nuestro = String(req.body?.data?.custom_data?.bookstudio_ref ?? '').startsWith('bs-pd-');
+    if (nuestro && evento.startsWith('transaction.') && id.startsWith('txn_')) {
       const tx = await leerTransaccion(id);
       await pagoPaddle.aplicarTransaccion(tx);
     }
