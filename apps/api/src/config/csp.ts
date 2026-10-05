@@ -22,6 +22,11 @@ export const CSP_DIRECTIVES = {
    * ventana de pago de Paddle (un iframe de buy.paddle.com, que ya cabe en
    * frameSrc) y habla con su API. Solo su CDN, no cualquier origen.
    *
+   * Paddle.js intenta cargar tambien ProfitWell (public.profitwell.com), la
+   * analitica de retencion de Paddle. Se deja BLOQUEADO a proposito: el pago no
+   * lo necesita y el aviso de privacidad dice que no hay analitica. El navegador
+   * lo anota en la consola; es esperado.
+   *
    * Antes: solo scripts propios. Hasta el 30 de septiembre de 2026 se abria a Mercado
    * Pago para montar su formulario de tarjeta; desde que se cobra con enlaces de
    * pago (que se abren en su propia pagina) ya no hace falta, y cada dominio de

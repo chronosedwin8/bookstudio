@@ -23,6 +23,10 @@ check(
 );
 check('ni scripts de Mercado Pago', !d.scriptSrc.some((o) => /mercadopago|mlstatic/.test(o)));
 check('Paddle puede hablar con su API', d.connectSrc.includes('https://*.paddle.com'));
+check(
+  'sin la analitica de Paddle (ProfitWell): el aviso de privacidad dice que no hay',
+  ![...d.scriptSrc, ...d.connectSrc].some((o) => /profitwell/.test(o)),
+);
 check('y su ventana de pago cabe en un iframe', d.frameSrc.includes('https:'));
 check(
   'ni conexiones a Mercado Pago',
