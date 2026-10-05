@@ -14,6 +14,9 @@
 #   MP_PUBLIC_KEY            clave publica de Mercado Pago (viaja al navegador)
 #   MP_ACCESS_TOKEN          token de acceso; nunca sale del servidor
 #   MP_WEBHOOK_SECRET        firma de los avisos de pago
+#   PADDLE_API_KEY           clave de la API de Paddle; nunca sale del servidor
+#   PADDLE_CLIENT_TOKEN      token de cliente de Paddle.js (publico, viaja al navegador)
+#   PADDLE_WEBHOOK_SECRET    firma de los avisos de Paddle
 #
 # Para guardar el contenido multimedia en S3 (recomendado):
 #   S3_BUCKET                nombre del bucket
@@ -94,6 +97,13 @@ services:
       MP_ACCESS_TOKEN: ${MP_ACCESS_TOKEN:-}
       MP_WEBHOOK_SECRET: ${MP_WEBHOOK_SECRET:-}
       MP_WEBHOOK_URL: ${MP_WEBHOOK_URL:-}
+      # Paddle, segundo medio de pago (junto a los enlaces de Mercado Pago). Sin
+      # PADDLE_API_KEY y PADDLE_CLIENT_TOKEN no se ofrece. El token de cliente es
+      # publico; la clave y el secreto de avisos nunca salen del servidor.
+      PADDLE_API_KEY: ${PADDLE_API_KEY:-}
+      PADDLE_CLIENT_TOKEN: ${PADDLE_CLIENT_TOKEN:-}
+      PADDLE_WEBHOOK_SECRET: ${PADDLE_WEBHOOK_SECRET:-}
+      PADDLE_ENV: ${PADDLE_ENV:-production}
 
       # Almacenamiento del contenido multimedia. Sin S3_BUCKET todo va al disco del
       # servidor, que crece sin control y se pierde al recrear la maquina.

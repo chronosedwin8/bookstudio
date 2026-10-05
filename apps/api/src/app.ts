@@ -68,7 +68,18 @@ export function createApp() {
     }),
   );
   app.use(cors({ origin: corsOrigin, credentials: true }));
-  app.use(express.json({ limit: '90mb' }));
+  app.use(
+    express.json({
+      limit: '90mb',
+      // El aviso de Paddle se firma sobre el cuerpo tal cual llego: se guarda solo
+      // para esa ruta, el resto de peticiones no paga la copia.
+      verify: (req, _res, buf) => {
+        if ((req as { url?: string }).url?.startsWith('/api/billing/paddle/webhook')) {
+          (req as unknown as { rawBody?: Buffer }).rawBody = Buffer.from(buf);
+        }
+      },
+    }),
+  );
   app.use(morgan(isProduction ? 'combined' : 'dev'));
 
   app.use(

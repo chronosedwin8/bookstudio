@@ -9,6 +9,9 @@ import * as service from './billing.service.js';
 import { verifyWebhookSignature } from './mercadopago.service.js';
 import { borrarEnlace, enlaceParaImporte, guardarEnlace, listarEnlaces } from './payment-links.service.js';
 import { listPlans, listVisiblePlans, updatePlan } from './plans.js';
+import * as pagoPaddle from './pago-paddle.service.js';
+import { firmaValida, leerTransaccion } from './paddle.service.js';
+import { getCharge } from '../clients/clients.service.js';
 
 /**
  * Cobros.
@@ -38,6 +41,8 @@ billingRouter.get(
     res.json({
       currency: 'COP',
       contactEmail: 'hola@bookstudio.uk',
+      // Paddle, segundo medio de pago: el token es publico, lo usa Paddle.js.
+      paddle: pagoPaddle.configuracionPublica(),
       plans: await Promise.all(
         planes.map(async (p) => ({
           id: p.id,
@@ -81,7 +86,64 @@ billingRouter.post(
   }),
 );
 
+/**
+ * Aviso de Paddle. Llega firmado (Paddle-Signature) sobre el cuerpo tal cual, que
+ * app.ts guarda en `rawBody` solo para esta ruta. Aun con la firma buena, el
+ * estado se vuelve a leer de la API de Paddle: el aviso solo dice que cobro mirar.
+ * La cuenta de Paddle es compartida con otros productos: lo que no es de
+ * BookStudio se contesta 200 y se ignora, para que Paddle no lo reintente.
+ */
+billingRouter.post(
+  '/paddle/webhook',
+  asyncHandler(async (req, res) => {
+    const crudo = (req as unknown as { rawBody?: Buffer }).rawBody;
+    if (!crudo || !firmaValida(req.header('paddle-signature'), crudo, env.PADDLE_WEBHOOK_SECRET)) {
+      throw HttpError.unauthorized('Firma del aviso no válida');
+    }
+    const evento = String(req.body?.event_type ?? '');
+    const id = String(req.body?.data?.id ?? '');
+    if (evento.startsWith('transaction.') && id.startsWith('txn_')) {
+      const tx = await leerTransaccion(id);
+      await pagoPaddle.aplicarTransaccion(tx);
+    }
+    res.status(200).json({ received: true });
+  }),
+);
+
 billingRouter.use(requireAuth);
+
+const planPaddleSchema = z.object({
+  plan: z.string().trim().min(1).max(40),
+  organization: z.string().trim().max(160).optional(),
+});
+
+/** Abre el pago de un plan con Paddle. Devuelve el cobro que abre Paddle.js. */
+billingRouter.post(
+  '/paddle/plan',
+  validate(planPaddleSchema),
+  asyncHandler(async (req, res) => {
+    res.status(201).json(await pagoPaddle.crearIntentoPlan(req.auth!.userId, req.body.plan, req.body.organization));
+  }),
+);
+
+/** Abre el pago de una cuenta de cobro con Paddle. Solo la de la propia organizacion. */
+billingRouter.post(
+  '/paddle/charge/:id',
+  validate(z.object({ id: z.string().uuid('Cuenta de cobro no válida') }), 'params'),
+  asyncHandler(async (req, res) => {
+    const cobro = await getCharge(req.auth!.userId, req.auth!.role, req.params.id);
+    res.status(201).json(await pagoPaddle.crearIntentoCobro(req.auth!.userId, cobro));
+  }),
+);
+
+/** Como va un pago con Paddle: la pantalla lo pregunta al cerrar la ventana de pago. */
+billingRouter.get(
+  '/paddle/intents/:reference',
+  validate(z.object({ reference: z.string().regex(/^bs-pd-[a-z0-9-]{1,74}$/, 'Referencia no válida') }), 'params'),
+  asyncHandler(async (req, res) => {
+    res.json(await pagoPaddle.consultarIntento(req.params.reference, { userId: req.auth!.userId, role: req.auth!.role }));
+  }),
+);
 
 /** Licencia vigente de quien consulta. */
 billingRouter.get(

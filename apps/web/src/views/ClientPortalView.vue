@@ -2,10 +2,11 @@
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import AlertMessage from '@/components/AlertMessage.vue';
-import { clientsApi } from '@/services/api';
+import { billingApi, clientsApi } from '@/services/api';
+import { abrirPago, esperarConfirmacion } from '@/utils/paddle';
 import { errorMessage } from '@/services/http';
 import { useAuthStore } from '@/stores/auth';
-import type { Charge, ClientPortal, TeamMember } from '@/types/api';
+import type { BillingConfig, Charge, ClientPortal, TeamMember } from '@/types/api';
 
 /**
  * Portal del cliente.
@@ -66,6 +67,49 @@ async function cargar(): Promise<void> {
 
 onMounted(cargar);
 watch(orgId, cargar);
+
+// --- Pagar una cuenta de cobro con Paddle (alternativa al enlace de Mercado Pago) ---
+
+const paddle = ref<NonNullable<BillingConfig['paddle']> | null>(null);
+onMounted(async () => {
+  try {
+    const c = await billingApi.config();
+    paddle.value = c.paddle?.enabled && c.paddle.clientToken ? c.paddle : null;
+  } catch {
+    // Sin la configuracion no se ofrece Paddle; Mercado Pago sigue disponible.
+  }
+});
+
+/** Cuenta que se esta pagando con Paddle y como va. */
+const pagoPaddle = ref<{ chargeId: string; estado: 'abriendo' | 'esperando' | 'pagado' | 'revisar'; error?: string } | null>(null);
+
+async function pagarConPaddle(c: Charge): Promise<void> {
+  if (!paddle.value) return;
+  pagoPaddle.value = { chargeId: c.id, estado: 'abriendo' };
+  try {
+    const intento = await billingApi.paddleCharge(c.id);
+    const fin = await abrirPago(
+      { clientToken: paddle.value.clientToken!, environment: paddle.value.environment },
+      intento.transactionId,
+      intento.email,
+      () => (pagoPaddle.value = { chargeId: c.id, estado: 'esperando' }),
+    );
+    if (fin !== 'completado') {
+      // Cerrada sin pagar: como si no hubiera pasado nada. Con error, se dice.
+      pagoPaddle.value =
+        fin === 'error'
+          ? { chargeId: c.id, estado: 'revisar', error: 'Paddle no pudo completar el pago. No se te ha cobrado.' }
+          : null;
+      return;
+    }
+    pagoPaddle.value = { chargeId: c.id, estado: 'esperando' };
+    const estado = await esperarConfirmacion(() => billingApi.paddleIntent(intento.reference));
+    pagoPaddle.value = { chargeId: c.id, estado };
+    if (estado === 'pagado') await cargar();
+  } catch (err) {
+    pagoPaddle.value = { chargeId: c.id, estado: 'revisar', error: errorMessage(err) };
+  }
+}
 
 // --- Licencia ---
 
@@ -454,11 +498,28 @@ function mailtoComprobante(cobro: Charge): string {
                   class="btn-primary"
                 >Pagar {{ cop.format(c.amountCop) }} en Mercado Pago ↗</a>
                 <a :href="mailtoComprobante(c)" class="btn-secondary">✉️ Enviar el comprobante</a>
+                <button
+                  v-if="paddle"
+                  type="button"
+                  class="btn-secondary"
+                  :disabled="pagoPaddle?.chargeId === c.id && (pagoPaddle.estado === 'abriendo' || pagoPaddle.estado === 'esperando')"
+                  @click="pagarConPaddle(c)"
+                >{{ pagoPaddle?.chargeId === c.id && pagoPaddle.estado === 'abriendo' && !pagoPaddle.error ? 'Abriendo el pago…' : 'Pagar con Paddle' }}</button>
               </div>
+              <p
+                v-if="pagoPaddle?.chargeId === c.id && (pagoPaddle.error || pagoPaddle.estado !== 'abriendo')"
+                class="mt-2 rounded-lg p-2 text-sm"
+                :class="pagoPaddle.error ? 'bg-red-50 text-red-700' : pagoPaddle.estado === 'esperando' ? 'bg-sky-50 text-sky-800' : 'bg-amber-50 text-amber-800'"
+              >
+                <template v-if="pagoPaddle.error">{{ pagoPaddle.error }}</template>
+                <template v-else-if="pagoPaddle.estado === 'esperando'">Confirmando el pago con Paddle… La cuenta se dará por pagada sola.</template>
+                <template v-else>Hemos recibido el pago, pero hay que revisarlo antes de darla por pagada. Te escribimos pronto.</template>
+              </p>
               <p class="mt-2 text-xs text-slate-500">
                 <template v-if="c.paymentLink">
                   Paga con tarjeta, PSE o Efecty, con o sin cuenta de Mercado Pago. Después envíanos el comprobante
-                  y la damos por pagada.
+                  y la damos por pagada.<template v-if="paddle"> Con Paddle (también tarjeta internacional) se da por
+                  pagada sola, sin comprobante.</template>
                 </template>
                 <template v-else>
                   Esta cuenta todavía no tiene enlace de pago: escríbenos a {{ CORREO_PAGOS }} y te lo enviamos.

@@ -12,19 +12,23 @@ export const CSP_DIRECTIVES = {
   objectSrc: ["'none'"],
   formAction: ["'self'"],
   frameAncestors: ["'self'"],
-  styleSrc: ["'self'", "'unsafe-inline'"],
+  styleSrc: ["'self'", "'unsafe-inline'", 'https://cdn.paddle.com'],
   fontSrc: ["'self'", 'data:'],
   imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
   mediaSrc: ["'self'", 'data:', 'blob:', 'https:'],
   workerSrc: ["'self'", 'blob:'],
   /*
-   * Solo scripts propios. Hasta el 30 de septiembre de 2026 se abria a Mercado
+   * Desde el 5 de octubre de 2026, ademas de los propios, Paddle.js: abre la
+   * ventana de pago de Paddle (un iframe de buy.paddle.com, que ya cabe en
+   * frameSrc) y habla con su API. Solo su CDN, no cualquier origen.
+   *
+   * Antes: solo scripts propios. Hasta el 30 de septiembre de 2026 se abria a Mercado
    * Pago para montar su formulario de tarjeta; desde que se cobra con enlaces de
    * pago (que se abren en su propia pagina) ya no hace falta, y cada dominio de
    * menos es una puerta de menos.
    */
-  scriptSrc: ["'self'"],
-  connectSrc: ["'self'", 'https://tile.openstreetmap.org'],
+  scriptSrc: ["'self'", 'https://cdn.paddle.com'],
+  connectSrc: ["'self'", 'https://tile.openstreetmap.org', 'https://*.paddle.com'],
 
   // Que se puede incrustar lo decide el servidor en embeds.ts, con lista cerrada de
   // proveedores. Aqui basta con exigir https porque PeerTube y H5P se alojan en el

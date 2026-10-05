@@ -29,6 +29,14 @@ const envSchema = z.object({
   MP_WEBHOOK_URL: z.string().default(''),
   APP_URL: z.string().default('https://bookstudio.uk'),
 
+  // Paddle, segundo medio de pago. Sin PADDLE_API_KEY el boton no se ofrece.
+  // PADDLE_CLIENT_TOKEN es publico por diseno (lo usa Paddle.js en el navegador);
+  // PADDLE_WEBHOOK_SECRET firma los avisos de su destino de notificaciones.
+  PADDLE_API_KEY: z.string().default(''),
+  PADDLE_CLIENT_TOKEN: z.string().default(''),
+  PADDLE_WEBHOOK_SECRET: z.string().default(''),
+  PADDLE_ENV: z.enum(['production', 'sandbox']).default('production'),
+
   // Almacenamiento del contenido multimedia. Sin S3_BUCKET todo se guarda en el
   // disco del servidor, que es lo que hacia hasta ahora.
   S3_BUCKET: z.string().default(''),
