@@ -192,6 +192,13 @@ export async function quitarFondo(userId: string, fileUrl: string): Promise<stri
   if (!respuesta.ok) {
     if (respuesta.status === 401) throw HttpError.badGateway('La clave de Magnific no es valida; revisa MAGNIFIC_API_KEY');
     if (respuesta.status === 429) throw HttpError.badRequest('Magnific esta recibiendo demasiadas peticiones. Prueba en un minuto.');
+    // "Image cannot be loaded. Available decoders: ..." o "Failed to download":
+    // la imagen no es un mapa de bits que sepa leer, o no la pudo descargar.
+    if (/cannot be loaded|decoder|failed to download/i.test(datos.message ?? '')) {
+      throw HttpError.badRequest(
+        'La herramienta de IA no pudo leer esta imagen. Funciona con fotos PNG, JPG o WebP: si la imagen viene de otra web, súbela desde tu equipo y vuelve a intentarlo.',
+      );
+    }
     throw HttpError.badGateway(datos.message ?? `Magnific respondio ${respuesta.status}`);
   }
   const resultado = datos.high_resolution ?? datos.url;

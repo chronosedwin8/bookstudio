@@ -14,7 +14,7 @@ import RecorteDialog from '@/components/media/RecorteDialog.vue';
 import MarcosDialog from '@/components/media/MarcosDialog.vue';
 import RespuestasDialog from '@/components/canvas/RespuestasDialog.vue';
 import type { Marco } from '@/utils/marcos';
-import { vectorizar } from '@/utils/vectorizar';
+import { aPng, legibleParaIa, vectorizar } from '@/utils/vectorizar';
 import { ESTILOS_BASICOS, type EstiloTexto } from '@/utils/estilosTexto';
 import ShareDialog from '@/components/ShareDialog.vue';
 import BookGradesPanel from '@/components/library/BookGradesPanel.vue';
@@ -271,7 +271,15 @@ async function onHerramientaImagen(tipo: 'recortar' | 'quitar-fondo' | 'capas' |
       return;
     }
     procesandoImagen.value = 'Quitando el fondo con IA… (unos segundos)';
-    const sinFondo = await magnificApi.quitarFondo(fileUrl);
+    // Magnific solo lee PNG, JPEG y WebP: una imagen vectorizada (SVG) u otro
+    // formato se pasa antes a PNG aqui mismo.
+    let origen = fileUrl;
+    if (!legibleParaIa(fileUrl)) {
+      procesandoImagen.value = 'Preparando la imagen…';
+      origen = (await mediaApi.upload(await aPng(fileUrl))).fileUrl;
+      procesandoImagen.value = 'Quitando el fondo con IA… (unos segundos)';
+    }
+    const sinFondo = await magnificApi.quitarFondo(origen);
     if (tipo === 'quitar-fondo') {
       await editor.patchElement(el.id, { properties: { ...el.properties, fileUrl: sinFondo } });
       anunciar('Fondo quitado');
