@@ -22,6 +22,8 @@ const props = defineProps<{
   principal?: boolean;
   /** Puede bloquear y desbloquear (el profesorado). */
   bloqueable?: boolean;
+  /** Como se ve mientras se cambia el tamano de toda la seleccion. */
+  vista?: TransformMatrix | null;
 }>();
 
 const emit = defineEmits<{
@@ -33,7 +35,7 @@ const emit = defineEmits<{
   groupDrag: [dx: number, dy: number];
   groupCommit: [dx: number, dy: number];
   /** La barra flotante: duplicar, bloquear o borrar lo seleccionado. */
-  accion: [tipo: 'duplicar' | 'bloquear' | 'borrar', id: string];
+  accion: [tipo: 'duplicar' | 'bloquear' | 'borrar' | 'agrupar' | 'desagrupar', id: string];
   /** Clic sin arrastre dentro de un grupo: se queda solo este elemento. */
   selectOnly: [id: string];
 }>();
@@ -87,7 +89,7 @@ type Corner = 'nw' | 'ne' | 'se' | 'sw';
 type Side = 'n' | 's' | 'e' | 'w';
 
 const draft = ref<TransformMatrix | null>(null);
-const transform = computed(() => draft.value ?? props.element.transformMatrix);
+const transform = computed(() => draft.value ?? props.vista ?? props.element.transformMatrix);
 
 const boxStyle = computed(() => ({
   left: `${transform.value.x + (props.offsetX ?? 0)}%`,
@@ -205,6 +207,8 @@ let ultimaPulsacion = { t: 0, x: 0, y: 0 };
 
 function onDragStart(event: PointerEvent): void {
   const additive = event.shiftKey || event.ctrlKey || event.metaKey;
+  // Si ya estaba elegido, un clic limpio despues lo deja solo (entrar en el grupo).
+  const yaElegido = props.selected;
   emit('select', props.element.id, additive);
   // Con Shift solo se anade o quita de la seleccion; no se arrastra.
   if (additive) return;
@@ -219,7 +223,7 @@ function onDragStart(event: PointerEvent): void {
   ultimaPulsacion = { t: ahora, x: event.clientX, y: event.clientY };
 
   if (props.grouped) {
-    dragGroup(event);
+    dragGroup(event, yaElegido);
     return;
   }
 
@@ -232,7 +236,7 @@ function onDragStart(event: PointerEvent): void {
 }
 
 /** Arrastre de varios elementos: se emite el desplazamiento, no una transformacion. */
-function dragGroup(event: PointerEvent): void {
+function dragGroup(event: PointerEvent, yaElegido: boolean): void {
   if (!interactive.value || editingText.value) return;
   event.preventDefault();
   event.stopPropagation();
@@ -256,10 +260,11 @@ function dragGroup(event: PointerEvent): void {
     target.removeEventListener('pointerup', end);
     target.removeEventListener('pointercancel', end);
 
-    // Un clic limpio sobre un miembro del grupo lo deja como unica seleccion.
+    // Un clic limpio sobre un miembro de la seleccion lo deja como unica
+    // seleccion. El primer clic sobre un grupo no: ese es el que lo elige entero.
     if (Math.abs(dx) < 0.15 && Math.abs(dy) < 0.15) {
       emit('groupCommit', 0, 0);
-      emit('selectOnly', props.element.id);
+      if (yaElegido) emit('selectOnly', props.element.id);
       return;
     }
     emit('groupCommit', dx, dy);
@@ -376,7 +381,8 @@ function onRotateStart(event: PointerEvent): void {
     class="absolute select-none"
     :class="[
       interactive ? 'cursor-move' : 'cursor-default',
-      selected && 'outline outline-2 outline-offset-1 outline-brand-500',
+      // Con varios elegidos manda la caja comun: el contorno de cada uno, discreto.
+      selected && (grouped ? 'outline outline-1 outline-brand-400/50' : 'outline outline-2 outline-offset-1 outline-brand-500'),
       element.isLocked && selected && 'outline-amber-500',
       // Contorno discontinuo: se ve de un vistazo lo que el alumnado no vera.
       arrancaOculto && !selected && 'outline-dashed outline-2 outline-offset-2 outline-slate-400',
@@ -419,7 +425,8 @@ function onRotateStart(event: PointerEvent): void {
       :title="`Enlace: ${element.properties.linkUrl}`"
     >🔗</span>
 
-    <template v-if="selected && interactive">
+    <!-- Con varios elegidos los tiradores son los de la caja comun (FixedCanvas). -->
+    <template v-if="selected && interactive && !grouped">
       <button
         v-for="corner in CORNERS"
         :key="corner.id"
@@ -464,7 +471,7 @@ function onRotateStart(event: PointerEvent): void {
       pintar una por objeto cuando hay varios marcados (actua sobre todos).
     -->
     <div
-      v-if="selected && editable && principal && !editingText"
+      v-if="selected && editable && principal && !editingText && !grouped"
       class="barra-flotante absolute -top-12 left-1/2 z-50 flex -translate-x-1/2 items-center gap-0.5 rounded-full border border-slate-200 bg-white px-1.5 py-1 shadow-lg"
       @pointerdown.stop
     >

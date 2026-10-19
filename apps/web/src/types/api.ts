@@ -436,6 +436,8 @@ export interface TransformMatrix {
   width: number;
   height: number;
   angle: number;
+  /** Grupo: los elementos con el mismo valor se seleccionan, mueven y escalan juntos. */
+  group?: string;
 }
 
 export interface TextProperties {

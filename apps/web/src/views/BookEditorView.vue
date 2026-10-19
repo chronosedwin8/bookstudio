@@ -14,7 +14,8 @@ import RecorteDialog from '@/components/media/RecorteDialog.vue';
 import MarcosDialog from '@/components/media/MarcosDialog.vue';
 import RespuestasDialog from '@/components/canvas/RespuestasDialog.vue';
 import type { Marco } from '@/utils/marcos';
-import { aPng, legibleParaIa, vectorizar } from '@/utils/vectorizar';
+import { aPng, legibleParaIa, vectorizarEnPiezas, type Region } from '@/utils/vectorizar';
+import { fondoSinSujeto } from '@/utils/capas';
 import { ESTILOS_BASICOS, type EstiloTexto } from '@/utils/estilosTexto';
 import ShareDialog from '@/components/ShareDialog.vue';
 import BookGradesPanel from '@/components/library/BookGradesPanel.vue';
@@ -264,10 +265,7 @@ async function onHerramientaImagen(tipo: 'recortar' | 'quitar-fondo' | 'capas' |
   try {
     if (tipo === 'vectorizar') {
       procesandoImagen.value = 'Vectorizando la imagen…';
-      const svg = await vectorizar(fileUrl, 'detallado');
-      const subida = await mediaApi.upload(svg);
-      await editor.patchElement(el.id, { properties: { ...el.properties, fileUrl: subida.fileUrl } });
-      anunciar('Imagen vectorizada: ahora se ve nítida a cualquier tamaño');
+      await vectorizarImagen(el, fileUrl);
       return;
     }
     procesandoImagen.value = 'Quitando el fondo con IA… (unos segundos)';
@@ -284,18 +282,87 @@ async function onHerramientaImagen(tipo: 'recortar' | 'quitar-fondo' | 'capas' |
       await editor.patchElement(el.id, { properties: { ...el.properties, fileUrl: sinFondo } });
       anunciar('Fondo quitado');
     } else {
-      // Capas: el original queda debajo como fondo y el sujeto, recortado, encima
-      // y en el mismo sitio. Asi se puede mover, agrandar o cambiar el fondo.
-      await editor.insertarVarios('separar en capas', [
-        { type: 'image', transformMatrix: { ...el.transformMatrix }, properties: { ...el.properties, fileUrl: sinFondo, altText: `${String(el.properties.altText ?? '')} (sujeto)`.trim() } },
-      ]);
-      anunciar('Separada en dos capas: el sujeto está encima del fondo');
+      /*
+       * Capas, del todo separadas: debajo, el fondo SIN el sujeto (su hueco se
+       * rellena con lo de alrededor); encima, el sujeto recortado, en el mismo
+       * sitio. Si se deja la original debajo, al mover el sujeto aparece otra vez
+       * pintado en el fondo. Quedan agrupadas; un segundo clic elige una sola.
+       */
+      procesandoImagen.value = 'Rellenando el fondo sin el sujeto…';
+      const fondo = (await mediaApi.upload(await fondoSinSujeto(origen, sinFondo))).fileUrl;
+      const grupo = crypto.randomUUID();
+      const alt = String(el.properties.altText ?? '');
+      await editor.enUnPaso('separar en capas', async () => {
+        await editor.patchElement(el.id, {
+          transformMatrix: { ...el.transformMatrix, group: grupo },
+          properties: { ...el.properties, fileUrl: fondo, altText: `${alt} (fondo)`.trim() },
+        });
+        await editor.insertarVarios('separar en capas', [
+          { type: 'image', transformMatrix: { ...el.transformMatrix, group: grupo }, properties: { ...el.properties, fileUrl: sinFondo, altText: `${alt} (sujeto)`.trim() } },
+        ]);
+      });
+      editor.select(el.id);
+      anunciar('Separada en dos capas agrupadas: el fondo y el sujeto. Haz clic otra vez sobre una para moverla sola.');
     }
   } catch (err) {
     editor.error = err instanceof Error && !('response' in err) ? err.message : errorMessage(err);
   } finally {
     procesandoImagen.value = null;
   }
+}
+
+/**
+ * Vectoriza la imagen en piezas: un dibujo por color, cada uno con su caja y
+ * todos agrupados en el sitio de la imagen, que se quita (en un solo paso de
+ * deshacer). Asi se puede separar, mover o recolorear cada parte.
+ */
+async function vectorizarImagen(el: CanvasElement, fileUrl: string): Promise<void> {
+  const t = el.transformMatrix;
+  const { ancho, alto, piezas } = await vectorizarEnPiezas(fileUrl, {
+    recorte: (el.properties.crop as Region | null | undefined) ?? null,
+    aspectoCaja: (t.width * editor.aspectRatio) / t.height,
+  });
+  // Cada pieza ocupa en la hoja la parte de la caja de la imagen que le toca. Si
+  // la imagen esta girada, su centro gira con ella alrededor del de la imagen.
+  const altoPagina = 1000 / editor.aspectRatio;
+  const cx = (t.x + t.width / 2) * 10;
+  const cy = ((t.y + t.height / 2) * altoPagina) / 100;
+  const rad = (t.angle * Math.PI) / 180;
+  const elementos = piezas.map((p) => {
+    const width = (p.caja.w / ancho) * t.width;
+    const height = (p.caja.h / alto) * t.height;
+    let x = t.x + (p.caja.x / ancho) * t.width;
+    let y = t.y + (p.caja.y / alto) * t.height;
+    if (t.angle) {
+      const px = (x + width / 2) * 10 - cx;
+      const py = ((y + height / 2) * altoPagina) / 100 - cy;
+      x = (cx + px * Math.cos(rad) - py * Math.sin(rad)) / 10 - width / 2;
+      y = ((cy + px * Math.sin(rad) + py * Math.cos(rad)) * 100) / altoPagina - height / 2;
+    }
+    const r = (v: number) => Math.round(v * 1000) / 1000;
+    return {
+      type: 'drawing' as const,
+      transformMatrix: { x: r(x), y: r(y), width: Math.max(0.5, r(width)), height: Math.max(0.5, r(height)), angle: t.angle },
+      properties: {
+        svgPath: p.d,
+        extraPaths: [],
+        brushStyle: 'pen',
+        // El borde, del mismo color y fino, tapa las rendijas entre piezas.
+        strokeWidth: 1,
+        strokeColor: p.color,
+        fillColor: p.color,
+        viewBox: `${p.caja.x} ${p.caja.y} ${p.caja.w} ${p.caja.h}`,
+      } as Record<string, unknown>,
+    };
+  });
+  procesandoImagen.value = `Colocando ${elementos.length} piezas…`;
+  await editor.enUnPaso('vectorizar', async () => {
+    await editor.insertarVarios('vectorizar', elementos, true);
+    await editor.removeElement(el.id);
+  });
+  anunciar(
+    `Vectorizada en ${elementos.length} piezas de color, agrupadas. Haz clic otra vez sobre una pieza para moverla, borrarla o cambiarle el color.`,
+  );
 }
 
 /* --- Marcos: silueta con una imagen dentro --- */
@@ -357,8 +424,12 @@ async function onAplicarRecorte(recorte: Recorte | null, ratio: number): Promise
 }
 
 /** La barra flotante del objeto seleccionado: duplicar, bloquear o borrar. */
-async function onAccionBarra(tipo: 'duplicar' | 'bloquear' | 'borrar', id: string): Promise<void> {
-  if (tipo === 'duplicar') {
+async function onAccionBarra(tipo: 'duplicar' | 'bloquear' | 'borrar' | 'agrupar' | 'desagrupar', id: string): Promise<void> {
+  if (tipo === 'agrupar') {
+    if (await editor.agruparSeleccion()) anunciar('Agrupados: ahora se mueven y cambian de tamaño juntos');
+  } else if (tipo === 'desagrupar') {
+    if (await editor.desagruparSeleccion()) anunciar('Desagrupados');
+  } else if (tipo === 'duplicar') {
     const n = await editor.duplicarSeleccion();
     anunciar(n ? (n === 1 ? 'Duplicado 1 objeto' : `Duplicados ${n} objetos`) : null);
   } else if (tipo === 'borrar') {
@@ -1266,6 +1337,13 @@ function onKeydown(event: KeyboardEvent): void {
    * `copy`, `cut` y `paste` del navegador, que son los unicos que pueden leer y
    * escribir en el portapapeles del sistema sin pedir permisos.
    */
+  // Agrupar (Ctrl+G) y desagrupar (Ctrl+Shift+G), como en Canva.
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'g') {
+    event.preventDefault();
+    void onAccionBarra(event.shiftKey ? 'desagrupar' : 'agrupar', editor.selectedElementId);
+    return;
+  }
+
   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'd') {
     event.preventDefault();
     void editor.duplicarSeleccion().then((n) => anunciar(n ? (n === 1 ? 'Duplicado 1 objeto' : `Duplicados ${n} objetos`) : null));
@@ -1803,12 +1881,14 @@ async function saveTitle(): Promise<void> {
               :auto-edit-id="editor.editingElementId"
               :selected-ids="editor.selectedIds"
               :puede-bloquear="editor.isManager"
+              :agrupada="editor.seleccionAgrupada"
               @accion="onAccionBarra"
+              @escalar="editor.escalarSeleccion($event)"
               :numbering="editor.book.pageNumbering"
               :total-pages="editor.book.pages.length"
               @select="(id, additive) => editor.select(id, additive)"
               @select-many="editor.selectMany($event)"
-              @select-only="editor.selectMany([$event])"
+              @select-only="editor.selectMany([$event], false)"
               @move-selection="(dx, dy) => editor.moveSelection(dx, dy)"
               @commit="(id, t) => editor.patchElement(id, { transformMatrix: t })"
               @update-text="onUpdateText"

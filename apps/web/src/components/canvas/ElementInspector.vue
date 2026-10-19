@@ -581,6 +581,19 @@ function patchProperty(key: string, value: unknown): void {
   emit('patch', { properties: { ...props.element.properties, [key]: value } });
 }
 
+/** En una pieza vectorizada cambian a la vez el relleno y el borde. */
+function cambiarColorDibujo(color: string): void {
+  if (!props.element) return;
+  const relleno = props.element.properties.fillColor;
+  emit('patch', {
+    properties: {
+      ...props.element.properties,
+      strokeColor: color,
+      ...(relleno && relleno !== 'transparent' ? { fillColor: color } : {}),
+    },
+  });
+}
+
 // El catalogo vive en types/api.ts para no duplicarlo con el enum del backend.
 
 // Tonos hueso y opalo recomendados para reducir el contraste excesivo.
@@ -767,8 +780,13 @@ const SOFT_BACKGROUNDS = ['transparent', '#F7F4EC', '#EDF2F0', '#FBF3E4', '#EFEA
             🧩 Separar en capas (sujeto y fondo)
           </button>
         </template>
-        <button type="button" class="btn-secondary w-full justify-start text-xs" @click="emit('herramientaImagen', 'vectorizar')">
-          ✒️ Vectorizar
+        <button
+          type="button"
+          class="btn-secondary w-full justify-start text-xs"
+          title="Convierte la imagen en piezas vectoriales, una por color, agrupadas"
+          @click="emit('herramientaImagen', 'vectorizar')"
+        >
+          ✒️ Vectorizar en piezas de color
         </button>
         <button type="button" class="btn-secondary w-full justify-start text-xs" @click="emit('ajustarAImagen')">
           ↔ Ajustar a la proporción de la imagen
@@ -777,6 +795,18 @@ const SOFT_BACKGROUNDS = ['transparent', '#F7F4EC', '#EDF2F0', '#FBF3E4', '#EFEA
           Recortar no borra nada: el recorte se puede cambiar o quitar. Quitar el fondo y separar en capas usan
           IA y crean una imagen nueva; la original sigue en tu biblioteca de archivos.
         </p>
+      </section>
+
+      <!-- Dibujo: a mano alzada o una pieza de una imagen vectorizada. -->
+      <section v-if="element.type === 'drawing'" class="space-y-1.5">
+        <label class="label" :for="`dc-${element.id}`">Color</label>
+        <input
+          :id="`dc-${element.id}`"
+          type="color"
+          class="h-9 w-full rounded border border-slate-300"
+          :value="String(element.properties.strokeColor ?? '#333333').slice(0, 7)"
+          @change="cambiarColorDibujo(($event.target as HTMLInputElement).value)"
+        />
       </section>
 
       <!-- Bloqueo (solo docentes) -->

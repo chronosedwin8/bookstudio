@@ -23,10 +23,10 @@ const redondeo = (n: number): number => Math.round(n * 1000) / 1000;
  * altura vieja y la nueva, en las unidades del lienzo.
  */
 export function reencajar(
-  t: { x: number; y: number; width: number; height: number; angle?: number },
+  t: { x: number; y: number; width: number; height: number; angle?: number; group?: string },
   desde: string,
   hasta: string,
-): { x: number; y: number; width: number; height: number; angle: number } {
+): { x: number; y: number; width: number; height: number; angle: number; group?: string } {
   const a0 = PROPORCION[desde] ?? 1;
   const a1 = PROPORCION[hasta] ?? 1;
   const s = Math.min(1, a0 / a1);
@@ -37,6 +37,7 @@ export function reencajar(
     width: redondeo(s * t.width),
     height: redondeo(s * r * t.height),
     angle: t.angle ?? 0,
+    ...(t.group ? { group: t.group } : {}),
   };
 }
 

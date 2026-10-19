@@ -11,6 +11,12 @@ export const transformMatrixSchema = z.object({
   width: z.number().min(0.5).max(200),
   height: z.number().min(0.5).max(200),
   angle: z.number().min(-360).max(360).default(0),
+  /**
+   * Grupo al que pertenece: los elementos con el mismo valor se seleccionan,
+   * mueven y escalan juntos. Va aqui y no en una columna porque asi viaja solo
+   * al copiar, pegar, deshacer o duplicar paginas.
+   */
+  group: z.string().regex(/^[a-z0-9-]{1,40}$/, 'Grupo no valido').optional(),
 });
 
 /**

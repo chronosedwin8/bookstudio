@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
 import { booksApi } from '@/services/api';
 import { crearHistorial, describirElemento, NOMBRE_TIPO } from './historial';
+import { escalarCaja, escalarLetra, type Escala } from '@/utils/grupo';
 import { errorMessage } from '@/services/http';
 import type {
   BookDetail,
@@ -243,6 +244,21 @@ export const useEditorStore = defineStore('editor', () => {
     selectedIds.value = [];
   }
 
+  /*
+   * Grupos. Un elemento agrupado lleva el id de su grupo en `transformMatrix.group`;
+   * al elegir uno se eligen todos los de su grupo en la pagina.
+   */
+
+  /** El elemento y los de su grupo; el pulsado, el ultimo (es el principal). */
+  function miembrosDe(elementId: string): string[] {
+    const grupo = sortedElements.value.find((el) => el.id === elementId)?.transformMatrix.group;
+    if (!grupo) return [elementId];
+    const otros = sortedElements.value
+      .filter((el) => el.transformMatrix.group === grupo && el.id !== elementId)
+      .map((el) => el.id);
+    return [...otros, elementId];
+  }
+
   function select(elementId: string | null, additive = false): void {
     if (!elementId) {
       selectedIds.value = [];
@@ -250,23 +266,92 @@ export const useEditorStore = defineStore('editor', () => {
       return;
     }
 
+    const miembros = miembrosDe(elementId);
     if (additive) {
       selectedIds.value = selectedIds.value.includes(elementId)
-        ? selectedIds.value.filter((id) => id !== elementId)
-        : [...selectedIds.value, elementId];
+        ? selectedIds.value.filter((id) => !miembros.includes(id))
+        : [...selectedIds.value.filter((id) => !miembros.includes(id)), ...miembros];
     } else if (!selectedIds.value.includes(elementId)) {
       // Pulsar un elemento que YA forma parte del grupo no deshace la seleccion:
       // es lo que permite arrastrar el conjunto entero. Solo se reduce a uno
       // cuando se pulsa algo que estaba fuera de la seleccion.
-      selectedIds.value = [elementId];
+      selectedIds.value = miembros;
     }
 
-    selectedElementId.value = selectedIds.value.at(-1) ?? null;
+    selectedElementId.value = selectedIds.value.includes(elementId) ? elementId : (selectedIds.value.at(-1) ?? null);
   }
 
-  function selectMany(ids: string[]): void {
-    selectedIds.value = [...ids];
-    selectedElementId.value = ids.at(-1) ?? null;
+  /**
+   * Selecciona varios. Con `conGrupos` (lo normal: rectangulo de seleccion,
+   * Ctrl+A) se completan los grupos tocados; sin el se elige exactamente eso, que
+   * es como se entra a un elemento suelto de un grupo con un segundo clic.
+   */
+  function selectMany(ids: string[], conGrupos = true): void {
+    const todos = conGrupos ? [...new Set(ids.flatMap(miembrosDe))] : [...ids];
+    selectedIds.value = todos;
+    selectedElementId.value = todos.at(-1) ?? null;
+  }
+
+  /** La seleccion es exactamente un grupo guardado (para ofrecer "Desagrupar"). */
+  const seleccionAgrupada = computed(() => {
+    const els = selectedElements.value;
+    const grupo = els[0]?.transformMatrix.group;
+    return els.length > 1 && Boolean(grupo) && els.every((el) => el.transformMatrix.group === grupo);
+  });
+
+  /** Hay algun agrupado en la seleccion. */
+  const hayAgrupados = computed(() => selectedElements.value.some((el) => el.transformMatrix.group));
+
+  async function agruparSeleccion(): Promise<boolean> {
+    const elegidos = selectedElements.value;
+    if (elegidos.length < 2) return false;
+    const grupo = crypto.randomUUID();
+    await historial.agrupar(`agrupar ${elegidos.length} elementos`, async () => {
+      await Promise.all(
+        elegidos.map((el) => patchElement(el.id, { transformMatrix: { ...el.transformMatrix, group: grupo } })),
+      );
+    });
+    return true;
+  }
+
+  async function desagruparSeleccion(): Promise<boolean> {
+    // Basta con tener elegido uno: se deshace su grupo entero.
+    const grupos = new Set(selectedElements.value.map((el) => el.transformMatrix.group).filter(Boolean));
+    const agrupados = sortedElements.value.filter((el) => grupos.has(el.transformMatrix.group));
+    if (!agrupados.length) return false;
+    await historial.agrupar('desagrupar', async () => {
+      await Promise.all(
+        agrupados.map((el) => {
+          const { group: _grupo, ...resto } = el.transformMatrix;
+          return patchElement(el.id, { transformMatrix: resto });
+        }),
+      );
+    });
+    return true;
+  }
+
+  /**
+   * Cambia el tamano de toda la seleccion a la vez, como un solo objeto: la
+   * caja que los envuelve se estira desde un punto fijo y cada elemento se
+   * recoloca y reescala en la misma proporcion. Con escala proporcional
+   * (esquinas) la letra crece tambien.
+   */
+  async function escalarSeleccion(escala: Escala): Promise<void> {
+    const targets = selectedElements.value.filter((el) => !el.isLocked);
+    if (!targets.length) return;
+    const proporcional = Math.abs(escala.sx - escala.sy) < 1e-6;
+    await historial.agrupar(`cambiar el tamaño de ${targets.length} elementos`, async () => {
+      await Promise.all(
+        targets.map((el) => {
+          const cambio: { transformMatrix: TransformMatrix; properties?: Record<string, unknown> } = {
+            transformMatrix: escalarCaja(el.transformMatrix, escala),
+          };
+          const letra = proporcional ? escalarLetra(el, escala.sx) : null;
+          if (letra) cambio.properties = letra;
+          return patchElement(el.id, cambio);
+        }),
+      );
+    });
   }
 
   /** Desplaza toda la seleccion, en porcentaje de pagina. */
@@ -460,12 +545,16 @@ export const useEditorStore = defineStore('editor', () => {
   async function insertarVarios(
     que: string,
     elementos: Array<{ type: ElementType; transformMatrix: TransformMatrix; properties: Record<string, unknown> }>,
+    /** Dejarlos agrupados: las piezas de una imagen vectorizada, las capas. */
+    agrupados = false,
   ): Promise<string[]> {
     if (!book.value || !currentPage.value || !elementos.length) return [];
+    const grupo = agrupados && elementos.length > 1 ? crypto.randomUUID() : undefined;
     const nuevos: string[] = [];
     await historial.agrupar(que, async () => {
       for (const e of elementos) {
-        const creado = await addElement(e.type, e.transformMatrix, e.properties);
+        const t = grupo ? { ...e.transformMatrix, group: grupo } : e.transformMatrix;
+        const creado = await addElement(e.type, t, e.properties);
         if (creado) nuevos.push(creado.id);
       }
     });
@@ -484,16 +573,27 @@ export const useEditorStore = defineStore('editor', () => {
       ? `pegar ${NOMBRE_TIPO[elementos[0].type] ?? 'elemento'}`
       : `pegar ${elementos.length} elementos`;
 
+    // Las copias de un grupo forman un grupo nuevo, entre ellas: si conservaran el
+    // id, la copia y el original se seleccionarian juntos.
+    const gruposNuevos = new Map<string, string>();
+    const grupoNuevo = (grupo?: string) => {
+      if (!grupo) return undefined;
+      if (!gruposNuevos.has(grupo)) gruposNuevos.set(grupo, crypto.randomUUID());
+      return gruposNuevos.get(grupo);
+    };
+
     const nuevos: string[] = [];
     await historial.agrupar(que, async () => {
       for (const copia of elementos) {
-        const t = copia.transformMatrix;
+        const { group, ...t } = copia.transformMatrix;
+        const grupo = grupoNuevo(group);
         const creado = await addElement(
           copia.type,
           {
             ...t,
             x: Math.min(100 - Math.min(t.width, 100), t.x + DESPLAZAMIENTO),
             y: Math.min(100 - Math.min(t.height, 100), t.y + DESPLAZAMIENTO),
+            ...(grupo ? { group: grupo } : {}),
           },
           copia.properties as Record<string, unknown>,
         );
@@ -853,6 +953,11 @@ export const useEditorStore = defineStore('editor', () => {
     goToPage,
     select,
     selectMany,
+    seleccionAgrupada,
+    hayAgrupados,
+    agruparSeleccion,
+    desagruparSeleccion,
+    escalarSeleccion,
     moveSelection,
     removeSelection,
     addElement,
@@ -863,6 +968,8 @@ export const useEditorStore = defineStore('editor', () => {
     pegar,
     duplicarSeleccion,
     insertarVarios,
+    /** Varias operaciones como un solo paso de deshacer. */
+    enUnPaso: historial.agrupar,
     leerPaquete,
     hayCopiados,
     removeElement,

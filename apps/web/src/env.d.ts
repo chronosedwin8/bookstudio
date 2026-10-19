@@ -6,5 +6,5 @@ declare module '*.vue' {
   export default component;
 }
 
-/** imagetracerjs (dominio publico) no trae tipos; solo se usa imagedataToSVG. */
+/** imagetracerjs (dominio publico) no trae tipos; se tipa donde se usa (utils/vectorizar.ts). */
 declare module 'imagetracerjs';
