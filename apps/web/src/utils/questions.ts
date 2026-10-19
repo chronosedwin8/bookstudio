@@ -27,6 +27,25 @@ const BASE = {
 
 export const QUESTION_BLOCKS: QuestionBlock[] = [
   {
+    id: 'encuesta',
+    label: 'Encuesta',
+    description: 'Sin respuesta correcta. Al votar se ven los resultados de todos.',
+    size: { width: 48, height: 46 },
+    properties: {
+      ...BASE,
+      kind: 'poll',
+      prompt: '¿Qué tema te gustaría trabajar la próxima semana?',
+      feedbackCorrect: '¡Gracias por votar!',
+      showResults: true,
+      options: [
+        option('a', 'El agua'),
+        option('b', 'Los volcanes'),
+        option('c', 'El espacio'),
+        option('d', 'Los animales'),
+      ],
+    },
+  },
+  {
     id: 'single-4',
     label: 'Respuesta unica',
     description: 'Cuatro opciones, una sola correcta.',

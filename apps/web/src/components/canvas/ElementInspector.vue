@@ -28,6 +28,9 @@ import ChartInspector from './ChartInspector.vue';
 import PlotInspector from './PlotInspector.vue';
 import LatexEditor from './LatexEditor.vue';
 import InteractionContentDialog from './InteractionContentDialog.vue';
+import { EFECTOS as EFECTOS_TEXTO, estiloEfecto } from '@/utils/efectosTexto';
+import { GRUPOS_MARCOS, MARCOS, MARCOS_POR_ID } from '@/utils/marcos';
+import { useAuthStore } from '@/stores/auth';
 import QuestionInspector from './QuestionInspector.vue';
 import {
   FONT_GROUPS,
@@ -52,7 +55,12 @@ const props = defineProps<{
   pageNumbers?: number[];
   /** Los demas objetos de esta pagina, para elegir a cual mostrar u ocultar. */
   pageElements?: CanvasElement[];
+  /** Quitar fondo y separar en capas (Magnific): solo si esta configurado y se puede usar. */
+  herramientasIa?: boolean;
 }>();
+
+/** Las respuestas del alumnado solo las ve el profesorado (el servidor tambien lo exige). */
+const auth = useAuthStore();
 
 const emit = defineEmits<{
   patch: [
@@ -95,6 +103,12 @@ const emit = defineEmits<{
    * que saber.
    */
   ajustarAImagen: [];
+  /** Herramientas de la imagen seleccionada (ver BookEditorView). */
+  herramientaImagen: [tipo: 'recortar' | 'quitar-fondo' | 'capas' | 'vectorizar'];
+  /** Poner o cambiar la foto del marco: del buscador, del equipo o creada con IA. */
+  imagenMarco: [origen: 'buscar' | 'equipo' | 'ia'];
+  /** Abrir la lista de respuestas de la pregunta seleccionada. */
+  verRespuestas: [];
   /** Duplicar lo seleccionado, sin tocar el portapapeles. */
   duplicar: [];
   /** Volver a describir la ilustracion con otras palabras. */
@@ -262,7 +276,7 @@ function describir(el: CanvasElement): string {
 const TIPOS: Record<string, string> = {
   text: 'Texto', shape: 'Forma', drawing: 'Dibujo', image: 'Imagen', audio: 'Audio',
   video: 'Vídeo', map: 'Mapa', icon: 'Icono', embed: 'Incrustado', question: 'Pregunta',
-  chart: 'Gráfica', math: 'Fórmula', button: 'Botón', plot: 'Gráfica de funciones',
+  chart: 'Gráfica', math: 'Fórmula', button: 'Botón', plot: 'Gráfica de funciones', frame: 'Marco',
   table: 'Tabla', illustration: 'Ilustración',
 };
 
@@ -701,13 +715,67 @@ const SOFT_BACKGROUNDS = ['transparent', '#F7F4EC', '#EDF2F0', '#FBF3E4', '#EFEA
         forma de la pagina y quedaron con la caja aplastada, y tambien para
         cuando alguien estira una imagen sin querer.
       -->
-      <section v-if="element.type === 'image'">
+      <!-- Marco: la foto de dentro, su encuadre y el color del cuerpo -->
+      <section v-if="element.type === 'frame'" class="space-y-2">
+        <h3 class="label">Marco</h3>
+        <select
+          class="input py-1 text-sm"
+          :value="String(element.properties.frame ?? 'circulo')"
+          aria-label="Forma del marco"
+          @change="patchProperty('frame', ($event.target as HTMLSelectElement).value)"
+        >
+          <optgroup v-for="g in GRUPOS_MARCOS" :key="g" :label="g">
+            <option v-for="m in MARCOS.filter((x) => x.grupo === g)" :key="m.id" :value="m.id">{{ m.label }}</option>
+          </optgroup>
+        </select>
+        <div class="grid grid-cols-3 gap-1">
+          <button type="button" class="btn-secondary justify-center px-1 text-xs" @click="emit('imagenMarco', 'buscar')">🔎 Buscar</button>
+          <button type="button" class="btn-secondary justify-center px-1 text-xs" @click="emit('imagenMarco', 'equipo')">📁 Subir</button>
+          <button v-if="herramientasIa" type="button" class="btn-secondary justify-center px-1 text-xs" @click="emit('imagenMarco', 'ia')">✨ IA</button>
+        </div>
+        <template v-if="element.properties.fileUrl">
+          <label class="block text-xs text-slate-600">
+            Acercar · {{ Number(element.properties.zoom ?? 1).toFixed(1) }}×
+            <input type="range" min="1" max="4" step="0.05" class="w-full accent-brand-600" :value="Number(element.properties.zoom ?? 1)" @input="patchPropertyVivo('zoom', Number(($event.target as HTMLInputElement).value))" />
+          </label>
+          <label class="block text-xs text-slate-600">
+            Encuadre horizontal
+            <input type="range" min="0" max="100" class="w-full accent-brand-600" :value="Number(element.properties.posX ?? 50)" @input="patchPropertyVivo('posX', Number(($event.target as HTMLInputElement).value))" />
+          </label>
+          <label class="block text-xs text-slate-600">
+            Encuadre vertical
+            <input type="range" min="0" max="100" class="w-full accent-brand-600" :value="Number(element.properties.posY ?? 50)" @input="patchPropertyVivo('posY', Number(($event.target as HTMLInputElement).value))" />
+          </label>
+          <button type="button" class="text-xs font-semibold text-red-600 hover:underline" @click="patchProperty('fileUrl', '')">Quitar la imagen</button>
+        </template>
+        <div v-if="MARCOS_POR_ID[String(element.properties.frame)]?.cuerpo" class="flex items-center gap-2">
+          <label class="text-xs text-slate-600" :for="`fc-${element.id}`">Color del marco</label>
+          <input :id="`fc-${element.id}`" type="color" class="h-8 w-12 rounded border border-slate-300" :value="String(element.properties.frameColor ?? '#1E293B')" @change="patchProperty('frameColor', ($event.target as HTMLInputElement).value)" />
+        </div>
+      </section>
+
+      <section v-if="element.type === 'image'" class="space-y-1.5">
         <h3 class="label">Imagen</h3>
-        <button type="button" class="btn-secondary w-full justify-center text-xs" @click="emit('ajustarAImagen')">
-          Ajustar a la proporcion de la imagen
+        <button type="button" class="btn-secondary w-full justify-start text-xs" @click="emit('herramientaImagen', 'recortar')">
+          ✂️ {{ element.properties.crop ? 'Cambiar el recorte' : 'Recortar' }}
         </button>
-        <p class="mt-1 text-[11px] leading-tight text-slate-400">
-          Le devuelve su forma original para que no se vea recortada.
+        <template v-if="herramientasIa">
+          <button type="button" class="btn-secondary w-full justify-start text-xs" @click="emit('herramientaImagen', 'quitar-fondo')">
+            🪄 Quitar el fondo
+          </button>
+          <button type="button" class="btn-secondary w-full justify-start text-xs" @click="emit('herramientaImagen', 'capas')">
+            🧩 Separar en capas (sujeto y fondo)
+          </button>
+        </template>
+        <button type="button" class="btn-secondary w-full justify-start text-xs" @click="emit('herramientaImagen', 'vectorizar')">
+          ✒️ Vectorizar
+        </button>
+        <button type="button" class="btn-secondary w-full justify-start text-xs" @click="emit('ajustarAImagen')">
+          ↔ Ajustar a la proporción de la imagen
+        </button>
+        <p class="text-[11px] leading-tight text-slate-400">
+          Recortar no borra nada: el recorte se puede cambiar o quitar. Quitar el fondo y separar en capas usan
+          IA y crean una imagen nueva; la original sigue en tu biblioteca de archivos.
         </p>
       </section>
 
@@ -839,6 +907,30 @@ const SOFT_BACKGROUNDS = ['transparent', '#F7F4EC', '#EDF2F0', '#FBF3E4', '#EFEA
           <button type="button" class="btn-secondary px-2.5 py-1 text-xs italic" :class="text.italic && 'bg-brand-50 text-brand-700'" @click="patchProperty('italic', !text.italic)">I</button>
           <button type="button" class="btn-secondary px-2.5 py-1 text-xs underline" :class="text.underline && 'bg-brand-50 text-brand-700'" @click="patchProperty('underline', !text.underline)">U</button>
           <button type="button" class="btn-secondary px-2.5 py-1 text-xs line-through" :class="text.strikethrough && 'bg-brand-50 text-brand-700'" @click="patchProperty('strikethrough', !text.strikethrough)">S</button>
+          <button type="button" class="btn-secondary px-2.5 py-1 text-xs" :class="text.uppercase && 'bg-brand-50 text-brand-700'" title="Todo en mayúsculas" @click="patchProperty('uppercase', !text.uppercase)">AA</button>
+        </div>
+
+        <!-- Efecto, como los de Canva: sombra, neón, contorno... -->
+        <div>
+          <span class="label">Efecto</span>
+          <div class="grid grid-cols-4 gap-1">
+            <button
+              v-for="ef in EFECTOS_TEXTO"
+              :key="ef.id"
+              type="button"
+              class="rounded-lg border px-1 py-2 text-base font-bold transition"
+              :class="(text.effect ?? 'ninguno') === ef.id ? 'border-brand-500 bg-brand-50' : 'border-slate-200 hover:bg-slate-50'"
+              :title="ef.label"
+              @click="patchProperty('effect', ef.id)"
+            >
+              <span :style="{ color: text.color, ...estiloEfecto(ef.id, text.effectColor ?? '#7C3AED', text.color) }">Aa</span>
+              <span class="mt-0.5 block text-[10px] font-normal text-slate-500">{{ ef.label }}</span>
+            </button>
+          </div>
+          <div v-if="text.effect && text.effect !== 'ninguno' && text.effect !== 'hueco'" class="mt-2 flex items-center gap-2">
+            <label class="text-xs text-slate-600" :for="`efc-${element.id}`">Color del efecto</label>
+            <input :id="`efc-${element.id}`" type="color" class="h-8 w-12 rounded border border-slate-300" :value="text.effectColor ?? '#000000'" @change="patchProperty('effectColor', ($event.target as HTMLInputElement).value)" />
+          </div>
         </div>
       </section>
 
@@ -860,16 +952,48 @@ const SOFT_BACKGROUNDS = ['transparent', '#F7F4EC', '#EDF2F0', '#FBF3E4', '#EFEA
           <input :id="`sw-${element.id}`" type="range" min="0" max="20" step="1" class="w-full accent-brand-600" :value="shape.strokeWidth" @change="patchProperty('strokeWidth', Number(($event.target as HTMLInputElement).value))" />
         </div>
 
-        <div>
-          <label class="label" :for="`label-${element.id}`">Texto interior</label>
-          <input :id="`label-${element.id}`" type="text" class="input" :value="shape.label" @change="patchProperty('label', ($event.target as HTMLInputElement).value)" />
+        <!-- Texto dentro de la forma: doble clic en la forma para escribir en ella -->
+        <div class="space-y-2 rounded-lg border border-slate-200 p-2">
+          <label class="label mb-0" :for="`label-${element.id}`">Texto</label>
+          <textarea
+            :id="`label-${element.id}`"
+            class="input min-h-[3.5rem] resize-y text-sm"
+            :value="shape.text || shape.label"
+            placeholder="Doble clic en la forma para escribir"
+            @change="emit('patch', { properties: { ...element.properties, text: ($event.target as HTMLTextAreaElement).value, label: '' } })"
+          />
+          <select class="input py-1 text-sm" :value="shape.textFont ?? 'Lato'" aria-label="Tipografía del texto" @change="patchProperty('textFont', ($event.target as HTMLSelectElement).value)">
+            <optgroup v-for="group in FONT_GROUPS" :key="group.label" :label="group.label">
+              <option v-for="font in group.fonts" :key="font" :value="font" :style="{ fontFamily: `'${font}', sans-serif` }">{{ font }}</option>
+            </optgroup>
+          </select>
+          <div>
+            <label class="text-xs text-slate-600" :for="`ts-${element.id}`">Tamaño · crece con la forma</label>
+            <input :id="`ts-${element.id}`" type="range" min="3" max="30" step="0.5" class="w-full accent-brand-600" :value="shape.textSize ?? 9" @input="patchPropertyVivo('textSize', Number(($event.target as HTMLInputElement).value))" />
+          </div>
+          <div class="flex flex-wrap items-center gap-1">
+            <input type="color" class="h-8 w-10 rounded border border-slate-300" :value="shape.textColor ?? '#1E293B'" aria-label="Color del texto" @change="patchProperty('textColor', ($event.target as HTMLInputElement).value)" />
+            <button type="button" class="btn-secondary px-2.5 py-1 text-xs font-bold" :class="shape.textBold && 'bg-brand-50 text-brand-700'" @click="patchProperty('textBold', !shape.textBold)">B</button>
+            <button type="button" class="btn-secondary px-2.5 py-1 text-xs italic" :class="shape.textItalic && 'bg-brand-50 text-brand-700'" @click="patchProperty('textItalic', !shape.textItalic)">I</button>
+            <select class="input w-auto py-1 text-xs" :value="shape.textAlign ?? 'center'" aria-label="Alineación" @change="patchProperty('textAlign', ($event.target as HTMLSelectElement).value)">
+              <option value="left">Izquierda</option><option value="center">Centro</option><option value="right">Derecha</option>
+            </select>
+            <select class="input w-auto py-1 text-xs" :value="shape.textVAlign ?? 'middle'" aria-label="Posición vertical" @change="patchProperty('textVAlign', ($event.target as HTMLSelectElement).value)">
+              <option value="top">Arriba</option><option value="middle">En medio</option><option value="bottom">Abajo</option>
+            </select>
+          </div>
         </div>
       </section>
 
       <!-- Pregunta -->
       <section v-if="element.type === 'question' && question">
         <h3 class="label">Pregunta</h3>
-        <QuestionInspector :question="question" @patch="emit('patch', { properties: $event })" />
+        <QuestionInspector
+          :question="question"
+          :puede-ver-respuestas="isManager && auth.isTeacher"
+          @patch="emit('patch', { properties: $event })"
+          @ver-respuestas="emit('verRespuestas')"
+        />
       </section>
 
       <!-- Video -->

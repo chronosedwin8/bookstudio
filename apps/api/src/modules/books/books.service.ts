@@ -1,8 +1,10 @@
+import { randomUUID } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import { query, withTransaction } from '../../db/pool.js';
 import { HttpError } from '../../lib/http-error.js';
 import { getAccess } from '../libraries/libraries.service.js';
 import { copiarPaginas, copiarPaginasConIds, type PaginaRow } from './copiar-paginas.js';
+import * as respuestas from './respuestas.service.js';
 import { reducirTexto, reencajar, reduccionDeFormato } from './formato.js';
 import { TRIAL_LIMITS } from '../auth/trial.service.js';
 import { EDITOR_TOOLS, sanitizeTools } from '../canvas/tools.js';
@@ -873,6 +875,19 @@ export interface AnswerResult {
    * Sin esta marca, una respuesta perfecta se mostraria como fallada.
    */
   pendingReview?: boolean;
+  /** Encuestas: los votos de todos por opcion, si la encuesta los ensena. */
+  poll?: { counts: Record<string, number>; total: number };
+}
+
+/**
+ * La clave estable de una pregunta (ver respuestas.service.ts). Al guardar desde
+ * el editor se conserva la que ya tenia aunque el navegador mande unas
+ * propiedades viejas sin ella: perderla dejaria huerfanas sus respuestas.
+ */
+function conClaveDePregunta<T extends Record<string, unknown>>(tipo: string, properties: T, existente: string | null): T {
+  if (tipo !== 'question') return properties;
+  const clave = existente ?? (typeof properties.questionKey === 'string' ? properties.questionKey : randomUUID());
+  return { ...properties, questionKey: clave };
 }
 
 /** Compara dos listas de ids como conjuntos. */
@@ -886,6 +901,16 @@ function sameSet(a: string[], b: string[]): boolean {
 function gradeQuestion(properties: Record<string, unknown>, answer: string[]): AnswerResult {
   const kind = String(properties.kind ?? 'single');
   const options = Array.isArray(properties.options) ? (properties.options as StoredQuestionOption[]) : [];
+
+  // Encuesta: no hay respuesta buena; vale cualquier opcion que exista.
+  if (kind === 'poll') {
+    const valida = answer.length > 0 && answer.every((id) => options.some((o) => o.id === id));
+    return {
+      correct: valida,
+      solution: [],
+      feedback: valida ? 'Gracias por tu respuesta.' : 'Elige una opción.',
+    };
+  }
 
   // Abierta: no hay nada que comparar. Se acusa recibo y la revisa el docente.
   if (kind === 'open') {
@@ -942,6 +967,7 @@ export async function answerQuestion(
   await loadContext(bookId, userId);
   const properties = await findQuestion(bookId, elementId);
   const resultado = gradeQuestion(properties, answer);
+  await guardarRespuesta(bookId, elementId, userId, properties, answer, resultado);
 
   /**
    * La respuesta abierta se guarda en el propio elemento.
@@ -979,7 +1005,61 @@ export async function answerSharedQuestion(
   userId?: string,
 ): Promise<AnswerResult> {
   const book = await getSharedBook(token, userId);
-  return gradeQuestion(await findQuestion(book.id, elementId), answer);
+  const properties = await findQuestion(book.id, elementId);
+  const resultado = gradeQuestion(properties, answer);
+  // Con sesion se guarda; abierto sin cuenta no hay a quien atribuirlo.
+  if (userId) await guardarRespuesta(book.id, elementId, userId, properties, answer, resultado);
+  else if (properties.kind === 'poll' && properties.showResults !== false && typeof properties.questionKey === 'string') {
+    resultado.poll = await respuestas.recuento(properties.questionKey);
+  }
+  return resultado;
+}
+
+/**
+ * Guarda la respuesta de quien tiene sesion (ver respuestas.service.ts) y, si es
+ * una encuesta que ensena resultados, le pone los votos de todos al resultado.
+ */
+async function guardarRespuesta(
+  bookId: string,
+  elementId: string,
+  userId: string,
+  properties: Record<string, unknown>,
+  answer: string[],
+  resultado: AnswerResult,
+): Promise<void> {
+  const kind = String(properties.kind ?? 'single');
+  const vacia = kind === 'open' ? !(answer[0] ?? '').trim() : answer.length === 0;
+  if (vacia || (kind === 'poll' && !resultado.correct)) return;
+  const key = await respuestas.claveDe(elementId, properties);
+  await respuestas.guardar({
+    key,
+    userId,
+    bookId,
+    elementId,
+    kind,
+    answer: kind === 'open' ? [(answer[0] ?? '').trim()] : answer,
+    correct: kind === 'open' || kind === 'poll' ? null : resultado.correct,
+  });
+  if (kind === 'poll' && properties.showResults !== false) resultado.poll = await respuestas.recuento(key);
+}
+
+/** Respuestas a una pregunta, para el docente que la mira desde su libro. */
+export async function questionResponses(
+  bookId: string,
+  elementId: string,
+  viewer: { userId: string; role: string },
+  libraryId?: string,
+): Promise<{ question: Record<string, unknown>; rows: respuestas.FilaRespuesta[]; poll: { counts: Record<string, number>; total: number } | null }> {
+  const { permissions } = await loadContext(bookId, viewer.userId);
+  if (!permissions.canEdit) throw HttpError.forbidden('Solo quien puede editar el libro ve las respuestas');
+  const properties = await findQuestion(bookId, elementId);
+  const key = await respuestas.claveDe(elementId, properties);
+  const rows = await respuestas.listar(key, bookId, viewer, libraryId);
+  return {
+    question: { kind: properties.kind, prompt: properties.prompt, options: properties.options },
+    rows,
+    poll: properties.kind === 'poll' ? await respuestas.recuento(key) : null,
+  };
 }
 
 /** Activa o desactiva la edicion compartida; solo el docente o el autor deciden. */
@@ -1198,7 +1278,7 @@ export async function addPage(bookId: string, userId: string, input: CreatePageI
     // Contenido inicial (plantillas): dentro de la misma transaccion que la pagina.
     const elements: CanvasElement[] = [];
     for (const [index, element] of (input.elements ?? []).entries()) {
-      const properties = parseProperties(element.type, element.properties);
+      const properties = conClaveDePregunta(element.type, parseProperties(element.type, element.properties), null);
       const created = await client.query<ElementRow>(
         `INSERT INTO canvas_elements
            (page_id, type, z_index, transform_matrix, properties, is_locked, opacity,
@@ -1406,7 +1486,7 @@ export async function createElement(
     throw HttpError.forbidden(`En esta biblioteca no se puede usar la herramienta "${nombre}"`);
   }
 
-  const properties = parseProperties(input.type, input.properties);
+  const properties = conClaveDePregunta(input.type, parseProperties(input.type, input.properties), null);
 
   return withTransaction(async (client) => {
     await assertPageBelongs(client, bookId, pageId);
@@ -1457,8 +1537,9 @@ export async function updateElement(
   return withTransaction(async (client) => {
     await assertPageBelongs(client, bookId, pageId);
 
-    const current = await client.query<{ type: ElementType; is_locked: boolean }>(
-      'SELECT type, is_locked FROM canvas_elements WHERE id = $1 AND page_id = $2 FOR UPDATE',
+    const current = await client.query<{ type: ElementType; is_locked: boolean; question_key: string | null }>(
+      `SELECT type, is_locked, properties->>'questionKey' AS question_key
+         FROM canvas_elements WHERE id = $1 AND page_id = $2 FOR UPDATE`,
       [elementId, pageId],
     );
     if (!current.rows[0]) throw HttpError.notFound('Elemento no encontrado');
@@ -1479,7 +1560,9 @@ export async function updateElement(
       sets.push(`transform_matrix = $${values.length}`);
     }
     if (input.properties !== undefined) {
-      values.push(JSON.stringify(parseProperties(current.rows[0].type, input.properties)));
+      values.push(
+        JSON.stringify(conClaveDePregunta(current.rows[0].type, parseProperties(current.rows[0].type, input.properties), current.rows[0].question_key)),
+      );
       sets.push(`properties = $${values.length}`);
     }
     if (input.zIndex !== undefined) {

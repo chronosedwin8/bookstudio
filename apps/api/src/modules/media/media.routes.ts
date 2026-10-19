@@ -6,6 +6,8 @@ import { validate } from '../../middleware/validate.js';
 import { geocode } from './geocode.service.js';
 import { MAX_ANONYMOUS_PAGE_SIZE, search } from './openverse.service.js';
 import { storeDataUrl, uploadLimits } from './uploads.service.js';
+import { archivoPropio } from '../../lib/storage.js';
+import { HttpError } from '../../lib/http-error.js';
 
 const searchQuerySchema = z.object({
   q: z.string().min(2, 'Escribe al menos 2 caracteres').max(120).trim(),
@@ -51,6 +53,33 @@ mediaRouter.get(
 mediaRouter.get('/limits', (_req, res) => {
   res.json({ allowedMimeTypes: uploadLimits.allowedMimeTypes, maxBytes: uploadLimits.maxBytes });
 });
+
+/**
+ * Los bytes de una imagen NUESTRA, desde nuestro dominio. El navegador los
+ * necesita para vectorizarla en un canvas: con la imagen servida desde el bucket
+ * sin CORS, el canvas quedaria "contaminado" y no dejaria leer los pixeles.
+ * Solo archivos propios (ver archivoPropio): no es un proxy abierto.
+ */
+mediaRouter.get(
+  '/raw',
+  asyncHandler(async (req, res) => {
+    const src = String(req.query.src ?? '');
+    const propio = archivoPropio(src);
+    if (!propio) throw HttpError.badRequest('Solo se pueden leer imágenes de BookStudio');
+    if ('disco' in propio) {
+      res.setHeader('Cache-Control', 'private, max-age=300');
+      res.sendFile(propio.disco, (err) => {
+        if (err && !res.headersSent) res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Archivo no encontrado' } });
+      });
+      return;
+    }
+    const r = await fetch(propio.remoto, { signal: AbortSignal.timeout(20_000) }).catch(() => null);
+    if (!r?.ok) throw HttpError.notFound('Archivo no encontrado');
+    res.setHeader('Content-Type', r.headers.get('content-type') ?? 'application/octet-stream');
+    res.setHeader('Cache-Control', 'private, max-age=300');
+    res.send(Buffer.from(await r.arrayBuffer()));
+  }),
+);
 
 mediaRouter.post(
   '/uploads',

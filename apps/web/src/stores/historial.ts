@@ -156,6 +156,7 @@ export const NOMBRE_TIPO: Record<ElementType, string> = {
   chart: 'gráfica',
   math: 'fórmula',
   plot: 'gráfica de funciones',
+  frame: 'marco',
   button: 'botón',
 };
 

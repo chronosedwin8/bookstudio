@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import AlertMessage from '@/components/AlertMessage.vue';
 import DrawingToolbar from '@/components/canvas/DrawingToolbar.vue';
@@ -9,6 +9,13 @@ import ShapeRenderer from '@/components/canvas/ShapeRenderer.vue';
 import PagePreview from '@/components/canvas/PagePreview.vue';
 import PagesPanel from '@/components/canvas/PagesPanel.vue';
 import NumeracionDialog from '@/components/canvas/NumeracionDialog.vue';
+import TextoDialog from '@/components/media/TextoDialog.vue';
+import RecorteDialog from '@/components/media/RecorteDialog.vue';
+import MarcosDialog from '@/components/media/MarcosDialog.vue';
+import RespuestasDialog from '@/components/canvas/RespuestasDialog.vue';
+import type { Marco } from '@/utils/marcos';
+import { vectorizar } from '@/utils/vectorizar';
+import { ESTILOS_BASICOS, type EstiloTexto } from '@/utils/estilosTexto';
 import ShareDialog from '@/components/ShareDialog.vue';
 import BookGradesPanel from '@/components/library/BookGradesPanel.vue';
 import DistributeDialog from '@/components/library/DistributeDialog.vue';
@@ -31,6 +38,7 @@ import { useEditorStore } from '@/stores/editor';
 import { usePreferencesStore } from '@/stores/preferences';
 import type {
   CanvasElement,
+  Recorte,
   ChartType,
   DistributeResult,
   ElementActions,
@@ -203,6 +211,8 @@ const dialog = ref<
   | 'question'
   | 'chart'
   | 'sound'
+  | 'texto'
+  | 'marco'
 >('none');
 const stickerTab = ref<'shapes' | 'icons' | 'emojis'>('shapes');
 
@@ -225,11 +235,191 @@ function heightForRatio(widthPercent: number, ratio: number): number {
 async function onPickShape(shape: ShapeName): Promise<void> {
   dialog.value = 'none';
   const width = 34;
-  await editor.addElement(
+  const creada = await editor.addElement(
     'shape',
     { x: 20, y: 20, width, height: heightForRatio(width, ratioOf(shape)), angle: 0 },
     { shape, fillColor: '#59A1FF', strokeColor: preferences.strokeColor, strokeWidth: 2 },
   );
+  // Se inserta lista para escribir dentro, como en Canva. Las lineas y flechas
+  // finas no tienen donde poner texto: esas no.
+  if (creada && !SHAPES[shape].strokeOnly) editor.editingElementId = creada.id;
+}
+
+/* --- Herramientas de la imagen: recortar, quitar fondo, capas, vectorizar --- */
+
+/** Imagen que se esta recortando (el dialogo de recorte esta abierto). */
+const recortando = ref<CanvasElement | null>(null);
+/** Mientras una herramienta trabaja: que dice el aviso. */
+const procesandoImagen = ref<string | null>(null);
+
+async function onHerramientaImagen(tipo: 'recortar' | 'quitar-fondo' | 'capas' | 'vectorizar'): Promise<void> {
+  const el = editor.selectedElement;
+  if (!el || el.type !== 'image') return;
+  const fileUrl = String(el.properties.fileUrl ?? '');
+  if (tipo === 'recortar') {
+    recortando.value = el;
+    return;
+  }
+  editor.error = null;
+  try {
+    if (tipo === 'vectorizar') {
+      procesandoImagen.value = 'Vectorizando la imagen…';
+      const svg = await vectorizar(fileUrl, 'detallado');
+      const subida = await mediaApi.upload(svg);
+      await editor.patchElement(el.id, { properties: { ...el.properties, fileUrl: subida.fileUrl } });
+      anunciar('Imagen vectorizada: ahora se ve nítida a cualquier tamaño');
+      return;
+    }
+    procesandoImagen.value = 'Quitando el fondo con IA… (unos segundos)';
+    const sinFondo = await magnificApi.quitarFondo(fileUrl);
+    if (tipo === 'quitar-fondo') {
+      await editor.patchElement(el.id, { properties: { ...el.properties, fileUrl: sinFondo } });
+      anunciar('Fondo quitado');
+    } else {
+      // Capas: el original queda debajo como fondo y el sujeto, recortado, encima
+      // y en el mismo sitio. Asi se puede mover, agrandar o cambiar el fondo.
+      await editor.insertarVarios('separar en capas', [
+        { type: 'image', transformMatrix: { ...el.transformMatrix }, properties: { ...el.properties, fileUrl: sinFondo, altText: `${String(el.properties.altText ?? '')} (sujeto)`.trim() } },
+      ]);
+      anunciar('Separada en dos capas: el sujeto está encima del fondo');
+    }
+  } catch (err) {
+    editor.error = err instanceof Error && !('response' in err) ? err.message : errorMessage(err);
+  } finally {
+    procesandoImagen.value = null;
+  }
+}
+
+/* --- Marcos: silueta con una imagen dentro --- */
+
+async function onPickMarco(marco: Marco): Promise<void> {
+  dialog.value = 'none';
+  const width = marco.grupo === 'Letras' || marco.grupo === 'Números' ? 22 : 34;
+  await editor.addElement(
+    'frame',
+    { x: 25 + (insertOffset++ % 5) * 3, y: 18 + (insertOffset % 5) * 3, width, height: heightForRatio(width, marco.ratio), angle: 0 },
+    { frame: marco.id, fileUrl: '', frameColor: '#1E293B', zoom: 1, posX: 50, posY: 50 },
+  );
+}
+
+/**
+ * Marco que espera foto. Mientras esta puesto, la siguiente imagen que se elija
+ * (del buscador, del equipo o creada con IA) entra en el marco en vez de
+ * insertarse suelta. Se olvida al cambiar de seleccion.
+ */
+const rellenandoMarco = ref<string | null>(null);
+/** Pregunta cuyas respuestas se estan mirando. */
+const viendoRespuestas = ref<string | null>(null);
+watch(
+  () => editor.selectedElementId,
+  (id) => {
+    if (id !== rellenandoMarco.value) rellenandoMarco.value = null;
+  },
+);
+
+function onImagenMarco(origen: 'buscar' | 'equipo' | 'ia'): void {
+  if (editor.selectedElement?.type !== 'frame') return;
+  rellenandoMarco.value = editor.selectedElement.id;
+  if (origen === 'buscar') dialog.value = 'image';
+  else if (origen === 'ia') dialog.value = 'magnific';
+  else pickFromComputer('image');
+}
+
+/** Si hay un marco esperando foto, se la pone y devuelve true. */
+async function rellenarMarco(fileUrl: string, altText: string): Promise<boolean> {
+  const id = rellenandoMarco.value;
+  if (!id) return false;
+  rellenandoMarco.value = null;
+  const marco = editor.sortedElements.find((e) => e.id === id && e.type === 'frame');
+  if (!marco) return false;
+  await editor.patchElement(id, { properties: { ...marco.properties, fileUrl, altText, zoom: 1, posX: 50, posY: 50 } });
+  return true;
+}
+
+/** Recorte aplicado: se guarda y la caja toma la forma de lo recortado. */
+async function onAplicarRecorte(recorte: Recorte | null, ratio: number): Promise<void> {
+  const el = recortando.value;
+  recortando.value = null;
+  if (!el) return;
+  const width = el.transformMatrix.width;
+  await editor.patchElement(el.id, {
+    properties: { ...el.properties, crop: recorte },
+    transformMatrix: { ...el.transformMatrix, height: heightForRatio(width, ratio) },
+  });
+}
+
+/** La barra flotante del objeto seleccionado: duplicar, bloquear o borrar. */
+async function onAccionBarra(tipo: 'duplicar' | 'bloquear' | 'borrar', id: string): Promise<void> {
+  if (tipo === 'duplicar') {
+    const n = await editor.duplicarSeleccion();
+    anunciar(n ? (n === 1 ? 'Duplicado 1 objeto' : `Duplicados ${n} objetos`) : null);
+  } else if (tipo === 'borrar') {
+    await editor.removeSelection();
+  } else {
+    const el = editor.sortedElements.find((e) => e.id === id);
+    if (el) await editor.patchElement(id, { isLocked: !el.isLocked });
+  }
+}
+
+/* --- Notas adhesivas --- */
+
+const COLORES_NOTA = ['#FEF08A', '#FBCFE8', '#BBF7D0', '#BFDBFE', '#FED7AA', '#DDD6FE'];
+
+async function addNota(color: string, forma: 'nota-adhesiva' | 'nota-cinta' = 'nota-adhesiva'): Promise<void> {
+  const width = 24;
+  const creada = await editor.addElement(
+    'shape',
+    { x: 30 + (insertOffset++ % 5) * 3, y: 25 + (insertOffset % 5) * 3, width, height: heightForRatio(width, 1), angle: 0 },
+    {
+      shape: forma,
+      fillColor: color,
+      strokeColor: 'transparent',
+      strokeWidth: 0,
+      text: '',
+      textFont: 'Patrick Hand',
+      textSize: 11,
+      textColor: '#1E293B',
+      textAlign: 'center',
+      textVAlign: 'middle',
+    },
+  );
+  if (creada) editor.editingElementId = creada.id;
+}
+
+/* --- Texto: titulo, subtitulo, texto y combinaciones --- */
+
+async function onTextoBasico(id: string): Promise<void> {
+  dialog.value = 'none';
+  const b = ESTILOS_BASICOS.find((e) => e.id === id);
+  if (!b) return;
+  const alto = Math.max(6, Number(((b.props.fontSize * 1.35 + 24) / (1000 / editor.aspectRatio) * 100).toFixed(1)));
+  const creado = await editor.addElement(
+    'text',
+    { x: 12 + (insertOffset++ % 5) * 3, y: 12 + (insertOffset % 5) * 3, width: b.ancho, height: alto, angle: 0 },
+    { ...b.props, ...(id === 'texto' ? { color: preferences.textColor } : {}) },
+  );
+  if (creado) editor.editingElementId = creado.id;
+}
+
+/**
+ * Una combinacion de texto: uno o dos textos, apilados y centrados en la hoja.
+ * El alto de cada caja sale de su letra (en px del lienzo de 1000), para que el
+ * rotulo no se corte en ningun formato de hoja.
+ */
+async function onEstiloTexto(estilo: EstiloTexto): Promise<void> {
+  dialog.value = 'none';
+  const altoHoja = 1000 / editor.aspectRatio;
+  const altos = estilo.piezas.map((p) => (p.props.fontSize * (p.props.lineHeight ?? 1.1) + 28) / altoHoja * 100);
+  const solape = estilo.piezas.length > 1 ? (estilo.piezas[1].props.fontSize * 0.18) / altoHoja * 100 : 0;
+  const total = altos.reduce((a, b) => a + b, 0) - solape;
+  const x = Math.max(0, (100 - estilo.ancho) / 2);
+  let y = Math.max(2, (100 - total) / 2);
+  const elementos = estilo.piezas.map((p, i) => {
+    const caja = { x, y, width: estilo.ancho, height: Number(altos[i].toFixed(1)), angle: 0 };
+    y += altos[i] - (i === 0 ? solape : 0);
+    return { type: 'text' as const, transformMatrix: caja, properties: { ...p.props } as Record<string, unknown> };
+  });
+  await editor.insertarVarios(`insertar «${estilo.label}»`, elementos);
 }
 
 async function onPickIcon(icon: { name: string; paths: string[]; viewBox: string }): Promise<void> {
@@ -463,6 +653,7 @@ async function addTextElement(): Promise<void> {
  */
 async function onPickGenerada(payload: { fileUrl: string; altText: string }): Promise<void> {
   dialog.value = 'none';
+  if (await rellenarMarco(payload.fileUrl, payload.altText)) return;
   const caja = await cajaMidiendo(payload.fileUrl, editor.aspectRatio);
   await editor.addElement(
     'image',
@@ -473,6 +664,7 @@ async function onPickGenerada(payload: { fileUrl: string; altText: string }): Pr
 
 async function onPickImage(result: MediaResult, withAttribution: boolean): Promise<void> {
   dialog.value = 'none';
+  if (await rellenarMarco(result.url, result.title ?? '')) return;
   /*
    * El banco ya dice cuanto mide la imagen; lo que faltaba era contar la forma de
    * la pagina. Un 45% de ancho y un 45% de alto solo miden lo mismo en una pagina
@@ -635,6 +827,7 @@ async function uploadAndInsert(dataUrl: string, durationSeconds: number, altText
         { fileUrl: file.fileUrl, durationSeconds },
       );
     } else {
+      if (await rellenarMarco(file.fileUrl, altText)) return;
       // Se mide con la direccion ya servida: es la misma imagen que se vera.
       const caja = await cajaMidiendo(file.fileUrl, editor.aspectRatio);
       await editor.addElement(
@@ -784,6 +977,9 @@ async function onAjustarAImagen(): Promise<void> {
   if (!url) return;
 
   const caja = await cajaMidiendo(url, editor.aspectRatio, element.transformMatrix.width);
+  // Con recorte, la forma buena es la de lo recortado, no la de la imagen entera.
+  const r = element.properties.crop as Recorte | null | undefined;
+  if (r && r.w > 0 && r.h > 0) caja.height = Math.min(90, Number((caja.height * (r.h / r.w)).toFixed(1)));
   await editor.patchElement(element.id, {
     transformMatrix: { ...element.transformMatrix, ...caja },
   });
@@ -1346,7 +1542,7 @@ async function saveTitle(): Promise<void> {
 
           <section class="space-y-1.5">
             <h3 class="label">Insertar</h3>
-            <button v-if="puedeUsar('text')" type="button" class="btn-secondary w-full justify-start" @click="addTextElement">
+            <button v-if="puedeUsar('text')" type="button" class="btn-secondary w-full justify-start" @click="dialog = 'texto'">
               <span class="text-base">T</span> Texto
             </button>
             <button v-if="puedeUsar('image')" type="button" class="btn-secondary w-full justify-start" @click="dialog = 'image'">
@@ -1388,6 +1584,9 @@ async function saveTitle(): Promise<void> {
             </button>
             <button v-if="puedeUsar('math')" type="button" class="btn-secondary w-full justify-start" @click="addMathElement">
               ∑ Formula
+            </button>
+            <button v-if="puedeUsar('frame')" type="button" class="btn-secondary w-full justify-start" @click="dialog = 'marco'">
+              🖼️ Marcos
             </button>
             <button v-if="puedeUsar('plot')" type="button" class="btn-secondary w-full justify-start" @click="addPlotElement()">
               📈 Gráfica de funciones
@@ -1457,6 +1656,26 @@ async function saveTitle(): Promise<void> {
               @click="openStickers('emojis')"
             >
               😀 Emojis
+            </button>
+          </section>
+
+          <!-- Notas adhesivas: se insertan listas para escribir -->
+          <section v-if="puedeUsar('shape')">
+            <h3 class="label">Notas adhesivas</h3>
+            <div class="grid grid-cols-6 gap-1">
+              <button
+                v-for="c in COLORES_NOTA"
+                :key="c"
+                type="button"
+                class="aspect-square rounded shadow-sm ring-1 ring-black/10 transition hover:scale-110"
+                :style="{ backgroundColor: c }"
+                :title="'Nota adhesiva'"
+                :aria-label="`Nota adhesiva de color ${c}`"
+                @click="addNota(c)"
+              />
+            </div>
+            <button type="button" class="btn-secondary mt-1.5 w-full justify-start text-xs" @click="addNota('#FEF08A', 'nota-cinta')">
+              📌 Nota con cinta
             </button>
           </section>
 
@@ -1575,6 +1794,8 @@ async function saveTitle(): Promise<void> {
               :onion-elements="onionElements"
               :auto-edit-id="editor.editingElementId"
               :selected-ids="editor.selectedIds"
+              :puede-bloquear="editor.isManager"
+              @accion="onAccionBarra"
               :numbering="editor.book.pageNumbering"
               :total-pages="editor.book.pages.length"
               @select="(id, additive) => editor.select(id, additive)"
@@ -1765,6 +1986,10 @@ async function saveTitle(): Promise<void> {
         <ElementInspector
           :element="editor.selectedElement"
           :is-manager="editor.isManager"
+          :herramientas-ia="puedeGenerarImagenes"
+          @herramienta-imagen="onHerramientaImagen"
+          @imagen-marco="onImagenMarco"
+          @ver-respuestas="viendoRespuestas = editor.selectedElementId"
           @patch="onInspectorPatch"
           @patch-vivo="editor.patchElementLocal($event.elementId, $event.properties)"
           @patch-elemento="editor.patchElement($event.elementId, { properties: $event.properties })"
@@ -1860,6 +2085,36 @@ async function saveTitle(): Promise<void> {
     />
 
     <SoundLibraryDialog v-if="dialog === 'sound'" @close="dialog = 'none'" @pick="onPickSound" />
+
+    <RecorteDialog
+      v-if="recortando"
+      :file-url="String(recortando.properties.fileUrl ?? '')"
+      :recorte="(recortando.properties.crop as Recorte | null) ?? null"
+      @close="recortando = null"
+      @aplicar="onAplicarRecorte"
+    />
+
+    <div
+      v-if="procesandoImagen"
+      class="fixed bottom-6 left-1/2 z-[9500] -translate-x-1/2 rounded-full bg-slate-900 px-4 py-2 text-sm text-white shadow-lg"
+      role="status"
+    >{{ procesandoImagen }}</div>
+
+    <RespuestasDialog
+      v-if="viendoRespuestas && editor.book"
+      :book-id="editor.book.id"
+      :element-id="viendoRespuestas"
+      @close="viendoRespuestas = null"
+    />
+
+    <MarcosDialog v-if="dialog === 'marco'" @close="dialog = 'none'" @pick="onPickMarco" />
+
+    <TextoDialog
+      v-if="dialog === 'texto'"
+      @close="dialog = 'none'"
+      @basico="onTextoBasico"
+      @estilo="onEstiloTexto"
+    />
 
     <ChartTypeDialog v-if="dialog === 'chart'" @close="dialog = 'none'" @pick="onPickChart" />
 

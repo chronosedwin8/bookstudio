@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { z } from 'zod';
 import { asyncHandler } from '../../lib/async-handler.js';
 import { HttpError } from '../../lib/http-error.js';
 import { createRateLimiter } from '../../lib/rate-limit.js';
@@ -38,6 +39,28 @@ magnificRouter.post(
     }
 
     res.status(202).json(await service.generar(req.auth!.userId, req.body));
+  }),
+);
+
+/** Quita el fondo de una imagen del libro. Devuelve la nueva, ya en nuestro almacen. */
+magnificRouter.post(
+  '/remove-background',
+  validate(
+    z.object({
+      fileUrl: z
+        .string()
+        .max(2048)
+        .refine((v) => /^https:\/\//.test(v) || v.startsWith('/storage/'), 'Imagen no valida'),
+    }),
+  ),
+  asyncHandler(async (req, res) => {
+    if (!service.puedeGenerar(req.auth!.role)) {
+      throw HttpError.forbidden('Las herramientas de imagen con IA estan reservadas al profesorado');
+    }
+    if (limitador.hit(req.auth!.userId)) {
+      throw HttpError.badRequest('Has usado muchas veces seguidas las herramientas de IA. Prueba dentro de un rato.');
+    }
+    res.json({ fileUrl: await service.quitarFondo(req.auth!.userId, req.body.fileUrl) });
   }),
 );
 

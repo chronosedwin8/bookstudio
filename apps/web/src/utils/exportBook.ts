@@ -11,6 +11,8 @@ import { normalizarTabla } from './tablas';
 import { svgCompleto } from './ilustracion/primitivas';
 import { paperStyle } from './papers';
 import { estiloNumeroEnLinea, normalizarNumeracion, numeroDeHoja } from './numeracion';
+import { estiloEfecto } from './efectosTexto';
+import { PAISAJE_MUESTRA, cuerpoDe, encimaDe, marcoDe, mascaraUrl } from './marcos';
 import { dibujar2D, dibujar3D, normalizarGrafica } from './graficas';
 import { SHAPES, type ShapeName } from './shapes';
 import type { BookDetail, CanvasElement, Page, PageNumbering, RichBlock, RichSpan } from '@/types/api';
@@ -52,9 +54,11 @@ function shapeSvg(element: CanvasElement): string {
   const dash = definition.dashed ? ` stroke-dasharray="${strokeWidth * 1.8} ${strokeWidth * 1.6}"` : '';
 
   const parts = definition.primitives.map((primitive) => {
+    // El tono aclara u oscurece una cara (los cuerpos en 3D, la sombra de la nota).
+    const tono = 'tono' in primitive && primitive.tono ? ` style="filter:brightness(${primitive.tono})"` : '';
     const common =
       `fill="${primitive.el === 'line' ? 'none' : fill}" stroke="${stroke}" stroke-width="${strokeWidth}"` +
-      ` stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"${dash}`;
+      ` stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"${dash}${tono}`;
     switch (primitive.el) {
       case 'rect':
         return `<rect x="0" y="0" width="100" height="100" rx="${Number(p.cornerRadius ?? 0)}" ${common}/>`;
@@ -71,7 +75,31 @@ function shapeSvg(element: CanvasElement): string {
     }
   });
 
-  return `<svg viewBox="0 0 100 100" preserveAspectRatio="none">${parts.join('')}</svg>`;
+  const svg = `<svg viewBox="0 0 100 100" preserveAspectRatio="none">${parts.join('')}</svg>`;
+
+  // Texto dentro de la forma: en cqw, para que crezca con ella como en el lienzo.
+  const texto = String(p.text || p.label || '');
+  if (!texto) return svg;
+  const nota = String(p.shape).startsWith('nota-');
+  const estilo = styleAttr({
+    position: 'absolute',
+    inset: '0',
+    display: 'flex',
+    flexDirection: 'column',
+    justifyContent: { top: 'flex-start', middle: 'center', bottom: 'flex-end' }[String(p.textVAlign ?? 'middle')] ?? 'center',
+    padding: nota ? '14% 10% 12%' : '10%',
+    fontFamily: `"${String(p.textFont ?? 'Lato')}", sans-serif`,
+    fontSize: `${Number(p.textSize ?? 9)}cqw`,
+    color: p.text ? String(p.textColor ?? '#1E293B') : stroke,
+    fontWeight: p.textBold || (!p.text && p.label) ? 700 : 400,
+    fontStyle: p.textItalic ? 'italic' : 'normal',
+    textAlign: String(p.textAlign ?? 'center'),
+    lineHeight: '1.2',
+    whiteSpace: 'pre-wrap',
+    overflowWrap: 'break-word',
+    overflow: 'hidden',
+  });
+  return `<div style="position:relative;width:100%;height:100%;container-type:size">${svg}<div${estilo}>${escapeHtml(texto)}</div></div>`;
 }
 
 function textHtml(element: CanvasElement): string {
@@ -90,6 +118,9 @@ function textHtml(element: CanvasElement): string {
     lineHeight: String(p.lineHeight ?? 1.35),
     letterSpacing: `${Number(p.letterSpacing ?? 0)}px`,
     padding: '8px',
+    textTransform: p.uppercase ? 'uppercase' : undefined,
+    overflow: p.effect && p.effect !== 'ninguno' ? 'visible' : undefined,
+    ...estiloEfecto(p.effect as never, p.effectColor as string | undefined, String(p.color ?? '#333333')),
   });
 
   const listStyle = String(p.listStyle ?? 'none');
@@ -145,8 +176,15 @@ function elementHtml(element: CanvasElement, ratio = 1): string {
       break;
     case 'image': {
       const src = safeUrl(p.fileUrl);
+      const r = p.crop as { x: number; y: number; w: number; h: number } | null | undefined;
+      // Recortada: la imagen entera, ampliada y desplazada para que la zona
+      // recortada llene la caja (como en el lienzo).
+      const recorte =
+        r && r.w > 0 && r.h > 0
+          ? ` style="position:absolute;max-width:none;object-fit:fill;width:${100 / r.w}%;height:${100 / r.h}%;left:${(-r.x / r.w) * 100}%;top:${(-r.y / r.h) * 100}%"`
+          : '';
       inner = src
-        ? `<img src="${escapeHtml(src)}" alt="${escapeHtml(String(p.altText ?? ''))}" loading="lazy"/>`
+        ? `<img src="${escapeHtml(src)}" alt="${escapeHtml(String(p.altText ?? ''))}" loading="lazy"${recorte}/>`
         : '';
       const caption = (p.attribution as { text?: string } | undefined)?.text;
       if (caption) inner += `<span class="cap">${escapeHtml(caption)}</span>`;
@@ -205,6 +243,32 @@ function elementHtml(element: CanvasElement, ratio = 1): string {
     case 'chart':
       inner = chartSvgPlaceholder(element);
       break;
+    case 'frame': {
+      // Mismas capas que en el lienzo: cuerpo, foto con su mascara, y lo de encima.
+      const m = marcoDe(p.frame);
+      const src = safeUrl(p.fileUrl);
+      const mascara = mascaraUrl(m);
+      const area = styleAttr({
+        position: 'absolute',
+        left: `${m.area.x}%`,
+        top: `${m.area.y}%`,
+        width: `${m.area.w}%`,
+        height: `${m.area.h}%`,
+        overflow: 'hidden',
+        ...(mascara ? { maskImage: mascara, WebkitMaskImage: mascara, maskSize: '100% 100%', WebkitMaskSize: '100% 100%' } : {}),
+      });
+      const pos = `${Number(p.posX ?? 50)}% ${Number(p.posY ?? 50)}%`;
+      const foto = src
+        ? `<img src="${escapeHtml(src)}" alt="${escapeHtml(String(p.altText ?? ''))}" style="width:100%;height:100%;object-fit:cover;object-position:${pos};transform:scale(${Math.min(5, Math.max(1, Number(p.zoom ?? 1)))});transform-origin:${pos}"/>`
+        : PAISAJE_MUESTRA;
+      inner =
+        `<div style="position:relative;width:100%;height:100%">` +
+        (m.cuerpo ? `<div style="position:absolute;inset:0">${cuerpoDe(m, p.frameColor)}</div>` : '') +
+        `<div${area}>${foto}</div>` +
+        (m.encima ? `<div style="position:absolute;inset:0;pointer-events:none">${encimaDe(m, p.frameColor)}</div>` : '') +
+        `</div>`;
+      break;
+    }
     case 'plot': {
       // La grafica viaja dibujada, con los valores del autor: en la copia no hay
       // deslizadores ni zoom, pero se ve igual que en el libro.

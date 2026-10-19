@@ -169,6 +169,27 @@ booksRouter.post(
 );
 
 /**
+ * Respuestas guardadas de una pregunta o encuesta, de todas sus copias. Solo el
+ * profesorado y la administracion, y cada cual las de su alumnado (ver
+ * respuestas.service.ts). `libraryId` filtra por una biblioteca.
+ */
+booksRouter.get(
+  '/:id/questions/:elementId/responses',
+  validate(questionParamsSchema, 'params'),
+  validate(z.object({ libraryId: z.string().uuid().optional() }), 'query'),
+  asyncHandler(async (req, res) => {
+    res.json(
+      await service.questionResponses(
+        req.params.id,
+        req.params.elementId,
+        { userId: req.auth!.userId, role: req.auth!.role },
+        (req.query as { libraryId?: string }).libraryId,
+      ),
+    );
+  }),
+);
+
+/**
  * Valoraciones. El alumno puede leer las de sus libros; ponerlas, cambiarlas o
  * borrarlas es cosa del profesorado, y se comprueba en el servicio.
  */

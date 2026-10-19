@@ -266,6 +266,10 @@ async function reset(): Promise<void> {
 }
 
 function save(): void {
+  // Una zona marcada se recorta de verdad aunque no se haya pulsado «Recortar»:
+  // antes se insertaba la pantalla entera y, al agrandar la imagen en la hoja,
+  // asomaba justo lo que se queria quitar.
+  if (props.mode === 'clip' && seleccion.value) aplicarRecorte();
   if (!resultDataUrl.value) return;
   emit('save', { dataUrl: resultDataUrl.value, durationSeconds: durationSeconds || elapsed.value });
 }
@@ -357,8 +361,8 @@ const formatTime = (seconds: number) =>
         </p>
 
         <p v-if="mode === 'clip' && resultUrl" class="text-center text-xs text-slate-500">
-          Arrastra sobre la imagen para elegir la zona y pulsa «Recortar». Sin selección se
-          inserta la pantalla completa.
+          Arrastra sobre la imagen para elegir la zona: se inserta solo esa parte. Sin
+          selección se inserta la pantalla completa.
         </p>
 
         <div class="flex flex-wrap justify-center gap-2">
@@ -390,9 +394,11 @@ const formatTime = (seconds: number) =>
               type="button"
               class="btn-secondary"
               @click="aplicarRecorte"
-            >Recortar</button>
+            >Recortar y ver</button>
             <button type="button" class="btn-secondary" @click="reset">Repetir</button>
-            <button type="button" class="btn-primary" @click="save">Insertar en la página</button>
+            <button type="button" class="btn-primary" @click="save">
+              {{ mode === 'clip' && seleccion ? 'Insertar la zona marcada' : 'Insertar en la página' }}
+            </button>
           </template>
         </div>
       </div>

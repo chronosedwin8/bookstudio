@@ -165,6 +165,41 @@ export async function consultar(userId: string, taskId: string): Promise<EstadoG
 }
 
 /**
+ * Quita el fondo de una imagen (Magnific, beta). Es sincrono: devuelve en el acto
+ * la imagen recortada, con transparencia, en una direccion que **caduca a los 5
+ * minutos**; por eso se copia enseguida a nuestro almacen.
+ *
+ * Magnific tiene que poder descargar la imagen: las de /storage se le pasan con
+ * el dominio delante (se sirven publicas), las de fuera tal cual.
+ */
+export async function quitarFondo(userId: string, fileUrl: string): Promise<string> {
+  if (!magnificConfigurado()) throw HttpError.badRequest('Las herramientas de imagen con IA no estan configuradas');
+  const absoluta = fileUrl.startsWith('/storage/') ? `${env.APP_URL.replace(/\/$/, '')}${fileUrl}` : fileUrl;
+  if (!/^https:\/\//.test(absoluta)) throw HttpError.badRequest('Esa imagen no se puede procesar');
+
+  let respuesta: Response;
+  try {
+    respuesta = await fetch(`${BASE}/v1/ai/beta/remove-background`, {
+      method: 'POST',
+      headers: { 'x-magnific-api-key': env.MAGNIFIC_API_KEY, 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ image_url: absoluta }).toString(),
+      signal: AbortSignal.timeout(60_000),
+    });
+  } catch {
+    throw HttpError.badGateway('No se pudo contactar con Magnific');
+  }
+  const datos = (await respuesta.json().catch(() => ({}))) as { high_resolution?: string; url?: string; message?: string };
+  if (!respuesta.ok) {
+    if (respuesta.status === 401) throw HttpError.badGateway('La clave de Magnific no es valida; revisa MAGNIFIC_API_KEY');
+    if (respuesta.status === 429) throw HttpError.badRequest('Magnific esta recibiendo demasiadas peticiones. Prueba en un minuto.');
+    throw HttpError.badGateway(datos.message ?? `Magnific respondio ${respuesta.status}`);
+  }
+  const resultado = datos.high_resolution ?? datos.url;
+  if (!resultado) throw HttpError.badGateway('Magnific no devolvio la imagen sin fondo');
+  return copiarANuestroAlmacen(userId, resultado);
+}
+
+/**
  * Trae la imagen a nuestro almacenamiento.
  *
  * Imprescindible: la direccion que da Magnific viene firmada y **caduca en una
@@ -172,6 +207,13 @@ export async function consultar(userId: string, taskId: string): Promise<EstadoG
  * dia. Al copiarla, ademas, pasa por las mismas comprobaciones que cualquier
  * subida y se borra con la cuenta de quien la creo.
  */
+function tipoPorBytes(b: Buffer): string {
+  if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return 'image/png';
+  if (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return 'image/jpeg';
+  if (b.subarray(0, 4).toString('ascii') === 'RIFF' && b.subarray(8, 12).toString('ascii') === 'WEBP') return 'image/webp';
+  return 'application/octet-stream';
+}
+
 async function copiarANuestroAlmacen(userId: string, url: string): Promise<string> {
   let respuesta: Response;
   try {
@@ -181,8 +223,12 @@ async function copiarANuestroAlmacen(userId: string, url: string): Promise<strin
   }
   if (!respuesta.ok) throw HttpError.badGateway('No se pudo descargar la imagen generada');
 
-  const tipo = (respuesta.headers.get('content-type') ?? 'image/png').split(';')[0].trim().toLowerCase();
+  const declarado = (respuesta.headers.get('content-type') ?? '').split(';')[0].trim().toLowerCase();
   const bytes = Buffer.from(await respuesta.arrayBuffer());
+  // Algunas descargas de Magnific (quitar fondo) llegan como
+  // application/octet-stream: el tipo se deduce entonces de los primeros bytes.
+  // storeBuffer vuelve a comprobarlos, asi que un tipo mal deducido se rechaza igual.
+  const tipo = declarado.startsWith('image/') ? declarado : tipoPorBytes(bytes);
   const guardado = await storeBuffer(userId, bytes, tipo);
   return guardado.fileUrl;
 }

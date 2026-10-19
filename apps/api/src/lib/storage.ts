@@ -109,6 +109,24 @@ const enS3: Almacen = {
   },
 };
 
+/**
+ * Si una URL es de un archivo nuestro, y donde esta. Sirve para leer los bytes de
+ * una imagen propia sin depender de CORS (vectorizar en el navegador) y sin que el
+ * servidor se convierta en un proxy de cualquier direccion: lo que no es nuestro
+ * no se toca.
+ */
+export function archivoPropio(url: string): { disco: string } | { remoto: string } | null {
+  if (url.startsWith(`${STORAGE_URL_PREFIX}/`)) {
+    const resto = url.slice(STORAGE_URL_PREFIX.length + 1).split('?')[0];
+    // Solo {tipo}/{usuario}/{archivo}: nada de subir carpetas con "..".
+    if (!/^(image|audio|video)\/[0-9a-f-]{36}\/[0-9a-f-]{36}\.[a-z0-9]{2,5}$/.test(resto)) return null;
+    return { disco: join(STORAGE_ROOT, resto) };
+  }
+  if (!usaS3()) return null;
+  const base = env.S3_PUBLIC_URL ? env.S3_PUBLIC_URL.replace(/\/+$/, '') + '/' : s3().urlDe(prefijo(''));
+  return url.startsWith(base) && !url.slice(base.length).includes('..') ? { remoto: url } : null;
+}
+
 /** El motor en uso. Se decide por configuracion, no por codigo. */
 export const almacen = (): Almacen => (usaS3() ? enS3 : enDisco);
 

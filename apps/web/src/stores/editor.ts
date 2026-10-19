@@ -452,6 +452,30 @@ export const useEditorStore = defineStore('editor', () => {
    * Se corren un poco respecto al original para que se vea que hay dos cosas y no
    * una: pegados exactamente encima, parece que no ha pasado nada.
    */
+  /**
+   * Inserta varios elementos de una vez, donde se indica y sin desplazarlos: las
+   * combinaciones de texto (un titulo y su subtitulo) o una forma con su nota.
+   * Se deshacen de un golpe y quedan seleccionados juntos, para moverlos juntos.
+   */
+  async function insertarVarios(
+    que: string,
+    elementos: Array<{ type: ElementType; transformMatrix: TransformMatrix; properties: Record<string, unknown> }>,
+  ): Promise<string[]> {
+    if (!book.value || !currentPage.value || !elementos.length) return [];
+    const nuevos: string[] = [];
+    await historial.agrupar(que, async () => {
+      for (const e of elementos) {
+        const creado = await addElement(e.type, e.transformMatrix, e.properties);
+        if (creado) nuevos.push(creado.id);
+      }
+    });
+    if (nuevos.length) {
+      selectedIds.value = nuevos;
+      selectedElementId.value = nuevos[nuevos.length - 1];
+    }
+    return nuevos;
+  }
+
   async function pegar(elementos: ElementoCopiado[] = copiados.value): Promise<number> {
     if (!book.value || !currentPage.value || !elementos.length) return 0;
 
@@ -838,6 +862,7 @@ export const useEditorStore = defineStore('editor', () => {
     cortarSeleccion,
     pegar,
     duplicarSeleccion,
+    insertarVarios,
     leerPaquete,
     hayCopiados,
     removeElement,

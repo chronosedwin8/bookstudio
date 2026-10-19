@@ -7,6 +7,8 @@ export const FONT_FAMILIES = [
   'Fredoka', 'Baloo 2', 'Bangers', 'Luckiest Guy',
   'Caveat', 'Patrick Hand', 'Indie Flower',
   'OpenDyslexic', 'Atkinson Hyperlegible',
+  'Bebas Neue', 'Abril Fatface', 'Playfair Display', 'Righteous',
+  'Pacifico', 'Lobster', 'Great Vibes', 'Permanent Marker',
 ] as const;
 export type FontFamily = (typeof FONT_FAMILIES)[number];
 
@@ -16,6 +18,8 @@ export const FONT_GROUPS: Array<{ label: string; fonts: readonly FontFamily[] }>
   { label: 'Con serifa', fonts: ['Merriweather', 'Lora'] },
   { label: 'Titulares y comic', fonts: ['Fredoka', 'Baloo 2', 'Bangers', 'Luckiest Guy'] },
   { label: 'Manuscritas', fonts: ['Caveat', 'Patrick Hand', 'Indie Flower'] },
+  { label: 'Rótulos', fonts: ['Bebas Neue', 'Abril Fatface', 'Playfair Display', 'Righteous'] },
+  { label: 'Caligráficas', fonts: ['Pacifico', 'Lobster', 'Great Vibes', 'Permanent Marker'] },
   { label: 'Accesibles', fonts: ['OpenDyslexic', 'Atkinson Hyperlegible'] },
 ];
 
@@ -257,7 +261,7 @@ export type LayoutFormat = 'portrait' | 'square' | 'landscape';
 export type ElementType =
   | 'text' | 'shape' | 'drawing' | 'image' | 'audio' | 'video'
   | 'map' | 'icon' | 'embed' | 'question' | 'chart' | 'math' | 'button'
-  | 'illustration' | 'table' | 'plot';
+  | 'illustration' | 'table' | 'plot' | 'frame';
 
 /** Boton del lienzo: se pulsa y lleva a otra pagina del libro o a una web. */
 export interface ButtonProperties {
@@ -339,8 +343,15 @@ export interface QuestionOption {
   correct?: boolean;
 }
 
+/** En el lienzo hay ademas encuestas, que no tienen respuesta correcta (los examenes no). */
+export type CanvasQuestionKind = QuestionKind | 'poll';
+
 export interface QuestionProperties {
-  kind: QuestionKind;
+  kind: CanvasQuestionKind;
+  /** Clave estable: junta las respuestas de todas las copias de la pregunta. */
+  questionKey?: string;
+  /** Encuestas: al votar se ven los resultados de todos. */
+  showResults?: boolean;
   prompt: string;
   promptImageUrl?: string;
   options: QuestionOption[];
@@ -363,6 +374,22 @@ export interface AnswerResult {
   feedback: string;
   /** La abierta no se corrige sola: queda guardada a la espera del docente. */
   pendingReview?: boolean;
+  /** Encuestas: los votos de todos por opcion. */
+  poll?: { counts: Record<string, number>; total: number };
+}
+
+/** Una respuesta guardada, en la lista que ve el docente. */
+export interface QuestionResponseRow {
+  userId: string;
+  fullName: string;
+  email: string;
+  course: string | null;
+  libraries: string[];
+  answer: string[];
+  correct: boolean | null;
+  attempts: number;
+  answeredAt: string;
+  bookTitle: string | null;
 }
 
 export interface MediaResult {
@@ -429,15 +456,39 @@ export interface TextProperties {
   superscript: boolean;
   subscript: boolean;
   indent: number;
+  /** Efecto del rotulo; el cliente sabe pintar cada uno (ver utils/efectosTexto.ts). */
+  effect?: TextEffect;
+  effectColor?: string;
+  uppercase?: boolean;
 }
 
+export type TextEffect = 'ninguno' | 'sombra' | 'elevado' | 'neon' | 'contorno' | 'hueco' | 'eco' | 'resplandor';
+
 export interface ShapeProperties {
-  shape: 'rectangle' | 'ellipse' | 'triangle' | 'star' | 'arrow' | 'speech-bubble';
+  shape: string;
   fillColor: string;
   strokeColor: string;
   strokeWidth: number;
   cornerRadius: number;
+  /** Texto de una linea de antes del 19-10-2026; lo nuevo va en `text`. */
   label: string;
+  /** Texto dentro de la forma; el tamano va en % del ancho de la forma (cqw). */
+  text?: string;
+  textFont?: FontFamily;
+  textSize?: number;
+  textColor?: string;
+  textBold?: boolean;
+  textItalic?: boolean;
+  textAlign?: 'left' | 'center' | 'right';
+  textVAlign?: 'top' | 'middle' | 'bottom';
+}
+
+/** Recorte de una imagen, en fracciones (0-1) de la imagen entera. */
+export interface Recorte {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
 }
 
 /**

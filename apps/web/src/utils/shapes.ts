@@ -706,6 +706,25 @@ const CATALOGUE = {
     ],
     ratio: 0.7,
   },
+  // Notas adhesivas: se insertan con texto dentro (ver ElementRenderer).
+  'nota-adhesiva': {
+    label: 'Nota adhesiva',
+    primitives: [
+      { el: 'path', d: 'M4,6 H98 V82 L82,98 H4 Z', tono: 0.55 },
+      { el: 'path', d: 'M2,2 H96 V78 L78,96 H2 Z' },
+      { el: 'polygon', points: '78,96 96,78 78,78', tono: 0.8 },
+    ],
+    ratio: 1,
+  },
+  'nota-cinta': {
+    label: 'Nota con cinta',
+    primitives: [
+      { el: 'path', d: 'M5,12 H99 V99 H5 Z', tono: 0.55 },
+      { el: 'path', d: 'M2,9 H96 V96 H2 Z' },
+      { el: 'polygon', points: '34,2 66,3 64,17 36,16', tono: 1.6 },
+    ],
+    ratio: 1,
+  },
 } satisfies Record<string, ShapeDefinition>;
 
 export type ShapeName = keyof typeof CATALOGUE;
@@ -784,6 +803,7 @@ export const SHAPE_GROUPS: Array<{ label: string; shapes: ShapeName[] }> = [
       'clip-reloj', 'clip-hoja', 'clip-gota', 'clip-bandera', 'clip-lapiz', 'clip-cohete',
     ],
   },
+  { label: 'Notas adhesivas', shapes: ['nota-adhesiva', 'nota-cinta'] },
 ];
 
 /** Proporcion ancho/alto con la que insertar una forma; 1.5 si no declara otra. */

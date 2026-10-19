@@ -3,11 +3,18 @@ import { computed, ref } from 'vue';
 import { mediaApi } from '@/services/api';
 import { errorMessage } from '@/services/http';
 import { QUESTION_KIND_LABELS, nextOptionId } from '@/utils/questions';
-import type { QuestionKind, QuestionOption, QuestionProperties } from '@/types/api';
+import type { CanvasQuestionKind, QuestionOption, QuestionProperties } from '@/types/api';
 
-const props = defineProps<{ question: QuestionProperties }>();
+const props = defineProps<{
+  question: QuestionProperties;
+  /** El profesorado y la administracion ven las respuestas guardadas. */
+  puedeVerRespuestas?: boolean;
+}>();
 
-const emit = defineEmits<{ patch: [properties: Record<string, unknown>] }>();
+const emit = defineEmits<{ patch: [properties: Record<string, unknown>]; verRespuestas: [] }>();
+
+/** Los tipos del lienzo: los de los examenes y, ademas, la encuesta. */
+const TIPOS: Record<CanvasQuestionKind, string> = { ...QUESTION_KIND_LABELS, poll: 'Encuesta (sin respuesta correcta)' };
 
 const uploading = ref(false);
 const error = ref<string | null>(null);
@@ -64,7 +71,7 @@ function moveOption(index: number, step: number): void {
 }
 
 /** Cambiar de tipo puede dejar la pregunta sin una solucion valida; se corrige aqui. */
-function setKind(kind: QuestionKind): void {
+function setKind(kind: CanvasQuestionKind): void {
   let next = options.value;
   // Al salir de una abierta no hay opciones que reaprovechar: se siembran dos,
   // porque el servidor rechaza una pregunta de opciones que no las tenga.
@@ -79,6 +86,9 @@ function setKind(kind: QuestionKind): void {
     next = next.map((option, i) => ({ ...option, correct: i === (first >= 0 ? first : 0) }));
   } else if (kind === 'multiple' && !next.some((option) => option.correct)) {
     next = next.map((option, i) => ({ ...option, correct: i === 0 }));
+  } else if (kind === 'poll') {
+    // Una encuesta no tiene respuesta buena: el servidor la rechazaria con una marcada.
+    next = next.map((option) => ({ ...option, correct: false }));
   }
   update({ kind, options: next });
 }
@@ -136,9 +146,9 @@ const ACCENTS = ['#7C3AED', '#0EA5E9', '#16A34A', '#EA580C', '#DB2777', '#334155
       <select
         class="input"
         :value="question.kind"
-        @change="setKind(($event.target as HTMLSelectElement).value as QuestionKind)"
+        @change="setKind(($event.target as HTMLSelectElement).value as CanvasQuestionKind)"
       >
-        <option v-for="(label, kind) in QUESTION_KIND_LABELS" :key="kind" :value="kind">{{ label }}</option>
+        <option v-for="(label, kind) in TIPOS" :key="kind" :value="kind">{{ label }}</option>
       </select>
       <p v-if="question.kind === 'order'" class="mt-1 text-[11px] leading-tight text-slate-500">
         El orden de esta lista es la solucion. Al alumno le llegan barajadas.
@@ -146,6 +156,23 @@ const ACCENTS = ['#7C3AED', '#0EA5E9', '#16A34A', '#EA580C', '#DB2777', '#334155
       <p v-else-if="esAbierta" class="mt-1 text-[11px] leading-tight text-slate-500">
         El alumno redacta su respuesta. No se corrige sola: queda guardada para que la leas tú.
       </p>
+      <template v-else-if="question.kind === 'poll'">
+        <p class="mt-1 text-[11px] leading-tight text-slate-500">
+          Cada cual vota una opción. Los votos se guardan y los ves en «Ver respuestas».
+        </p>
+        <label class="mt-1.5 flex items-center gap-2 text-xs text-slate-700">
+          <input type="checkbox" class="h-4 w-4 rounded" :checked="question.showResults !== false" @change="update({ showResults: ($event.target as HTMLInputElement).checked })" />
+          Al votar, enseñar los resultados de todos
+        </label>
+      </template>
+
+      <!-- Respuestas guardadas de todas las copias de esta pregunta -->
+      <button
+        v-if="puedeVerRespuestas"
+        type="button"
+        class="btn-secondary mt-2 w-full justify-center text-xs"
+        @click="emit('verRespuestas')"
+      >📊 Ver respuestas del alumnado</button>
     </div>
 
     <div>
@@ -218,7 +245,7 @@ const ACCENTS = ['#7C3AED', '#0EA5E9', '#16A34A', '#EA580C', '#DB2777', '#334155
           <div class="flex items-start gap-2">
             <!-- En las de ordenar no hay opción correcta: lo es la posición -->
             <input
-              v-if="question.kind !== 'order'"
+              v-if="question.kind !== 'order' && question.kind !== 'poll'"
               type="checkbox"
               class="mt-1.5 h-4 w-4 shrink-0"
               :class="question.kind === 'single' ? 'rounded-full' : 'rounded'"

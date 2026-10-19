@@ -35,7 +35,16 @@ const fontFamily = z.enum([
   'Fredoka', 'Baloo 2', 'Bangers', 'Luckiest Guy',
   'Caveat', 'Patrick Hand', 'Indie Flower',
   'OpenDyslexic', 'Atkinson Hyperlegible',
+  // Rotulos decorativos para las combinaciones de texto (19-10-2026).
+  'Bebas Neue', 'Abril Fatface', 'Playfair Display', 'Righteous',
+  'Pacifico', 'Lobster', 'Great Vibes', 'Permanent Marker',
 ]);
+
+/**
+ * Efecto del texto. Se guarda el nombre, no CSS: el cliente sabe pintar cada uno
+ * y asi nadie puede colar estilos arbitrarios por aqui.
+ */
+const textEffect = z.enum(['ninguno', 'sombra', 'elevado', 'neon', 'contorno', 'hueco', 'eco', 'resplandor']);
 
 export const textPropertiesSchema = z.object({
   text: z.string().max(20_000).default(''),
@@ -58,6 +67,10 @@ export const textPropertiesSchema = z.object({
   letterSpacing: z.number().min(-2).max(20).default(0),
   /** Al pulsar el texto en modo lectura se abre este enlace. */
   linkUrl: linkUrl.default(''),
+  effect: textEffect.default('ninguno'),
+  /** Color del efecto: la sombra, el brillo del neon o el contorno. */
+  effectColor: hexColor.default('#000000'),
+  uppercase: z.boolean().default(false),
 });
 
 /** Debe coincidir con el catalogo de apps/web/src/utils/shapes.ts. */
@@ -86,6 +99,8 @@ export const shapeName = z.enum([
   'clip-casa', 'clip-coche', 'clip-libro', 'clip-bombilla',
   'clip-reloj', 'clip-hoja', 'clip-gota', 'clip-bandera',
   'clip-lapiz', 'clip-cohete',
+  // Notas adhesivas: llevan texto dentro, como cualquier forma.
+  'nota-adhesiva', 'nota-cinta',
 ]);
 
 /**
@@ -113,8 +128,21 @@ export const shapePropertiesSchema = z.object({
   strokeColor: z.union([hexColor, z.literal('transparent')]).default('#1549E1'),
   strokeWidth: z.number().min(0).max(40).default(2),
   cornerRadius: z.number().min(0).max(50).default(0),
+  /** Texto de una linea de antes del 19-10-2026; lo nuevo va en `text`. */
   label: z.string().max(500).default(''),
   linkUrl: linkUrl.default(''),
+  /**
+   * Texto dentro de la forma. El tamano va en % del ancho de la forma (unidades
+   * cqw), no en px: asi crece y encoge con ella al redimensionarla.
+   */
+  text: z.string().max(5000).default(''),
+  textFont: fontFamily.default('Lato'),
+  textSize: z.number().min(2).max(40).default(9),
+  textColor: hexColor.default('#1E293B'),
+  textBold: z.boolean().default(false),
+  textItalic: z.boolean().default(false),
+  textAlign: z.enum(['left', 'center', 'right']).default('center'),
+  textVAlign: z.enum(['top', 'middle', 'bottom']).default('middle'),
 });
 
 export const drawingPropertiesSchema = z.object({
@@ -127,6 +155,11 @@ export const drawingPropertiesSchema = z.object({
   fillColor: z.union([hexColor, z.literal('transparent')]).default('transparent'),
   viewBox: z.string().max(120).default('0 0 1000 1000'),
 });
+
+const fraccion = z.number().min(0).max(1);
+const recorte = z
+  .object({ x: fraccion, y: fraccion, w: z.number().min(0.01).max(1), h: z.number().min(0.01).max(1) })
+  .refine((r) => r.x + r.w <= 1.0001 && r.y + r.h <= 1.0001, 'El recorte se sale de la imagen');
 
 /** Acepta URLs absolutas o rutas servidas desde /storage. */
 const mediaUrl = z
@@ -146,6 +179,29 @@ export const imagePropertiesSchema = z.object({
     })
     .optional(),
   cropRadius: z.number().min(0).max(50).default(0),
+  /**
+   * Recorte de verdad: la parte de la imagen que se ve, en fracciones (0-1) de
+   * la imagen entera. Se pinta solo esa parte aunque la caja se agrande.
+   */
+  crop: recorte.nullable().default(null),
+  linkUrl: linkUrl.default(''),
+});
+
+/**
+ * Marco: una silueta (circulo, estrella, letra, movil, polaroid...) con una
+ * imagen dentro. Sin imagen muestra un paisaje de muestra, como en Canva.
+ */
+export const framePropertiesSchema = z.object({
+  /** Id del catalogo de apps/web/src/utils/marcos.ts; el cliente ignora los que no conoce. */
+  frame: z.string().regex(/^[a-z0-9-]{1,40}$/, 'Marco no valido').default('circulo'),
+  fileUrl: z.union([mediaUrl, z.literal('')]).default(''),
+  altText: z.string().max(500).default(''),
+  /** Encuadre de la imagen dentro del marco. */
+  zoom: z.number().min(1).max(5).default(1),
+  posX: z.number().min(0).max(100).default(50),
+  posY: z.number().min(0).max(100).default(50),
+  /** Color del cuerpo del marco (dispositivos, polaroid, pelicula). */
+  frameColor: hexColor.default('#1E293B'),
   linkUrl: linkUrl.default(''),
 });
 
@@ -283,7 +339,8 @@ export const questionOptionSchema = z.object({
   correct: z.boolean().default(false),
 });
 
-export const questionKind = z.enum(['single', 'multiple', 'order', 'open']);
+/** `poll`: encuesta. Sin respuesta correcta: lo que importa es lo que contesta cada cual. */
+export const questionKind = z.enum(['single', 'multiple', 'order', 'open', 'poll']);
 
 export const questionPropertiesSchema = z
   .object({
@@ -300,6 +357,17 @@ export const questionPropertiesSchema = z
     accentColor: hexColor.default('#7C3AED'),
     /** Permite reintentar tras un fallo. */
     allowRetry: z.boolean().default(true),
+    /**
+     * Clave estable de la pregunta. Viaja con las copias (repartir, pegar paginas,
+     * pasar a biblioteca), asi que junta las respuestas de todas ellas. Las
+     * preguntas de antes no la tienen: se le pone al responder o al guardarlas.
+     */
+    questionKey: z.string().uuid().optional(),
+    /** Encuestas: al votar, se ven los resultados de todos. */
+    showResults: z.boolean().default(true),
+    /** Respuesta abierta guardada en la copia del propio alumno (desde antes del 19-10-2026). */
+    studentAnswer: z.string().max(4000).optional(),
+    answeredAt: z.string().max(40).optional(),
   })
   .superRefine((value, ctx) => {
     const ids = value.options.map((option) => option.id);
@@ -315,6 +383,9 @@ export const questionPropertiesSchema = z
         path: ['options'],
         message: 'Una pregunta de respuesta única necesita exactamente una opción correcta',
       });
+    }
+    if (value.kind === 'poll' && correct > 0) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['options'], message: 'Una encuesta no tiene respuestas correctas' });
     }
     if (value.kind === 'multiple' && correct < 1) {
       ctx.addIssue({
@@ -444,7 +515,7 @@ export const plotPropertiesSchema = z
 export const elementType = z.enum([
   'text', 'shape', 'drawing', 'image', 'audio', 'video',
   'map', 'icon', 'embed', 'question', 'chart', 'math', 'button',
-  'illustration', 'table', 'plot',
+  'illustration', 'table', 'plot', 'frame',
 ]);
 export type ElementType = z.infer<typeof elementType>;
 
@@ -465,6 +536,7 @@ const PROPERTY_SCHEMAS = {
   illustration: illustrationPropertiesSchema,
   table: tablePropertiesSchema,
   plot: plotPropertiesSchema,
+  frame: framePropertiesSchema,
 } as const;
 
 /** Valida `properties` contra el esquema del `type` declarado; rechaza mezclas invalidas. */

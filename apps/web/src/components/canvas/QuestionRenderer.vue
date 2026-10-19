@@ -1,6 +1,15 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
-import type { QuestionKind, QuestionOption } from '@/types/api';
+import type { CanvasQuestionKind, QuestionOption } from '@/types/api';
+
+type Resultado = {
+  correct: boolean;
+  solution: string[];
+  feedback: string;
+  pendingReview?: boolean;
+  /** Encuestas: votos de todos por opcion. */
+  poll?: { counts: Record<string, number>; total: number };
+};
 
 /**
  * Bloque de pregunta.
@@ -9,7 +18,7 @@ import type { QuestionKind, QuestionOption } from '@/types/api';
  * no traen la marca de correcta, asi que no se puede hacer trampa con F12.
  */
 const props = defineProps<{
-  kind: QuestionKind;
+  kind: CanvasQuestionKind;
   prompt: string;
   promptImageUrl?: string;
   options: QuestionOption[];
@@ -25,15 +34,13 @@ const props = defineProps<{
   /** Miniatura o edicion: se muestra sin poder responder. */
   preview?: boolean;
   /** Corrige la respuesta; la resuelve quien monta el componente. */
-  check?: (
-    answer: string[],
-  ) => Promise<{ correct: boolean; solution: string[]; feedback: string; pendingReview?: boolean }>;
+  check?: (answer: string[]) => Promise<Resultado>;
 }>();
 
 const selected = ref<string[]>([]);
 /** Orden propuesto en las preguntas de ordenar. */
 const arrangement = ref<QuestionOption[]>([]);
-const result = ref<{ correct: boolean; solution: string[]; feedback: string; pendingReview?: boolean } | null>(null);
+const result = ref<Resultado | null>(null);
 /** Texto que el alumno escribe en las preguntas abiertas. */
 const texto = ref('');
 const checking = ref(false);
@@ -42,12 +49,21 @@ const celebrating = ref(false);
 
 const isOrder = computed(() => props.kind === 'order');
 const isOpen = computed(() => props.kind === 'open');
+/** Encuesta: no hay respuesta buena; al votar se ven los votos de todos. */
+const isPoll = computed(() => props.kind === 'poll');
 const answered = computed(() => result.value !== null);
 // La abierta nunca se bloquea: el alumno puede seguir puliendo su texto hasta
 // que el docente la lea, y cada envio reemplaza al anterior.
 const locked = computed(
-  () => !isOpen.value && answered.value && (result.value!.correct || !props.allowRetry),
+  () => !isOpen.value && answered.value && (isPoll.value || result.value!.correct || !props.allowRetry),
 );
+
+/** Porcentaje de votos de una opcion de encuesta, una vez votado. */
+function porcentaje(id: string): number | null {
+  const votos = result.value?.poll;
+  if (!isPoll.value || !votos || !votos.total) return null;
+  return Math.round(((votos.counts[id] ?? 0) / votos.total) * 100);
+}
 
 watch(
   () => props.studentAnswer,
@@ -70,7 +86,7 @@ watch(
 function toggle(id: string): void {
   if (props.preview || locked.value) return;
   result.value = null;
-  if (props.kind === 'single') {
+  if (props.kind === 'single' || props.kind === 'poll') {
     selected.value = [id];
     return;
   }
@@ -107,7 +123,7 @@ async function submit(): Promise<void> {
   try {
     const outcome = await props.check(answer.value);
     result.value = outcome;
-    if (outcome.correct && !outcome.pendingReview) {
+    if (outcome.correct && !outcome.pendingReview && !isPoll.value) {
       celebrating.value = true;
       setTimeout(() => (celebrating.value = false), 2600);
     }
@@ -132,7 +148,8 @@ const CONFETTI = Array.from({ length: 28 }, (_, i) => ({
   size: 6 + (i % 4) * 2,
 }));
 
-const KIND_HINTS: Record<QuestionKind, string> = {
+const KIND_HINTS: Record<CanvasQuestionKind, string> = {
+  poll: 'Encuesta · elige una opción',
   single: 'Elige una respuesta',
   multiple: 'Elige todas las que correspondan',
   order: 'Ordena las opciones',
@@ -141,7 +158,7 @@ const KIND_HINTS: Record<QuestionKind, string> = {
 
 /** Estado visual de cada opcion una vez respondida. */
 function optionState(id: string): 'correct' | 'wrong' | 'idle' {
-  if (!result.value) return 'idle';
+  if (!result.value || isPoll.value) return 'idle';
   const isSolution = result.value.solution.includes(id);
   if (isOrder.value) return 'idle';
   if (isSolution) return 'correct';
@@ -248,7 +265,16 @@ function optionState(id: string): 'correct' | 'wrong' | 'idle' {
           >{{ selected.includes(option.id) ? '✓' : '' }}</span>
 
           <img v-if="option.imageUrl" :src="option.imageUrl" alt="" class="q-thumb shrink-0 rounded object-cover" />
-          <span class="q-text min-w-0 flex-1 text-slate-700">{{ option.text }}</span>
+          <span class="q-text relative min-w-0 flex-1 text-slate-700">
+            {{ option.text }}
+            <!-- Encuesta votada: la barra con el porcentaje de votos -->
+            <span v-if="porcentaje(option.id) !== null" class="mt-0.5 flex items-center gap-1">
+              <span class="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-200">
+                <span class="block h-full rounded-full" :style="{ width: `${porcentaje(option.id)}%`, backgroundColor: accentColor }" />
+              </span>
+              <span class="shrink-0 font-bold tabular-nums">{{ porcentaje(option.id) }} %</span>
+            </span>
+          </span>
         </button>
       </template>
     </div>
@@ -261,14 +287,15 @@ function optionState(id: string): 'correct' | 'wrong' | 'idle' {
         v-if="result"
         class="q-feedback font-bold"
         :class="
-          result.pendingReview
+          result.pendingReview || isPoll
             ? 'text-teal-700'
             : result.correct
               ? 'text-emerald-600'
               : 'text-red-600'
         "
       >
-        {{ result.pendingReview ? '✓ ' : result.correct ? '🎉 ' : '' }}{{ result.feedback }}
+        {{ result.pendingReview || isPoll ? '✓ ' : result.correct ? '🎉 ' : '' }}{{ result.feedback }}
+        <span v-if="isPoll && result.poll" class="font-normal text-slate-500"> · {{ result.poll.total }} {{ result.poll.total === 1 ? 'voto' : 'votos' }}</span>
       </p>
 
       <button
@@ -278,7 +305,14 @@ function optionState(id: string): 'correct' | 'wrong' | 'idle' {
         :style="{ backgroundColor: accentColor }"
         :disabled="!canSubmit || checking"
         @click.stop="submit"
-      >{{ checking ? 'Guardando...' : isOpen ? 'Enviar respuesta' : 'Comprobar' }}</button>
+      >{{ checking ? 'Guardando...' : isOpen ? 'Enviar respuesta' : isPoll ? 'Votar' : 'Comprobar' }}</button>
+
+      <button
+        v-else-if="isPoll && allowRetry"
+        type="button"
+        class="q-button w-full border border-slate-300 font-semibold text-slate-600"
+        @click.stop="retry"
+      >Cambiar mi voto</button>
 
       <button
         v-else-if="!result?.correct && allowRetry"

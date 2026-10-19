@@ -18,6 +18,10 @@ const props = defineProps<{
   /** Desplazamiento visual mientras se arrastra el grupo, en % de pagina. */
   offsetX?: number;
   offsetY?: number;
+  /** El elemento principal de la seleccion: lleva la barra flotante (una sola). */
+  principal?: boolean;
+  /** Puede bloquear y desbloquear (el profesorado). */
+  bloqueable?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -28,6 +32,8 @@ const emit = defineEmits<{
   /** Arrastre de grupo en curso; el lienzo lo refleja en todos los seleccionados. */
   groupDrag: [dx: number, dy: number];
   groupCommit: [dx: number, dy: number];
+  /** La barra flotante: duplicar, bloquear o borrar lo seleccionado. */
+  accion: [tipo: 'duplicar' | 'bloquear' | 'borrar', id: string];
   /** Clic sin arrastre dentro de un grupo: se queda solo este elemento. */
   selectOnly: [id: string];
 }>();
@@ -42,7 +48,10 @@ const editingText = ref(false);
 watch(
   () => props.autoEdit,
   (abrir) => {
-    if (abrir && interactive.value && props.element.type === 'text') editingText.value = true;
+    // Las formas y las notas adhesivas tambien: se insertan para escribir en ellas.
+    if (abrir && interactive.value && (props.element.type === 'text' || props.element.type === 'shape')) {
+      editingText.value = true;
+    }
   },
   { immediate: true },
 );
@@ -57,7 +66,7 @@ watch(
  */
 function onDoubleClick(): void {
   if (!interactive.value) return;
-  if (props.element.type === 'text' || props.element.type === 'table') editingText.value = true;
+  if (['text', 'table', 'shape'].includes(props.element.type)) editingText.value = true;
 }
 
 // Al dejar de estar seleccionado se sale de la edicion: si no, la tabla se
@@ -439,13 +448,79 @@ function onRotateStart(event: PointerEvent): void {
         @pointerdown.stop="onResizeSideStart($event, lado.id)"
       />
 
+      <!-- Girar va abajo, como en Canva: arriba queda la barra flotante. -->
       <button
         type="button"
-        class="absolute -top-8 left-1/2 grid h-6 w-6 -translate-x-1/2 place-items-center rounded-full border-2 border-white bg-brand-600 text-[11px] text-white shadow"
+        class="absolute -bottom-9 left-1/2 grid h-6 w-6 -translate-x-1/2 place-items-center rounded-full border-2 border-white bg-brand-600 text-[11px] text-white shadow"
         style="cursor: grab"
         aria-label="Rotar elemento"
         @pointerdown.stop="onRotateStart"
       >⟳</button>
     </template>
+
+    <!--
+      Barra flotante, como la de Canva: duplicar, bloquear y borrar sin ir al
+      panel de la derecha. Solo en el elemento principal de la seleccion, para no
+      pintar una por objeto cuando hay varios marcados (actua sobre todos).
+    -->
+    <div
+      v-if="selected && editable && principal && !editingText"
+      class="barra-flotante absolute -top-12 left-1/2 z-50 flex -translate-x-1/2 items-center gap-0.5 rounded-full border border-slate-200 bg-white px-1.5 py-1 shadow-lg"
+      @pointerdown.stop
+    >
+      <button
+        v-if="interactive"
+        type="button"
+        class="boton-barra"
+        title="Duplicar (Ctrl+D)"
+        aria-label="Duplicar"
+        @click.stop="emit('accion', 'duplicar', element.id)"
+      >
+        <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="9" y="9" width="12" height="12" rx="2" />
+          <path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1" />
+        </svg>
+      </button>
+      <button
+        v-if="bloqueable"
+        type="button"
+        class="boton-barra"
+        :title="element.isLocked ? 'Desbloquear' : 'Bloquear'"
+        :aria-label="element.isLocked ? 'Desbloquear' : 'Bloquear'"
+        @click.stop="emit('accion', 'bloquear', element.id)"
+      >
+        <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="5" y="11" width="14" height="10" rx="2" />
+          <path :d="element.isLocked ? 'M8 11V7a4 4 0 0 1 8 0v4' : 'M8 11V7a4 4 0 0 1 7.5-2'" />
+        </svg>
+      </button>
+      <button
+        v-if="interactive"
+        type="button"
+        class="boton-barra hover:!bg-red-50 hover:!text-red-600"
+        title="Borrar (Supr)"
+        aria-label="Borrar"
+        @click.stop="emit('accion', 'borrar', element.id)"
+      >
+        <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6" />
+        </svg>
+      </button>
+    </div>
   </div>
 </template>
+
+<style scoped>
+.boton-barra {
+  display: grid;
+  place-items: center;
+  height: 1.9rem;
+  width: 1.9rem;
+  border-radius: 9999px;
+  color: #334155;
+}
+.boton-barra:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+</style>

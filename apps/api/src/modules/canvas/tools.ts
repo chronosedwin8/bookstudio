@@ -44,6 +44,7 @@ export const EDITOR_TOOLS: Tool[] = [
     hint: 'Funciones en 2D y 3D con deslizadores, cortes, area y tangente.',
   },
   { id: 'table', label: 'Tablas', hint: 'Tablas de datos con disenos y cabeceras.' },
+  { id: 'frame', label: 'Marcos', hint: 'Siluetas, polaroids, dispositivos y letras con una imagen dentro.' },
   {
     id: 'illustration',
     label: 'Ilustraciones educativas',

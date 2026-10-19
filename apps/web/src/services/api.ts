@@ -58,6 +58,8 @@ import type {
   MediaSearchResponse,
   Page,
   PageNumbering,
+  QuestionOption,
+  QuestionResponseRow,
   ShareState,
   ShareVisibility,
   SharedBook,
@@ -353,6 +355,15 @@ export const booksApi = {
     return data.share;
   },
   /** Corrige una pregunta en el servidor; la solucion nunca viaja al navegador. */
+  /** Respuestas guardadas de una pregunta (todas sus copias). Solo profesorado. */
+  async questionResponses(bookId: string, elementId: string, libraryId?: string) {
+    const { data } = await http.get<{
+      question: { kind: string; prompt: string; options: QuestionOption[] };
+      rows: QuestionResponseRow[];
+      poll: { counts: Record<string, number>; total: number } | null;
+    }>(`/books/${bookId}/questions/${elementId}/responses`, { params: libraryId ? { libraryId } : {} });
+    return data;
+  },
   async answerQuestion(bookId: string, elementId: string, answer: string[]) {
     const { data } = await http.post<{ result: AnswerResult }>(
       `/books/${bookId}/questions/${elementId}/answer`,
@@ -473,6 +484,11 @@ export const booksApi = {
 };
 
 export const mediaApi = {
+  /** Los bytes de una imagen nuestra, desde nuestro dominio (para leer sus pixeles). */
+  async raw(src: string) {
+    const { data } = await http.get<Blob>('/media/raw', { params: { src }, responseType: 'blob', timeout: 30_000 });
+    return data;
+  },
   async search(params: {
     q: string;
     type?: 'images' | 'audio';
@@ -689,6 +705,11 @@ export const magnificApi = {
   async config() {
     const { data } = await http.get<{ enabled: boolean; canGenerate: boolean }>('/magnific/config');
     return data;
+  },
+  /** Quita el fondo; devuelve la imagen nueva (con transparencia), ya guardada. */
+  async quitarFondo(fileUrl: string) {
+    const { data } = await http.post<{ fileUrl: string }>('/magnific/remove-background', { fileUrl }, { timeout: 90_000 });
+    return data.fileUrl;
   },
   async generar(payload: {
     prompt: string;

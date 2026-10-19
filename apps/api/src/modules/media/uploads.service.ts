@@ -29,7 +29,20 @@ function isMp3(buffer: Buffer): boolean {
   return buffer[0] === 0xff && (buffer[1] & 0xe0) === 0xe0;
 }
 
+/**
+ * SVG: solo el que sale de vectorizar en el navegador (trazos y rellenos). Se
+ * rechaza cualquier cosa que pueda ejecutar codigo o traer algo de fuera:
+ * scripts, manejadores on*, javascript:, foreignObject, entidades y enlaces que no
+ * sean internos (#id). Ademas /storage se sirve con CSP sandbox.
+ */
+export function svgSeguro(buffer: Buffer): boolean {
+  const texto = buffer.toString('utf8');
+  if (!/^\s*(<\?xml[^>]*\?>\s*)?<svg[\s>]/i.test(texto)) return false;
+  return !/<script|<foreignObject|<iframe|<object|<embed|<!ENTITY|<!DOCTYPE|javascript:|\son[a-z]+\s*=|(xlink:)?href\s*=\s*["'](?!#)|url\(\s*["']?(?!#)/i.test(texto);
+}
+
 const ALLOWED: Record<string, MimeRule> = {
+  'image/svg+xml': { extension: 'svg', kind: 'image', matches: svgSeguro },
   'image/png': { extension: 'png', kind: 'image', magic: [{ offset: 0, bytes: PNG }] },
   'image/jpeg': { extension: 'jpg', kind: 'image', magic: [{ offset: 0, bytes: JPEG }] },
   'image/webp': { extension: 'webp', kind: 'image', magic: [{ offset: 0, bytes: RIFF }] },

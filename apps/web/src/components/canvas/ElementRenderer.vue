@@ -9,9 +9,11 @@ import TableRenderer from './TableRenderer.vue';
 import type { Tabla } from '@/utils/tablas';
 import MathRenderer from './MathRenderer.vue';
 import PlotRenderer from './PlotRenderer.vue';
+import FrameRenderer from './FrameRenderer.vue';
 import QuestionRenderer from './QuestionRenderer.vue';
 import ShapeRenderer from './ShapeRenderer.vue';
 import StrokeRenderer from './StrokeRenderer.vue';
+import { estiloEfecto } from '@/utils/efectosTexto';
 
 // Leaflet solo se descarga cuando hay un mapa interactivo de verdad: las miniaturas
 // del panel y de las listas usan el marcador ligero y no deben cargar la libreria.
@@ -22,6 +24,7 @@ import type {
   CanvasElement,
   ChartProperties,
   QuestionProperties,
+  Recorte,
   ShapeProperties,
   TextProperties,
 } from '@/types/api';
@@ -181,6 +184,8 @@ watch(
     editor.value?.focus();
     editor.value?.select();
   },
+  // Inmediato: una forma recien insertada nace ya en modo escritura.
+  { immediate: true },
 );
 
 const textStyle = computed(() => ({
@@ -198,7 +203,44 @@ const textStyle = computed(() => ({
   paddingLeft: `${text.value.indent * 1.5}rem`,
   lineHeight: String(text.value.lineHeight ?? 1.35),
   letterSpacing: `${text.value.letterSpacing ?? 0}px`,
+  textTransform: text.value.uppercase ? 'uppercase' : 'none',
+  // Con efecto (neon, sombra) se deja asomar: si no, el brillo se cortaria en el borde.
+  overflow: text.value.effect && text.value.effect !== 'ninguno' ? 'visible' : 'hidden',
+  ...estiloEfecto(text.value.effect, text.value.effectColor, text.value.color),
 }));
+
+/** Recorte de la imagen, si lo tiene (fracciones de la imagen entera). */
+const recorte = computed(() => {
+  const r = props.element.type === 'image' ? (props.element.properties.crop as Recorte | null | undefined) : null;
+  return r && r.w > 0 && r.h > 0 ? r : null;
+});
+const estiloRecorte = computed(() => {
+  const r = recorte.value!;
+  return {
+    width: `${100 / r.w}%`,
+    height: `${100 / r.h}%`,
+    left: `${(-r.x / r.w) * 100}%`,
+    top: `${(-r.y / r.h) * 100}%`,
+  };
+});
+
+/**
+ * Texto dentro de una forma o nota adhesiva. El tamano va en cqw (% del ancho
+ * de la forma): al redimensionarla, el texto crece y encoge con ella.
+ */
+const textoForma = computed(() => shape.value.text || shape.value.label || '');
+const estiloTextoForma = computed(() => ({
+  fontFamily: `"${shape.value.textFont ?? 'Lato'}", sans-serif`,
+  fontSize: `${shape.value.textSize ?? 9}cqw`,
+  color: shape.value.text ? shape.value.textColor ?? '#1E293B' : shape.value.strokeColor,
+  fontWeight: shape.value.textBold || (!shape.value.text && shape.value.label) ? 700 : 400,
+  fontStyle: shape.value.textItalic ? 'italic' : 'normal',
+  textAlign: shape.value.textAlign ?? 'center',
+  justifyContent: { top: 'flex-start', middle: 'center', bottom: 'flex-end' }[shape.value.textVAlign ?? 'middle'],
+  lineHeight: '1.2',
+}));
+/** Las notas adhesivas dejan sitio arriba a la cinta y abajo al doblez. */
+const margenTextoForma = computed(() => (String(shape.value.shape).startsWith('nota-') ? '14% 10% 12%' : '10%'));
 
 /** Las listas se componen linea a linea: el texto se guarda en plano. */
 const textLines = computed(() => {
@@ -259,7 +301,7 @@ const textLines = computed(() => {
   />
 
   <!-- Formas -->
-  <div v-else-if="element.type === 'shape'" class="relative h-full w-full">
+  <div v-else-if="element.type === 'shape'" class="relative h-full w-full" style="container-type: size">
     <ShapeRenderer
       :shape="shape.shape"
       :fill-color="shape.fillColor"
@@ -267,11 +309,22 @@ const textLines = computed(() => {
       :stroke-width="shape.strokeWidth"
       :corner-radius="shape.cornerRadius"
     />
-    <span
-      v-if="shape.label"
-      class="pointer-events-none absolute inset-0 grid place-items-center px-3 text-center font-semibold"
-      :style="{ color: shape.strokeColor }"
-    >{{ shape.label }}</span>
+    <textarea
+      v-if="editingText"
+      ref="editor"
+      class="absolute inset-0 h-full w-full resize-none overflow-hidden border-0 bg-transparent outline-none"
+      :style="{ ...estiloTextoForma, padding: margenTextoForma }"
+      :value="textoForma"
+      placeholder="Escribe aquí"
+      @pointerdown.stop
+      @keydown.stop
+      @blur="emit('updateText', ($event.target as HTMLTextAreaElement).value)"
+    />
+    <div
+      v-else-if="textoForma"
+      class="pointer-events-none absolute inset-0 flex flex-col overflow-hidden whitespace-pre-wrap break-words"
+      :style="{ ...estiloTextoForma, padding: margenTextoForma }"
+    >{{ textoForma }}</div>
   </div>
 
   <!-- Iconos y emojis -->
@@ -361,9 +414,27 @@ const textLines = computed(() => {
     :prompt="ilustracion.prompt"
   />
 
+  <!-- Marco: silueta con una imagen dentro -->
+  <FrameRenderer v-else-if="element.type === 'frame'" :properties="element.properties" />
+
   <!-- Imagen con atribución Creative Commons -->
-  <figure v-else-if="element.type === 'image'" class="relative h-full w-full">
+  <figure v-else-if="element.type === 'image'" class="relative h-full w-full overflow-hidden">
+    <!--
+      Con recorte se pinta la imagen entera mas grande y desplazada, de modo que
+      la zona recortada llena justo la caja: agrandar la caja agranda esa zona,
+      nunca descubre lo que se quito.
+    -->
     <img
+      v-if="recorte"
+      :src="media.fileUrl"
+      :alt="media.altText"
+      class="absolute max-w-none"
+      :style="estiloRecorte"
+      draggable="false"
+      loading="lazy"
+    />
+    <img
+      v-else
       :src="media.fileUrl"
       :alt="media.altText"
       class="h-full w-full object-cover"

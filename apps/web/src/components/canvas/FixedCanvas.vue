@@ -16,6 +16,8 @@ const props = defineProps<{
   /** Todos los elementos seleccionados; con mas de uno se mueven en bloque. */
   selectedIds?: string[];
   editable: boolean;
+  /** Bloquear y desbloquear desde la barra flotante: el profesorado. */
+  puedeBloquear?: boolean;
   /** `select` deja interactuar con los elementos; el resto activa la capa de dibujo. */
   tool?: 'select' | 'draw' | 'fill';
   /** Elementos de la pagina anterior mostrados en semitransparencia para calcar. */
@@ -43,6 +45,7 @@ const emit = defineEmits<{
     },
   ];
   fill: [point: { x: number; y: number }];
+  accion: [tipo: 'duplicar' | 'bloquear' | 'borrar', id: string];
 }>();
 
 /** Lienzo logico; el render se adapta con transform: scale() sin recalcular coordenadas. */
@@ -257,6 +260,8 @@ function onWheel(event: WheelEvent): void {
             :key="element.id"
             :element="element"
             :selected="chosen.includes(element.id)"
+            :principal="element.id === selectedId"
+            :bloqueable="puedeBloquear"
             :grouped="isGrouped"
             :offset-x="offsetFor(element.id)?.x"
             :offset-y="offsetFor(element.id)?.y"
@@ -271,6 +276,7 @@ function onWheel(event: WheelEvent): void {
             @group-drag="onGroupDrag"
             @group-commit="onGroupCommit"
             @select-only="emit('selectOnly', $event)"
+            @accion="(tipo, id) => emit('accion', tipo, id)"
           />
 
           <PageNumberMark
