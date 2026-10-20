@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { query } from '../../db/pool.js';
 import { HttpError } from '../../lib/http-error.js';
+import { ordenApellidos } from '../../lib/orden-nombres.js';
 
 /**
  * Respuestas guardadas de las preguntas y encuestas del lienzo.
@@ -133,7 +134,7 @@ export async function listar(
              OR EXISTS (SELECT 1 FROM library_students ls JOIN mias m ON m.id = ls.library_id WHERE ls.student_id = r.user_id))
         AND ($5::uuid IS NULL OR EXISTS (
              SELECT 1 FROM library_students ls WHERE ls.library_id = $5 AND ls.student_id = r.user_id))
-      ORDER BY u.full_name`,
+      ORDER BY ${ordenApellidos('u')}`,
     [key, viewer.userId, esAdmin, bookId, libraryId ?? null],
   );
   return rows.map((r) => ({

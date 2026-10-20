@@ -1,5 +1,6 @@
 import { query } from '../../db/pool.js';
 import { HttpError } from '../../lib/http-error.js';
+import { ordenApellidos } from '../../lib/orden-nombres.js';
 import { getAccess, requireManager } from '../libraries/libraries.service.js';
 
 /**
@@ -196,7 +197,7 @@ export async function getGradeBook(libraryId: string, userId: string): Promise<G
      LEFT JOIN book_grades g ON g.book_id = b.id
      LEFT JOIN users u ON u.id = g.teacher_id
      WHERE ls.library_id = $1
-     ORDER BY alu.full_name, g.created_at`,
+     ORDER BY ${ordenApellidos('alu')}, g.created_at`,
     [libraryId],
   );
 

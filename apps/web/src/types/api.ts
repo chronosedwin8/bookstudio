@@ -672,6 +672,10 @@ export interface Book {
   creatorName?: string | null;
   /** Curso del autor, tomado de su clase del sistema academico. */
   creatorCourse?: string | null;
+  /** Apellidos y nombre del autor sin tildes, en mayusculas: para ordenar. */
+  creatorSortKey?: string | null;
+  /** "APELLIDOS NOMBRES" del autor. */
+  creatorSurnameFirst?: string | null;
   /** Material del que salio, si llego por una entrega del docente. */
   originBookId?: string | null;
 }

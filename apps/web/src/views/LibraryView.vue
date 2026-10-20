@@ -16,6 +16,7 @@ import { errorMessage } from '@/services/http';
 import { useAuthStore } from '@/stores/auth';
 import { correoVisible, pedirCorreoNuevo } from '@/utils/correo';
 import { tieneLetrasDanadas } from '@/utils/nombres';
+import { ordenarPorAlumno } from '@/utils/ordenAlumnos';
 import EditarNombreDialog from '@/components/EditarNombreDialog.vue';
 import LibrosAlumnadoDialog from '@/components/library/LibrosAlumnadoDialog.vue';
 import type {
@@ -122,24 +123,24 @@ const VISTAS: Array<{ id: VistaLibros; label: string; icono: string; ayuda: stri
 const fechaCorta = (valor: string) =>
   new Date(valor).toLocaleDateString('es', { day: '2-digit', month: 'short', year: '2-digit' });
 
-const librosOrdenados = computed(() =>
-  [...books.value].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
-);
+/** Por los apellidos del autor, como se pasa lista (y como avanza el lector). */
+const librosOrdenados = computed(() => ordenarPorAlumno(books.value));
 
-/** Agrupa por autor, con su curso, y ordena alfabeticamente para poder buscar a alguien. */
+/** Agrupa por autor, con su curso, en el mismo orden: por apellidos. */
 const porAutor = computed(() => {
   const grupos = new Map<string, { nombre: string; curso: string | null; libros: Book[] }>();
   for (const libro of librosOrdenados.value) {
     const clave = libro.creatorId ?? 'sin-autor';
     const grupo = grupos.get(clave) ?? {
-      nombre: libro.creatorName ?? 'Sin autor',
+      nombre: libro.creatorSurnameFirst ?? libro.creatorName ?? 'Sin autor',
       curso: libro.creatorCourse ?? null,
       libros: [],
     };
     grupo.libros.push(libro);
     grupos.set(clave, grupo);
   }
-  return [...grupos.values()].sort((a, b) => a.nombre.localeCompare(b.nombre));
+  // Los libros ya llegan por apellidos, asi que los grupos salen en ese orden.
+  return [...grupos.values()];
 });
 
 // --- Alumnos desde Phidias ---
@@ -793,7 +794,7 @@ function formatDate(value: string | null): string {
                     entregado
                   </span>
                 </td>
-                <td class="px-4 py-2 text-slate-600">{{ book.creatorName ?? '—' }}</td>
+                <td class="px-4 py-2 text-slate-600">{{ book.creatorSurnameFirst ?? book.creatorName ?? '—' }}</td>
                 <td class="px-4 py-2">
                   <span
                     v-if="book.creatorCourse"

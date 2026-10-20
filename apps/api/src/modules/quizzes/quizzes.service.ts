@@ -1,5 +1,6 @@
 import { query, withTransaction } from '../../db/pool.js';
 import { HttpError } from '../../lib/http-error.js';
+import { ordenApellidos } from '../../lib/orden-nombres.js';
 import { getAccess, requireManager } from '../libraries/libraries.service.js';
 import type {
   CreateQuizInput,
@@ -600,7 +601,7 @@ export async function getResults(quizId: string, userId: string): Promise<QuizRe
      FROM quiz_assignments qa
      JOIN users u ON u.id = qa.student_id
      WHERE qa.quiz_id = $1
-     ORDER BY u.external_group NULLS LAST, u.full_name`,
+     ORDER BY u.external_group NULLS LAST, ${ordenApellidos('u')}`,
     [quizId],
   );
 

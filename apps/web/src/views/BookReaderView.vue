@@ -1,15 +1,18 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import AlertMessage from '@/components/AlertMessage.vue';
 import BookSpread from '@/components/canvas/BookSpread.vue';
 import PagePreview from '@/components/canvas/PagePreview.vue';
+import BookGradesPanel from '@/components/library/BookGradesPanel.vue';
 import { booksApi } from '@/services/api';
 import { errorMessage } from '@/services/http';
 import { useAuthStore } from '@/stores/auth';
-import type { SharedBook } from '@/types/api';
+import { ordenarPorAlumno, tituloConAutor } from '@/utils/ordenAlumnos';
+import type { Book, SharedBook } from '@/types/api';
 
 const route = useRoute();
+const router = useRouter();
 const auth = useAuthStore();
 
 /** La misma vista sirve /books/:id/read (con sesion) y /leer/:token (enlace). */
@@ -83,6 +86,39 @@ const salida = computed(() => {
   }
   return { name: 'dashboard' };
 });
+
+/* ---------------------------------------------------------------------------
+ * Revisar una biblioteca libro a libro
+ *
+ * El docente abre el libro de un alumno, lo lee, lo valora y pasa al siguiente
+ * sin volver a la lista. El orden es el de la lista de la biblioteca: por
+ * apellidos. Solo para quien gestiona la biblioteca del libro.
+ * ------------------------------------------------------------------------ */
+
+/** Los libros de la biblioteca, por apellidos; vacio si no se revisa una clase. */
+const librosClase = ref<Book[]>([]);
+const valorando = ref(false);
+
+const revisandoClase = computed(
+  () => !shareToken.value && Boolean(book.value?.libraryId) && book.value?.permissions.isManager === true,
+);
+const posicion = computed(() => librosClase.value.findIndex((b) => b.id === book.value?.id));
+const actual = computed(() => librosClase.value[posicion.value] ?? null);
+const siguiente = computed(() => (posicion.value >= 0 ? librosClase.value[posicion.value + 1] ?? null : null));
+
+/** El libro de otra persona lleva delante quien lo hizo y su curso. */
+const titulo = computed(() => {
+  if (!book.value) return '';
+  const libro = actual.value;
+  return libro && libro.creatorId !== auth.user?.id ? tituloConAutor(libro) : book.value.title;
+});
+
+/** Valorar es para los libros del alumnado, no para los propios del docente. */
+const puedeValorar = computed(() => revisandoClase.value && Boolean(actual.value) && actual.value!.creatorId !== auth.user?.id);
+
+function irASiguiente(): void {
+  if (siguiente.value) void router.push({ name: 'book-reader', params: { id: siguiente.value.id } });
+}
 
 /** Salto directo (miniaturas, marcadores, inicio y fin): sin giro, seria falso. */
 function goTo(target: number): void {
@@ -173,10 +209,12 @@ watch(stage, (el) => {
   observer.observe(el);
 });
 
-onMounted(async () => {
-  window.addEventListener('keydown', onKeydown);
-  document.addEventListener('fullscreenchange', syncFullscreen);
-
+async function cargar(): Promise<void> {
+  loading.value = true;
+  error.value = null;
+  valorando.value = false;
+  showPages.value = false;
+  index.value = 0;
   try {
     book.value = shareToken.value
       ? await booksApi.getShared(shareToken.value)
@@ -186,7 +224,30 @@ onMounted(async () => {
   } finally {
     loading.value = false;
   }
+
+  // La lista de la clase se pide una vez: al pasar al siguiente libro ya esta.
+  if (revisandoClase.value && !librosClase.value.some((b) => b.id === book.value?.id)) {
+    try {
+      librosClase.value = ordenarPorAlumno(await booksApi.list({ libraryId: book.value!.libraryId! }));
+    } catch {
+      librosClase.value = [];
+    }
+  }
+}
+
+onMounted(() => {
+  window.addEventListener('keydown', onKeydown);
+  document.addEventListener('fullscreenchange', syncFullscreen);
+  void cargar();
 });
+
+// "Siguiente libro" reutiliza esta misma vista: solo cambia el id de la ruta.
+watch(
+  () => route.params.id,
+  (nuevo, anterior) => {
+    if (nuevo && nuevo !== anterior) void cargar();
+  },
+);
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeydown);
@@ -220,12 +281,25 @@ onBeforeUnmount(() => {
           <span v-else class="shrink-0 font-black text-brand-400">BookStudio</span>
 
           <div class="min-w-0">
-            <h1 class="truncate font-bold">{{ book.title }}</h1>
+            <h1 class="truncate font-bold" :title="titulo">{{ titulo }}</h1>
             <p v-if="book.authorName" class="truncate text-xs text-slate-400">por {{ book.authorName }}</p>
           </div>
         </div>
 
         <div class="flex items-center gap-2">
+          <template v-if="revisandoClase && posicion >= 0">
+            <span class="hidden text-xs tabular-nums text-slate-400 md:inline">
+              Libro {{ posicion + 1 }} de {{ librosClase.length }}
+            </span>
+            <button
+              type="button"
+              data-siguiente-libro
+              class="rounded-lg bg-brand-600 px-3 py-1.5 text-sm font-bold text-white shadow hover:bg-brand-500 disabled:cursor-not-allowed disabled:bg-slate-600 disabled:text-slate-300"
+              :disabled="!siguiente"
+              :title="siguiente ? `Siguiente: ${tituloConAutor(siguiente)}` : 'Es el último libro de la biblioteca'"
+              @click="irASiguiente"
+            >Siguiente libro ›</button>
+          </template>
           <button
             type="button"
             class="rounded px-2 py-1 text-sm text-slate-300 hover:bg-slate-700 hover:text-white"
@@ -301,6 +375,24 @@ onBeforeUnmount(() => {
           Usa las flechas del teclado para pasar de página
         </span>
       </footer>
+
+      <!-- Valorar sin salir del libro: la misma valoracion de la biblioteca. -->
+      <button
+        v-if="puedeValorar && !showPages"
+        type="button"
+        data-valorar-estudiante
+        class="absolute bottom-14 right-4 z-30 flex items-center gap-2 rounded-xl border-2 border-white bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white shadow-xl hover:bg-emerald-500"
+        @click="valorando = true"
+      >🎯 Valorar al estudiante</button>
+
+      <BookGradesPanel
+        v-if="valorando && actual"
+        :book-id="actual.id"
+        :book-title="actual.title"
+        :student-name="actual.creatorSurnameFirst ?? actual.creatorName ?? undefined"
+        :can-grade="true"
+        @close="valorando = false"
+      />
 
       <!-- Rejilla de páginas -->
       <div

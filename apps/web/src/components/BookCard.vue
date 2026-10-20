@@ -52,7 +52,7 @@ const coverWidth = useElementWidth(coverBox);
     <!-- Quien lo hizo y de que curso es: en una biblioteca con alumnado de varios
          grupos, el titulo por si solo no dice de quien es el trabajo. -->
     <p v-if="book.creatorName" class="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs">
-      <span class="truncate font-medium text-slate-700" :title="book.creatorName">{{ book.creatorName }}</span>
+      <span class="truncate font-medium text-slate-700" :title="book.creatorName">{{ book.creatorSurnameFirst ?? book.creatorName }}</span>
       <span
         v-if="book.creatorCourse"
         class="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 font-semibold text-slate-600"

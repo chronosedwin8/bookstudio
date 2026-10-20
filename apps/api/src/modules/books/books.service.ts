@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import { query, withTransaction } from '../../db/pool.js';
 import { HttpError } from '../../lib/http-error.js';
+import { nombrePorApellidos, ordenApellidos } from '../../lib/orden-nombres.js';
 import { getAccess } from '../libraries/libraries.service.js';
 import { copiarPaginas, copiarPaginasConIds, type PaginaRow } from './copiar-paginas.js';
 import * as respuestas from './respuestas.service.js';
@@ -84,6 +85,10 @@ export interface Book {
   creatorName?: string | null;
   /** Curso del autor, tomado de su clase del sistema academico. */
   creatorCourse?: string | null;
+  /** Apellidos y nombre sin tildes, en mayusculas: para ordenar. */
+  creatorSortKey?: string | null;
+  /** "APELLIDOS NOMBRES" del autor. */
+  creatorSurnameFirst?: string | null;
   /** Material del que salio, si el libro llego por una entrega del docente. */
   originBookId?: string | null;
 }
@@ -112,6 +117,8 @@ interface BookRow {
   collaborative?: boolean;
   creator_name?: string | null;
   creator_course?: string | null;
+  creator_sort_key?: string | null;
+  creator_surname_first?: string | null;
   origin_book_id?: string | null;
 }
 
@@ -143,6 +150,8 @@ function toBook(row: BookRow): Book {
     ...(row.page_count !== undefined ? { pageCount: Number(row.page_count) } : {}),
     ...(row.creator_name !== undefined ? { creatorName: row.creator_name } : {}),
     ...(row.creator_course !== undefined ? { creatorCourse: row.creator_course } : {}),
+    ...(row.creator_sort_key !== undefined ? { creatorSortKey: row.creator_sort_key } : {}),
+    ...(row.creator_surname_first !== undefined ? { creatorSurnameFirst: row.creator_surname_first } : {}),
     ...(row.origin_book_id !== undefined ? { originBookId: row.origin_book_id } : {}),
     ...(row.cover_background !== undefined
       ? {
@@ -558,6 +567,9 @@ export async function listBooks(userId: string, filters: ListBooksQuery): Promis
             b.share_visibility, b.share_token, b.collaborative, b.origin_book_id,
             (SELECT COUNT(*) FROM pages p WHERE p.book_id = b.id) AS page_count,
             autor.full_name AS creator_name,
+            -- Para listar por apellidos y nombrar al autor empezando por ellos.
+            ${ordenApellidos('autor')} AS creator_sort_key,
+            ${nombrePorApellidos('autor')} AS creator_surname_first,
             -- El curso del autor (K10A y similares), guardado en su propia cuenta.
             -- Antes se buscaba una biblioteca suya importada del sistema academico,
             -- y salia vacio en cuanto se le anadia suelto a una biblioteca creada a

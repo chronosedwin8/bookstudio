@@ -1,6 +1,7 @@
 import bcrypt from 'bcryptjs';
 import { query, withTransaction } from '../../db/pool.js';
 import { HttpError } from '../../lib/http-error.js';
+import { ordenApellidos } from '../../lib/orden-nombres.js';
 import type { ElementType } from '../canvas/canvas.schemas.js';
 import { sanitizeTools } from '../canvas/tools.js';
 import { generateInviteCode } from '../../lib/invite-code.js';
@@ -304,7 +305,7 @@ export async function getClassView(
 
   const { rows } = await query<ClassViewRow>(
     `WITH enrolled AS (
-        SELECT u.id, u.full_name, u.avatar_url
+        SELECT u.id, u.full_name, u.avatar_url, ${ordenApellidos('u')} AS orden
         FROM library_students ls
         JOIN users u ON u.id = ls.student_id
         WHERE ls.library_id = $1
@@ -321,7 +322,7 @@ export async function getClassView(
         GROUP BY b.id
      ),
      aggregated AS (
-        SELECT e.id AS student_id, e.full_name AS student_name, e.avatar_url,
+        SELECT e.id AS student_id, e.full_name AS student_name, e.avatar_url, e.orden,
                COUNT(bs.id) AS book_count,
                COUNT(bs.id) FILTER (WHERE bs.is_published) AS published_count,
                COALESCE(SUM(bs.page_count), 0) AS total_pages,
@@ -337,11 +338,11 @@ export async function getClassView(
                ) AS books
         FROM enrolled e
         LEFT JOIN book_stats bs ON bs.creator_id = e.id
-        GROUP BY e.id, e.full_name, e.avatar_url
+        GROUP BY e.id, e.full_name, e.avatar_url, e.orden
      )
      SELECT *, COUNT(*) OVER() AS total_count
      FROM aggregated
-     ORDER BY student_name
+     ORDER BY orden
      LIMIT $3 OFFSET $4`,
     [libraryId, search ?? null, pageSize, (page - 1) * pageSize],
   );
@@ -412,7 +413,7 @@ export async function searchStudents(
      WHERE u.role = 'student'
        AND u.is_active
        AND (u.full_name ILIKE '%' || $2 || '%' OR u.email ILIKE '%' || $2 || '%')
-     ORDER BY u.full_name
+     ORDER BY ${ordenApellidos('u')}
      LIMIT $3`,
     [libraryId, q, limit],
   );
@@ -508,7 +509,7 @@ export async function getRoster(
       `SELECT u.id, u.full_name, u.email
        FROM library_students ls JOIN users u ON u.id = ls.student_id
        WHERE ls.library_id = $1 AND u.role = 'student' AND u.is_active
-       ORDER BY u.full_name`,
+       ORDER BY ${ordenApellidos('u')}`,
       [id],
     );
     return rows.map((r) => ({
@@ -736,15 +737,16 @@ export async function getMembers(libraryId: string, userId: string): Promise<Lib
     // El curso solo tiene sentido para el alumnado, y sale de su clase traida del
     // sistema academico: una biblioteca puede mezclar grupos y hay que distinguirlos.
     `SELECT u.id, u.full_name, u.email, 'owner' AS membership, NULL::varchar AS course,
-            u.given_name, u.family_name
+            u.given_name, u.family_name, ${ordenApellidos('u')} AS orden
        FROM libraries l JOIN users u ON u.id = l.owner_id WHERE l.id = $1
      UNION ALL
-     SELECT u.id, u.full_name, u.email, 'teacher', NULL::varchar, u.given_name, u.family_name
+     SELECT u.id, u.full_name, u.email, 'teacher', NULL::varchar, u.given_name, u.family_name, ${ordenApellidos('u')}
        FROM library_teachers lt JOIN users u ON u.id = lt.teacher_id WHERE lt.library_id = $1
      UNION ALL
-     SELECT u.id, u.full_name, u.email, 'student', u.external_group, u.given_name, u.family_name
+     SELECT u.id, u.full_name, u.email, 'student', u.external_group, u.given_name, u.family_name, ${ordenApellidos('u')}
        FROM library_students ls JOIN users u ON u.id = ls.student_id WHERE ls.library_id = $1
-     ORDER BY 4, 2`,
+     -- Por apellidos: es como se pasa lista.
+     ORDER BY 4, 8`,
     [libraryId],
   );
 
