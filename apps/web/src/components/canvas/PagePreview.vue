@@ -3,7 +3,7 @@ import { computed, ref, watch } from 'vue';
 import ElementRenderer from './ElementRenderer.vue';
 import InteractionLayer from './InteractionLayer.vue';
 import PageNumberMark from './PageNumberMark.vue';
-import { paperStyle } from '@/utils/papers';
+import { fondoDePagina } from '@/utils/papers';
 import type { AnswerResult, CanvasElement, ElementInteraction, PageNumbering } from '@/types/api';
 
 /**
@@ -13,6 +13,7 @@ import type { AnswerResult, CanvasElement, ElementInteraction, PageNumbering } f
 const props = defineProps<{
   backgroundColor?: string;
   backgroundPattern?: string | null;
+  backgroundImage?: string | null;
   elements: CanvasElement[];
   aspectRatio: number;
   /** Ancho en px de la miniatura; el alto se deduce de la proporcion. */
@@ -59,7 +60,7 @@ const pageStyle = computed(() => ({
   width: `${BASE_WIDTH}px`,
   height: `${baseHeight.value}px`,
   transform: `scale(${scale.value})`,
-  ...paperStyle(props.backgroundPattern),
+  ...fondoDePagina(props.backgroundPattern, props.backgroundImage),
 }));
 
 const sorted = computed(() => [...props.elements].sort((a, b) => a.zIndex - b.zIndex));

@@ -5,6 +5,7 @@ import AlertMessage from '@/components/AlertMessage.vue';
 import BookSpread from '@/components/canvas/BookSpread.vue';
 import PagePreview from '@/components/canvas/PagePreview.vue';
 import BookGradesPanel from '@/components/library/BookGradesPanel.vue';
+import StudentActivityPanel from '@/components/library/StudentActivityPanel.vue';
 import { booksApi } from '@/services/api';
 import { errorMessage } from '@/services/http';
 import { useAuthStore } from '@/stores/auth';
@@ -98,6 +99,7 @@ const salida = computed(() => {
 /** Los libros de la biblioteca, por apellidos; vacio si no se revisa una clase. */
 const librosClase = ref<Book[]>([]);
 const valorando = ref(false);
+const viendoBitacora = ref(false);
 
 const revisandoClase = computed(
   () => !shareToken.value && Boolean(book.value?.libraryId) && book.value?.permissions.isManager === true,
@@ -213,6 +215,7 @@ async function cargar(): Promise<void> {
   loading.value = true;
   error.value = null;
   valorando.value = false;
+  viendoBitacora.value = false;
   showPages.value = false;
   index.value = 0;
   try {
@@ -377,13 +380,29 @@ onBeforeUnmount(() => {
       </footer>
 
       <!-- Valorar sin salir del libro: la misma valoracion de la biblioteca. -->
-      <button
-        v-if="puedeValorar && !showPages"
-        type="button"
-        data-valorar-estudiante
-        class="absolute bottom-14 right-4 z-30 flex items-center gap-2 rounded-xl border-2 border-white bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white shadow-xl hover:bg-emerald-500"
-        @click="valorando = true"
-      >🎯 Valorar al estudiante</button>
+      <div v-if="puedeValorar && !showPages" class="absolute bottom-14 right-4 z-30 flex flex-col items-end gap-2">
+        <button
+          type="button"
+          data-bitacora-estudiante
+          class="rounded-lg bg-slate-700/90 px-3 py-1.5 text-xs font-semibold text-white shadow-lg hover:bg-slate-600"
+          @click="viendoBitacora = true"
+        >📒 Bitácora del estudiante</button>
+        <button
+          type="button"
+          data-valorar-estudiante
+          class="flex items-center gap-2 rounded-xl border-2 border-white bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white shadow-xl hover:bg-emerald-500"
+          @click="valorando = true"
+        >🎯 Valorar al estudiante</button>
+      </div>
+
+      <StudentActivityPanel
+        v-if="viendoBitacora && actual && actual.creatorId && book.libraryId"
+        :library-id="book.libraryId"
+        :student-id="actual.creatorId"
+        :student-name="actual.creatorSurnameFirst ?? actual.creatorName ?? ''"
+        @close="viendoBitacora = false"
+        @abrir-libro="viendoBitacora = false; router.push({ name: 'book-reader', params: { id: $event } })"
+      />
 
       <BookGradesPanel
         v-if="valorando && actual"
@@ -418,6 +437,7 @@ onBeforeUnmount(() => {
                   <PagePreview
                     :background-color="page.backgroundColor"
                     :background-pattern="page.backgroundPattern"
+                    :background-image="page.backgroundImage"
                     :elements="page.elements"
                     :aspect-ratio="aspectRatio"
                     :width="190"

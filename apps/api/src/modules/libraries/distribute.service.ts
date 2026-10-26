@@ -70,7 +70,7 @@ async function cargarFuente(sourceBookId: string, teacherId: string): Promise<Fu
  */
 async function cargarPaginas(sourceBookId: string, pageIds: string[] | null): Promise<PaginaRow[]> {
   const { rows } = await query<PaginaRow>(
-    `SELECT id, page_number, background_color, background_pattern
+    `SELECT id, page_number, background_color, background_pattern, background_image
      FROM pages
      WHERE book_id = $1 AND ($2::uuid[] IS NULL OR id = ANY($2::uuid[]))
      ORDER BY page_number`,

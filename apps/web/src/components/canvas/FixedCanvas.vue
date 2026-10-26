@@ -4,7 +4,7 @@ import CanvasElementBox from './CanvasElementBox.vue';
 import DrawingLayer from './DrawingLayer.vue';
 import ElementRenderer from './ElementRenderer.vue';
 import PageNumberMark from './PageNumberMark.vue';
-import { paperStyle } from '@/utils/papers';
+import { fondoDePagina } from '@/utils/papers';
 import { cajaDe, escalarCaja, type Escala } from '@/utils/grupo';
 import type { CanvasElement, Page, PageNumbering, TransformMatrix } from '@/types/api';
 import type { Tabla } from '@/utils/tablas';
@@ -114,7 +114,7 @@ const pageStyle = computed(() => ({
   transform: `scale(${scale.value})`,
   backgroundColor: props.page.backgroundColor,
   // El patron se dibuja en el espacio logico, asi que el zoom no lo pixela.
-  ...paperStyle(props.page.backgroundPattern),
+  ...fondoDePagina(props.page.backgroundPattern, props.page.backgroundImage),
 }));
 
 // --- Seleccion multiple ---

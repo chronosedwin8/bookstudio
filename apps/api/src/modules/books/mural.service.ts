@@ -28,6 +28,7 @@ export interface MuralBook {
   cover: {
     backgroundColor: string;
     backgroundPattern: string | null;
+    backgroundImage: string | null;
     elements: CanvasElement[];
   } | null;
 }
@@ -51,6 +52,7 @@ interface MuralRow {
   mural_at: Date;
   cover_background: string | null;
   cover_pattern: string | null;
+  cover_image: string | null;
   cover_elements: CanvasElement[] | null;
   total: string;
 }
@@ -79,13 +81,14 @@ export async function listMural(opciones: {
             (SELECT COUNT(*) FROM pages p WHERE p.book_id = b.id) AS page_count,
             cover.background_color AS cover_background,
             cover.background_pattern AS cover_pattern,
+            cover.background_image AS cover_image,
             elems.elements AS cover_elements,
             COUNT(*) OVER () AS total
      FROM books b
      LEFT JOIN users u ON u.id = b.creator_id
      LEFT JOIN libraries l ON l.id = b.library_id
      LEFT JOIN LATERAL (
-       SELECT p.id, p.background_color, p.background_pattern
+       SELECT p.id, p.background_color, p.background_pattern, p.background_image
        FROM pages p WHERE p.book_id = b.id ORDER BY p.page_number LIMIT 1
      ) cover ON TRUE
      LEFT JOIN LATERAL (
@@ -104,7 +107,7 @@ export async function listMural(opciones: {
               ) AS elements
        FROM canvas_elements ce WHERE ce.page_id = cover.id
      ) elems ON TRUE
-     WHERE b.mural_at IS NOT NULL
+     WHERE b.mural_at IS NOT NULL AND b.hidden_at IS NULL
        AND b.share_visibility = 'public'
        AND b.share_token IS NOT NULL
        AND ($3 = '' OR b.title ILIKE '%' || $3 || '%' OR u.full_name ILIKE '%' || $3 || '%')
@@ -129,6 +132,7 @@ export async function listMural(opciones: {
         ? {
             backgroundColor: row.cover_background,
             backgroundPattern: row.cover_pattern ?? null,
+            backgroundImage: row.cover_image ?? null,
             /*
              * Sin esto, una pregunta en la primera pagina publicaba en internet
              * abierto la opcion correcta, la guia del docente y lo que hubiera

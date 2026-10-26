@@ -33,7 +33,13 @@ const loadingBooks = ref(true);
 const newBookTitle = ref('');
 const newBookFormat = ref<LayoutFormat>('square');
 
-const personalBooks = computed(() => allBooks.value.filter((b) => !b.libraryId));
+/** Los propios primero; con "todo el colegio", detras los de los demas. */
+const personalBooks = computed(() =>
+  allBooks.value
+    .filter((b) => !b.libraryId)
+    .sort((a, b) => Number(a.creatorId !== auth.user?.id) - Number(b.creatorId !== auth.user?.id)),
+);
+const esMio = (b: Book) => b.creatorId === auth.user?.id;
 
 /** Portadas por biblioteca para pintar el lomo de cada estanteria. */
 const booksByLibrary = computed(() => {
@@ -49,9 +55,20 @@ const booksByLibrary = computed(() => {
 async function loadBooks(): Promise<void> {
   loadingBooks.value = true;
   try {
-    // En modo administracion los estantes tienen que traer los libros de las
-    // bibliotecas que se estan viendo, que no son las propias.
-    allBooks.value = await booksApi.list(libraries.verTodo ? { all: 'true' } : {});
+    /*
+     * Lo propio siempre. En modo administracion, aparte y cada uno con su
+     * casilla: los libros de las bibliotecas de todo el colegio (para llenar sus
+     * estantes) y los "Mis libros" de todo el colegio, que son muchisimos y antes
+     * venian siempre con lo primero.
+     */
+    const [propios, deBibliotecas, personales] = await Promise.all([
+      booksApi.list(),
+      libraries.verTodo ? booksApi.list({ all: 'true', scope: 'library' }) : Promise.resolve([] as Book[]),
+      libraries.verMisLibrosTodos ? booksApi.list({ all: 'true', scope: 'personal' }) : Promise.resolve([] as Book[]),
+    ]);
+    const porId = new Map<string, Book>();
+    for (const b of [...propios, ...deBibliotecas, ...personales]) porId.set(b.id, b);
+    allBooks.value = [...porId.values()];
   } catch (err) {
     formError.value = errorMessage(err);
   } finally {
@@ -126,6 +143,11 @@ async function onTransferido(resultado: TransferResult, entregas: EntregaEnBibli
  */
 async function alternarVerTodo(): Promise<void> {
   await libraries.alternarVerTodo();
+  await loadBooks();
+}
+
+async function alternarMisLibrosTodos(): Promise<void> {
+  libraries.verMisLibrosTodos = !libraries.verMisLibrosTodos;
   await loadBooks();
 }
 
@@ -237,8 +259,25 @@ async function removeLibrary(id: string, name: string): Promise<void> {
           <h2 class="font-bold text-slate-800">Mis libros</h2>
           <p class="text-xs text-slate-500">
             {{ personalBooks.length }} {{ personalBooks.length === 1 ? 'libro' : 'libros' }} ·
-            fuera de cualquier clase, solo tu los ves
+            {{ libraries.verMisLibrosTodos ? 'los tuyos y los de todo el colegio' : 'fuera de cualquier clase, solo tu los ves' }}
           </p>
+          <!-- Aparte de las bibliotecas: son los personales de cada alumno, muchisimos. -->
+          <label
+            v-if="auth.user?.role === 'admin'"
+            class="mt-1 flex items-center gap-2 text-xs font-semibold text-slate-600"
+          >
+            <input
+              type="checkbox"
+              data-mis-libros-todos
+              class="h-3.5 w-3.5 rounded"
+              :checked="libraries.verMisLibrosTodos"
+              @change="alternarMisLibrosTodos()"
+            />
+            Ver los «Mis libros» de todo el colegio
+            <span v-if="libraries.verMisLibrosTodos" class="rounded bg-amber-100 px-1.5 py-0.5 text-amber-800">
+              modo administración
+            </span>
+          </label>
         </div>
 
         <!--
@@ -286,7 +325,7 @@ async function removeLibrary(id: string, name: string): Promise<void> {
           can-delete
           @remove="removePersonalBook"
         >
-          <template #acciones>
+          <template v-if="esMio(book)" #acciones>
             <button
               type="button"
               class="mt-2 self-start text-xs font-semibold text-brand-600 hover:underline"

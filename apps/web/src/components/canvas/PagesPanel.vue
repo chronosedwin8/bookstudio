@@ -128,6 +128,7 @@ function confirmarSalto(from: number): void {
               <PagePreview
                 :background-color="page.backgroundColor"
                 :background-pattern="page.backgroundPattern"
+                :background-image="page.backgroundImage"
                 :elements="page.elements"
                 :aspect-ratio="aspectRatio"
                 :width="THUMB_WIDTH"

@@ -400,6 +400,50 @@ function onImagenMarco(origen: 'buscar' | 'equipo' | 'ia'): void {
   else pickFromComputer('image');
 }
 
+/* --- Imagen de fondo de la pagina --- */
+
+/** Para que paginas se elige la imagen de fondo. */
+const alcanceFondo = ref<'pagina' | 'todas'>('pagina');
+/**
+ * Fondo que espera imagen. Como con los marcos: mientras esta puesto, la
+ * siguiente imagen que se elija (buscador, equipo o IA) va al fondo en vez de
+ * insertarse suelta.
+ */
+const fondoPendiente = ref<'pagina' | 'todas' | null>(null);
+
+function elegirFondo(origen: 'buscar' | 'equipo' | 'ia'): void {
+  fondoPendiente.value = alcanceFondo.value;
+  rellenandoMarco.value = null;
+  if (origen === 'buscar') dialog.value = 'image';
+  else if (origen === 'ia') dialog.value = 'magnific';
+  else pickFromComputer('image');
+}
+
+async function quitarFondo(alcance: 'pagina' | 'todas'): Promise<void> {
+  if (alcance === 'todas' && !window.confirm('¿Quitar la imagen de fondo de todas las páginas del libro?')) return;
+  await editor.setPageImage(null, alcance);
+  anunciar(alcance === 'todas' ? 'Imagen de fondo quitada de todas las páginas' : 'Imagen de fondo quitada');
+}
+
+const hayFondoEnOtras = computed(() =>
+  (editor.book?.pages ?? []).some((p) => p.backgroundImage && p.id !== editor.currentPage?.id),
+);
+
+/**
+ * La imagen recien elegida va a donde se estaba esperando: al fondo de la pagina
+ * o dentro de un marco. Devuelve true si la ha colocado (y no hay que insertarla).
+ */
+async function usarImagenPendiente(fileUrl: string, altText: string): Promise<boolean> {
+  const alcance = fondoPendiente.value;
+  if (alcance) {
+    fondoPendiente.value = null;
+    await editor.setPageImage(fileUrl, alcance);
+    anunciar(alcance === 'todas' ? 'Imagen de fondo puesta en todas las páginas' : 'Imagen de fondo puesta en esta página');
+    return true;
+  }
+  return rellenarMarco(fileUrl, altText);
+}
+
 /** Si hay un marco esperando foto, se la pone y devuelve true. */
 async function rellenarMarco(fileUrl: string, altText: string): Promise<boolean> {
   const id = rellenandoMarco.value;
@@ -732,7 +776,7 @@ async function addTextElement(): Promise<void> {
  */
 async function onPickGenerada(payload: { fileUrl: string; altText: string }): Promise<void> {
   dialog.value = 'none';
-  if (await rellenarMarco(payload.fileUrl, payload.altText)) return;
+  if (await usarImagenPendiente(payload.fileUrl, payload.altText)) return;
   const caja = await cajaMidiendo(payload.fileUrl, editor.aspectRatio);
   await editor.addElement(
     'image',
@@ -743,7 +787,7 @@ async function onPickGenerada(payload: { fileUrl: string; altText: string }): Pr
 
 async function onPickImage(result: MediaResult, withAttribution: boolean): Promise<void> {
   dialog.value = 'none';
-  if (await rellenarMarco(result.url, result.title ?? '')) return;
+  if (await usarImagenPendiente(result.url, result.title ?? '')) return;
   /*
    * El banco ya dice cuanto mide la imagen; lo que faltaba era contar la forma de
    * la pagina. Un 45% de ancho y un 45% de alto solo miden lo mismo en una pagina
@@ -906,7 +950,7 @@ async function uploadAndInsert(dataUrl: string, durationSeconds: number, altText
         { fileUrl: file.fileUrl, durationSeconds },
       );
     } else {
-      if (await rellenarMarco(file.fileUrl, altText)) return;
+      if (await usarImagenPendiente(file.fileUrl, altText)) return;
       // Se mide con la direccion ya servida: es la misma imagen que se vera.
       const caja = await cajaMidiendo(file.fileUrl, editor.aspectRatio);
       await editor.addElement(
@@ -1801,6 +1845,55 @@ async function saveTitle(): Promise<void> {
             </details>
           </section>
 
+          <!--
+            Imagen de fondo: debajo de todo, cubriendo la hoja. Se elige si va
+            solo en esta pagina o en todas las del libro.
+          -->
+          <section data-imagen-fondo>
+            <h3 class="label">Imagen de fondo</h3>
+            <div class="mb-1.5 grid grid-cols-2 gap-1 rounded-lg bg-slate-100 p-0.5 text-[11px] font-semibold">
+              <button
+                type="button"
+                class="rounded-md py-1"
+                :class="alcanceFondo === 'pagina' ? 'bg-white text-brand-700 shadow-sm' : 'text-slate-600'"
+                @click="alcanceFondo = 'pagina'"
+              >Esta página</button>
+              <button
+                type="button"
+                class="rounded-md py-1"
+                :class="alcanceFondo === 'todas' ? 'bg-white text-brand-700 shadow-sm' : 'text-slate-600'"
+                @click="alcanceFondo = 'todas'"
+              >Todas las páginas</button>
+            </div>
+            <div class="grid grid-cols-3 gap-1">
+              <button type="button" class="btn-secondary justify-center px-1 text-[11px]" @click="elegirFondo('buscar')">🔍 Buscar</button>
+              <button type="button" class="btn-secondary justify-center px-1 text-[11px]" @click="elegirFondo('equipo')">💻 Equipo</button>
+              <button
+                v-if="puedeGenerarImagenes"
+                type="button"
+                class="btn-secondary justify-center px-1 text-[11px]"
+                @click="elegirFondo('ia')"
+              >✨ IA</button>
+            </div>
+            <div v-if="editor.currentPage?.backgroundImage" class="mt-1.5 flex items-center gap-2">
+              <img :src="editor.currentPage.backgroundImage" alt="" class="h-9 w-12 rounded border border-slate-200 object-cover" />
+              <button type="button" class="text-[11px] font-semibold text-red-600 hover:underline" @click="quitarFondo('pagina')">
+                Quitar de esta página
+              </button>
+            </div>
+            <button
+              v-if="editor.currentPage?.backgroundImage || hayFondoEnOtras"
+              type="button"
+              class="mt-1 text-[11px] font-semibold text-slate-500 hover:text-red-600 hover:underline"
+              @click="quitarFondo('todas')"
+            >Quitar de todas las páginas</button>
+            <p v-if="fondoPendiente" class="mt-1.5 rounded bg-amber-50 px-2 py-1 text-[11px] text-amber-800">
+              Elige la imagen para el fondo
+              ({{ fondoPendiente === 'todas' ? 'todas las páginas' : 'esta página' }}).
+              <button type="button" class="font-semibold underline" @click="fondoPendiente = null">Cancelar</button>
+            </p>
+          </section>
+
           <section>
             <h3 class="label">Fondo de página</h3>
             <div class="flex flex-wrap gap-1.5">
@@ -1946,6 +2039,7 @@ async function saveTitle(): Promise<void> {
                   <PagePreview
                     :background-color="page.backgroundColor"
                     :background-pattern="page.backgroundPattern"
+                    :background-image="page.backgroundImage"
                     :elements="page.elements"
                     :aspect-ratio="editor.aspectRatio"
                     :width="58"

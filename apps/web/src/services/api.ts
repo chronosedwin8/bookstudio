@@ -1,5 +1,6 @@
 import { http } from './http';
 import type {
+  StudentActivity,
   AdminOrganization,
   EditorTool,
   AnswerResult,
@@ -146,6 +147,11 @@ export const librariesApi = {
   },
   async remove(id: string) {
     await http.delete(`/libraries/${id}`);
+  },
+  /** Bitacora de un alumno: lo que ha trabajado en los libros de la biblioteca. */
+  async studentActivity(libraryId: string, studentId: string) {
+    const { data } = await http.get<StudentActivity>(`/libraries/${libraryId}/students/${studentId}/activity`);
+    return data;
   },
   /** Un libro para cada alumno: en blanco, o copia de un libro del docente. */
   async studentBooks(
@@ -308,8 +314,15 @@ export const booksApi = {
     const { data } = await http.patch<{ book: Book }>(`/books/${id}`, payload);
     return data.book;
   },
+  /** Borra el libro; si es de un alumno en una biblioteca, solo lo oculta (`hidden`). */
   async remove(id: string) {
-    await http.delete(`/books/${id}`);
+    const { data } = await http.delete<{ hidden?: boolean } | ''>(`/books/${id}`);
+    return { hidden: Boolean(data && data.hidden) };
+  },
+  /** Vuelve a mostrar al alumno un libro que habia quitado. */
+  async restore(id: string) {
+    const { data } = await http.post<{ book: Book }>(`/books/${id}/restore`);
+    return data.book;
   },
 
   /** Valoraciones del libro. El alumno solo alcanza las de los suyos. */
@@ -391,6 +404,7 @@ export const booksApi = {
       afterPageNumber?: number;
       backgroundColor?: string;
       backgroundPattern?: string | null;
+      backgroundImage?: string | null;
       /** Contenido inicial de la pagina; lo usan las plantillas. */
       elements?: Array<{
         type: ElementType;
@@ -402,9 +416,21 @@ export const booksApi = {
     const { data } = await http.post<{ page: Page }>(`/books/${bookId}/pages`, payload);
     return data.page;
   },
-  async updatePage(bookId: string, pageId: string, payload: { backgroundColor?: string; backgroundPattern?: string | null }) {
+  async updatePage(
+    bookId: string,
+    pageId: string,
+    payload: { backgroundColor?: string; backgroundPattern?: string | null; backgroundImage?: string | null },
+  ) {
     const { data } = await http.patch<{ page: Omit<Page, 'elements'> }>(`/books/${bookId}/pages/${pageId}`, payload);
     return data.page;
+  },
+  /** El mismo fondo para todas las paginas del libro. */
+  async updateAllPages(
+    bookId: string,
+    payload: { backgroundColor?: string; backgroundPattern?: string | null; backgroundImage?: string | null },
+  ) {
+    const { data } = await http.patch<{ updated: number }>(`/books/${bookId}/pages`, payload);
+    return data.updated;
   },
   async duplicatePage(bookId: string, pageId: string) {
     const { data } = await http.post<{ page: Page }>(`/books/${bookId}/pages/${pageId}/duplicate`);

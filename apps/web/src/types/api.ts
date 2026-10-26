@@ -198,6 +198,15 @@ export interface GradeBook {
 }
 
 /** Una sesion de trabajo sobre un libro: desde que se abrio hasta el ultimo aviso. */
+/** Lo realizado en una sesion (o en varias, sumado). */
+export interface Hecho {
+  elementsCreated: number;
+  elementsEdited: number;
+  elementsDeleted: number;
+  pagesAdded: number;
+  pagesDeleted: number;
+}
+
 export interface WorkSession {
   id: string;
   userId: string;
@@ -206,6 +215,23 @@ export interface WorkSession {
   startedAt: string;
   lastSeenAt: string;
   durationSeconds: number;
+  hecho: Hecho;
+}
+
+/** Bitacora de un alumno en una biblioteca: todos sus libros. */
+export interface StudentActivity {
+  student: { id: string; fullName: string; course: string | null };
+  sessions: Array<WorkSession & { bookId: string; bookTitle: string; bookHidden: boolean }>;
+  books: Array<{
+    bookId: string;
+    bookTitle: string;
+    bookHidden: boolean;
+    sessions: number;
+    totalSeconds: number;
+    lastAt: string;
+    hecho: Hecho;
+  }>;
+  total: { sessions: number; totalSeconds: number; hecho: Hecho };
 }
 
 export interface BookActivity {
@@ -218,6 +244,7 @@ export interface BookActivity {
     totalSeconds: number;
     firstAt: string;
     lastAt: string;
+    hecho: Hecho;
   }>;
 }
 
@@ -297,6 +324,7 @@ export interface MuralBook {
   cover: {
     backgroundColor: string;
     backgroundPattern: string | null;
+    backgroundImage?: string | null;
     elements: CanvasElement[];
   } | null;
 }
@@ -617,6 +645,8 @@ export interface Page {
   pageNumber: number;
   backgroundColor: string;
   backgroundPattern: string | null;
+  /** Imagen de fondo de la pagina, debajo de todo; null si no tiene. */
+  backgroundImage?: string | null;
   elements: CanvasElement[];
 }
 
@@ -672,6 +702,12 @@ export interface Book {
   creatorName?: string | null;
   /** Curso del autor, tomado de su clase del sistema academico. */
   creatorCourse?: string | null;
+  /**
+   * El alumno lo quito de la biblioteca: no se borro, se oculto. Solo llega al
+   * profesorado y a la administracion, que pueden reactivarlo.
+   */
+  hiddenAt?: string | null;
+  hiddenByName?: string | null;
   /** Apellidos y nombre del autor sin tildes, en mayusculas: para ordenar. */
   creatorSortKey?: string | null;
   /** "APELLIDOS NOMBRES" del autor. */
@@ -822,6 +858,7 @@ export interface ShareState {
 export interface CoverPage {
   backgroundColor: string;
   backgroundPattern: string | null;
+  backgroundImage?: string | null;
   elements: CanvasElement[];
 }
 

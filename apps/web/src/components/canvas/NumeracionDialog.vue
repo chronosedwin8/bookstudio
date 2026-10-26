@@ -188,6 +188,7 @@ const lupa = computed(() => {
               <PagePreview
                 :background-color="pagina.backgroundColor"
                 :background-pattern="pagina.backgroundPattern"
+                :background-image="pagina.backgroundImage"
                 :elements="pagina.elements"
                 :aspect-ratio="aspectRatio"
                 :width="ANCHO_MUESTRA"

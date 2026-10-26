@@ -94,6 +94,7 @@ function todas(): void {
               <PagePreview
                 :background-color="pagina.backgroundColor"
                 :background-pattern="pagina.backgroundPattern"
+                :background-image="pagina.backgroundImage"
                 :elements="pagina.elements"
                 :aspect-ratio="aspecto()"
                 :width="64"

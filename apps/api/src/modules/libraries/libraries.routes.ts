@@ -23,6 +23,7 @@ import {
 import * as service from './libraries.service.js';
 import { alumnadoSinCopia, crearLibrosEnBlanco, distribute } from './distribute.service.js';
 import { getGradeBook } from '../books/grades.service.js';
+import { studentActivity } from '../books/activity.service.js';
 
 export const librariesRouter = Router();
 
@@ -170,6 +171,16 @@ librariesRouter.get(
   validate(libraryIdSchema, 'params'),
   asyncHandler(async (req, res) => {
     res.json(await getGradeBook(req.params.id, req.auth!.userId));
+  }),
+);
+
+/** Bitacora de un alumno: todo lo que ha trabajado en los libros de la biblioteca. */
+librariesRouter.get(
+  '/:id/students/:studentId/activity',
+  requireRole('teacher', 'admin'),
+  validate(z.object({ id: z.string().uuid(), studentId: z.string().uuid() }), 'params'),
+  asyncHandler(async (req, res) => {
+    res.json(await studentActivity(req.params.id, req.params.studentId, req.auth!.userId));
   }),
 );
 

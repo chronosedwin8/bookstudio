@@ -9,7 +9,7 @@ import { dibujarEscena } from './ilustracion/dibujo';
 import { normalizarEscena, resumirEscena } from './ilustracion/escena';
 import { normalizarTabla } from './tablas';
 import { svgCompleto } from './ilustracion/primitivas';
-import { paperStyle } from './papers';
+import { fondoDePagina } from './papers';
 import { estiloNumeroEnLinea, normalizarNumeracion, numeroDeHoja } from './numeracion';
 import { estiloEfecto } from './efectosTexto';
 import { PAISAJE_MUESTRA, cuerpoDe, encimaDe, marcoDe, mascaraUrl } from './marcos';
@@ -498,7 +498,7 @@ function numeroHtml(numbering: PageNumbering | null, page: Page, total: number):
 function pageHtml(page: Page, index: number, numbering: PageNumbering | null = null, total = 0, ratio = 1): string {
   const style = styleAttr({
     backgroundColor: page.backgroundColor,
-    ...paperStyle(page.backgroundPattern),
+    ...fondoDePagina(page.backgroundPattern, safeUrl(page.backgroundImage)),
   });
   const elements = [...page.elements]
     .sort((a, b) => a.zIndex - b.zIndex)

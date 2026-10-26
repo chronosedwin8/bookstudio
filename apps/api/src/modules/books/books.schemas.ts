@@ -101,10 +101,18 @@ export const listBooksQuerySchema = z.object({
   all: z.enum(['true', 'false']).optional(),
 });
 
+/** Imagen de fondo: una URL http(s) o un archivo nuestro (/storage); null la quita. */
+const imagenDeFondo = z
+  .string()
+  .max(2048)
+  .refine((v) => /^https?:\/\//.test(v) || v.startsWith('/storage/'), 'La imagen de fondo debe ser una URL http(s) o un archivo subido')
+  .nullable();
+
 export const createPageSchema = z.object({
   afterPageNumber: z.number().int().min(0).max(999).optional(),
   backgroundColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/).default('#FFFFFF'),
   backgroundPattern: z.string().max(255).nullable().default(null),
+  backgroundImage: imagenDeFondo.optional(),
   /**
    * Contenido inicial de la pagina. Lo usan las plantillas: una sola transaccion en
    * vez de una peticion por elemento, y la pagina nunca queda a medio construir.
@@ -116,6 +124,7 @@ export const updatePageSchema = z
   .object({
     backgroundColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
     backgroundPattern: z.string().max(255).nullable().optional(),
+    backgroundImage: imagenDeFondo.optional(),
   })
   .refine((v) => Object.values(v).some((x) => x !== undefined), 'No hay campos para actualizar');
 

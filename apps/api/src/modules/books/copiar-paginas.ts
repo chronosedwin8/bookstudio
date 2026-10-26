@@ -13,6 +13,7 @@ export interface PaginaRow {
   page_number: number;
   background_color: string | null;
   background_pattern: string | null;
+  background_image?: string | null;
 }
 
 /** Donde se insertan: al principio, al final, o justo detras de una pagina. */
@@ -69,9 +70,9 @@ export async function copiarPaginasConIds(
   const ids: string[] = [];
   for (const pagina of paginas) {
     const insertada = await client.query<{ id: string }>(
-      `INSERT INTO pages (book_id, page_number, background_color, background_pattern)
-       VALUES ($1, $2, $3, $4) RETURNING id`,
-      [destinoId, numero, pagina.background_color, pagina.background_pattern],
+      `INSERT INTO pages (book_id, page_number, background_color, background_pattern, background_image)
+       VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+      [destinoId, numero, pagina.background_color, pagina.background_pattern, pagina.background_image ?? null],
     );
 
     await client.query(

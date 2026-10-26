@@ -253,8 +253,17 @@ booksRouter.delete(
   '/:id',
   validate(bookIdSchema, 'params'),
   asyncHandler(async (req, res) => {
-    await service.deleteBook(req.params.id, req.auth!.userId);
-    res.status(204).end();
+    // { hidden: true } si era de un alumno en una biblioteca: se oculta, no se borra.
+    res.json(await service.deleteBook(req.params.id, req.auth!.userId));
+  }),
+);
+
+/** Reactivar un libro que el alumno quito de la biblioteca. */
+booksRouter.post(
+  '/:id/restore',
+  validate(bookIdSchema, 'params'),
+  asyncHandler(async (req, res) => {
+    res.json({ book: await service.restoreBook(req.params.id, req.auth!.userId) });
   }),
 );
 
@@ -287,7 +296,9 @@ booksRouter.post(
   validate(bookIdSchema, 'params'),
   validate(pastePagesSchema),
   asyncHandler(async (req, res) => {
-    res.status(201).json(await service.pastePages(req.params.id, req.auth!.userId, req.body));
+    const pegadas = await service.pastePages(req.params.id, req.auth!.userId, req.body);
+    void activity.registrar(req.params.id, req.auth!.userId, 'pages_added', pegadas.pageIds.length);
+    res.status(201).json(pegadas);
   }),
 );
 
@@ -296,7 +307,10 @@ booksRouter.post(
   validate(bookIdSchema, 'params'),
   validate(createPageSchema),
   asyncHandler(async (req, res) => {
-    res.status(201).json({ page: await service.addPage(req.params.id, req.auth!.userId, req.body) });
+    const page = await service.addPage(req.params.id, req.auth!.userId, req.body);
+    void activity.registrar(req.params.id, req.auth!.userId, 'pages_added');
+    if (page.elements.length) void activity.registrar(req.params.id, req.auth!.userId, 'elements_created', page.elements.length);
+    res.status(201).json({ page });
   }),
 );
 
@@ -307,6 +321,16 @@ booksRouter.patch(
   asyncHandler(async (req, res) => {
     await service.reorderPages(req.params.id, req.auth!.userId, req.body.pageIds);
     res.json({ book: await service.getBookDetail(req.params.id, req.auth!.userId) });
+  }),
+);
+
+/** El mismo cambio de fondo en todas las paginas del libro. */
+booksRouter.patch(
+  '/:id/pages',
+  validate(bookIdSchema, 'params'),
+  validate(updatePageSchema),
+  asyncHandler(async (req, res) => {
+    res.json(await service.updateAllPages(req.params.id, req.auth!.userId, req.body));
   }),
 );
 
@@ -325,6 +349,7 @@ booksRouter.post(
   validate(pageParamsSchema, 'params'),
   asyncHandler(async (req, res) => {
     const page = await service.duplicatePage(req.params.id, req.params.pageId, req.auth!.userId);
+    void activity.registrar(req.params.id, req.auth!.userId, 'pages_added');
     res.status(201).json({ page });
   }),
 );
@@ -334,6 +359,7 @@ booksRouter.delete(
   validate(pageParamsSchema, 'params'),
   asyncHandler(async (req, res) => {
     await service.deletePage(req.params.id, req.params.pageId, req.auth!.userId);
+    void activity.registrar(req.params.id, req.auth!.userId, 'pages_deleted');
     res.status(204).end();
   }),
 );
@@ -344,6 +370,7 @@ booksRouter.post(
   validate(createElementSchema),
   asyncHandler(async (req, res) => {
     const element = await service.createElement(req.params.id, req.params.pageId, req.auth!.userId, req.body);
+    void activity.registrar(req.params.id, req.auth!.userId, 'elements_created');
     res.status(201).json({ element });
   }),
 );
@@ -375,6 +402,7 @@ booksRouter.patch(
       req.auth!.userId,
       req.body,
     );
+    void activity.registrar(req.params.id, req.auth!.userId, 'elements_edited');
     res.json({ element });
   }),
 );
@@ -384,6 +412,7 @@ booksRouter.delete(
   validate(elementParamsSchema, 'params'),
   asyncHandler(async (req, res) => {
     await service.deleteElement(req.params.id, req.params.pageId, req.params.elementId, req.auth!.userId);
+    void activity.registrar(req.params.id, req.auth!.userId, 'elements_deleted');
     res.status(204).end();
   }),
 );

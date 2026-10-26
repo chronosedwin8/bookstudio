@@ -50,6 +50,8 @@ export interface Page {
   pageNumber: number;
   backgroundColor: string;
   backgroundPattern: string | null;
+  /** Imagen de fondo, debajo de todo; null si no tiene. */
+  backgroundImage: string | null;
   elements: CanvasElement[];
 }
 
@@ -57,6 +59,7 @@ export interface Page {
 export interface CoverPage {
   backgroundColor: string;
   backgroundPattern: string | null;
+  backgroundImage: string | null;
   elements: CanvasElement[];
 }
 
@@ -91,6 +94,12 @@ export interface Book {
   creatorSurnameFirst?: string | null;
   /** Material del que salio, si el libro llego por una entrega del docente. */
   originBookId?: string | null;
+  /**
+   * El alumno lo "borro" de la biblioteca: no se borra, se oculta. Solo le llega
+   * al profesorado y a la administracion, que pueden reactivarlo.
+   */
+  hiddenAt?: string | null;
+  hiddenByName?: string | null;
 }
 
 export type ShareVisibility = 'private' | 'library' | 'public';
@@ -111,6 +120,7 @@ interface BookRow {
   page_count?: string;
   cover_background?: string | null;
   cover_pattern?: string | null;
+  cover_image?: string | null;
   cover_elements?: CanvasElement[] | null;
   share_visibility?: ShareVisibility;
   share_token?: string | null;
@@ -120,6 +130,8 @@ interface BookRow {
   creator_sort_key?: string | null;
   creator_surname_first?: string | null;
   origin_book_id?: string | null;
+  hidden_at?: Date | null;
+  hidden_by_name?: string | null;
 }
 
 const BOOK_COLUMNS = `id, title, library_id, portfolio_id, creator_id, layout_format,
@@ -153,12 +165,15 @@ function toBook(row: BookRow): Book {
     ...(row.creator_sort_key !== undefined ? { creatorSortKey: row.creator_sort_key } : {}),
     ...(row.creator_surname_first !== undefined ? { creatorSurnameFirst: row.creator_surname_first } : {}),
     ...(row.origin_book_id !== undefined ? { originBookId: row.origin_book_id } : {}),
+    ...(row.hidden_at !== undefined ? { hiddenAt: row.hidden_at ? row.hidden_at.toISOString() : null } : {}),
+    ...(row.hidden_by_name !== undefined ? { hiddenByName: row.hidden_by_name } : {}),
     ...(row.cover_background !== undefined
       ? {
           cover: row.cover_background
             ? {
                 backgroundColor: row.cover_background,
                 backgroundPattern: row.cover_pattern ?? null,
+                backgroundImage: row.cover_image ?? null,
                 elements: sanitizeCover(row.cover_elements),
               }
             : null,
@@ -196,7 +211,7 @@ async function loadContext(bookId: string, userId: string): Promise<BookContext>
   >(
     `SELECT b.id, b.title, b.library_id, b.portfolio_id, b.creator_id, b.layout_format,
             b.is_template, b.is_published, b.publishing_settings, b.page_numbering, b.created_at, b.updated_at,
-            b.share_visibility, b.share_token, b.collaborative,
+            b.share_visibility, b.share_token, b.collaborative, b.hidden_at,
             l.student_editable, l.student_publishable, l.students_see_peers, l.disabled_tools,
             -- El material que reparte el profesorado se ve siempre, aunque el resto
             -- de creaciones esten ocultas entre companeros.
@@ -240,6 +255,9 @@ async function loadContext(bookId: string, userId: string): Promise<BookContext>
   const access = await getAccess(row.library_id, userId);
   const isManager = access !== 'student';
   const isOwner = row.creator_id === userId;
+
+  // Un libro que el alumno quito de la biblioteca ya no existe para el alumnado.
+  if (row.hidden_at && !isManager) throw HttpError.notFound('Libro no encontrado');
   // Libro colaborativo: cualquier miembro de la biblioteca aporta contenido.
   const collaborator = row.collaborative === true && row.student_editable;
 
@@ -461,7 +479,7 @@ export async function transferBook(
   if (copiasACrear.length) await assertTrialAllowsNewBook(userId);
 
   const { rows: paginas } = await query<PaginaRow>(
-    `SELECT id, page_number, background_color, background_pattern
+    `SELECT id, page_number, background_color, background_pattern, background_image
      FROM pages WHERE book_id = $1 ORDER BY page_number`,
     [bookId],
   );
@@ -542,6 +560,12 @@ export async function listBooks(userId: string, filters: ListBooksQuery): Promis
       OR EXISTS (SELECT 1 FROM library_teachers lt WHERE lt.library_id = l.id AND lt.teacher_id = $1)
       OR b.creator_id = l.owner_id
       OR EXISTS (SELECT 1 FROM library_teachers lt2 WHERE lt2.library_id = l.id AND lt2.teacher_id = b.creator_id))`,
+    // Los libros que el alumnado quito de una biblioteca solo los ven quienes la
+    // gestionan (y la administracion), para poder reactivarlos.
+    `(b.hidden_at IS NULL
+      OR l.owner_id = $1
+      OR EXISTS (SELECT 1 FROM library_teachers lt3 WHERE lt3.library_id = l.id AND lt3.teacher_id = $1)
+      OR EXISTS (SELECT 1 FROM users adm2 WHERE adm2.id = $1 AND adm2.role = 'admin'))`,
   ];
 
   if (filters.scope === 'personal') conditions.push('b.library_id IS NULL');
@@ -564,7 +588,8 @@ export async function listBooks(userId: string, filters: ListBooksQuery): Promis
   const { rows } = await query<BookRow>(
     `SELECT b.id, b.title, b.library_id, b.portfolio_id, b.creator_id, b.layout_format,
             b.is_template, b.is_published, b.publishing_settings, b.page_numbering, b.created_at, b.updated_at,
-            b.share_visibility, b.share_token, b.collaborative, b.origin_book_id,
+            b.share_visibility, b.share_token, b.collaborative, b.origin_book_id, b.hidden_at,
+            (SELECT full_name FROM users WHERE id = b.hidden_by) AS hidden_by_name,
             (SELECT COUNT(*) FROM pages p WHERE p.book_id = b.id) AS page_count,
             autor.full_name AS creator_name,
             -- Para listar por apellidos y nombrar al autor empezando por ellos.
@@ -577,12 +602,13 @@ export async function listBooks(userId: string, filters: ListBooksQuery): Promis
             autor.external_group AS creator_course,
             cover.background_color AS cover_background,
             cover.background_pattern AS cover_pattern,
+            cover.background_image AS cover_image,
             elems.elements AS cover_elements
      FROM books b
      LEFT JOIN libraries l ON l.id = b.library_id
      LEFT JOIN users autor ON autor.id = b.creator_id
      LEFT JOIN LATERAL (
-       SELECT p.id, p.background_color, p.background_pattern
+       SELECT p.id, p.background_color, p.background_pattern, p.background_image
        FROM pages p WHERE p.book_id = b.id ORDER BY p.page_number LIMIT 1
      ) cover ON TRUE
      LEFT JOIN LATERAL (
@@ -615,6 +641,7 @@ interface PageRow {
   page_number: number;
   background_color: string;
   background_pattern: string | null;
+  background_image: string | null;
 }
 
 interface ElementRow {
@@ -721,7 +748,7 @@ export function sanitizeCover(elements: CanvasElement[] | null | undefined): Can
 async function loadPages(bookId: string, revealAnswers: boolean): Promise<Page[]> {
   const [pages, elements] = await Promise.all([
     query<PageRow>(
-      `SELECT id, book_id, page_number, background_color, background_pattern
+      `SELECT id, book_id, page_number, background_color, background_pattern, background_image
        FROM pages WHERE book_id = $1 ORDER BY page_number`,
       [bookId],
     ),
@@ -753,6 +780,7 @@ async function loadPages(bookId: string, revealAnswers: boolean): Promise<Page[]
     pageNumber: page.page_number,
     backgroundColor: page.background_color,
     backgroundPattern: page.background_pattern,
+    backgroundImage: page.background_image ?? null,
     elements: byPage.get(page.id) ?? [],
   }));
 }
@@ -847,7 +875,7 @@ export async function getSharedBook(token: string, userId?: string): Promise<Sha
             b.share_visibility, b.share_token, b.collaborative, u.full_name AS author_name
      FROM books b
      LEFT JOIN users u ON u.id = b.creator_id
-     WHERE b.share_token = $1`,
+     WHERE b.share_token = $1 AND b.hidden_at IS NULL`,
     [token],
   );
 
@@ -1208,7 +1236,7 @@ export async function pastePages(
   await loadContext(input.sourceBookId, userId);
 
   const { rows: paginas } = await query<PaginaRow>(
-    `SELECT id, page_number, background_color, background_pattern
+    `SELECT id, page_number, background_color, background_pattern, background_image
      FROM pages WHERE book_id = $1 AND id = ANY($2::uuid[])
      ORDER BY page_number`,
     [input.sourceBookId, input.pageIds],
@@ -1239,12 +1267,34 @@ export async function pastePages(
   });
 }
 
-export async function deleteBook(bookId: string, userId: string): Promise<void> {
+/**
+ * Borra un libro. Si quien lo borra es alumno y el libro esta en una biblioteca,
+ * NO se borra: se oculta. Deja de verlo el alumnado, y el profesorado y la
+ * administracion lo siguen viendo (marcado) y pueden reactivarlo. Asi un clic
+ * sin querer, o un trabajo borrado antes de entregarlo, no se pierde.
+ */
+export async function deleteBook(bookId: string, userId: string): Promise<{ hidden: boolean }> {
   const { book, permissions } = await loadContext(bookId, userId);
   if (!permissions.isManager && book.creator_id !== userId) {
     throw HttpError.forbidden('Solo el autor o un docente pueden eliminar el libro');
   }
+  if (!permissions.isManager && book.library_id) {
+    await query('UPDATE books SET hidden_at = CURRENT_TIMESTAMP, hidden_by = $2 WHERE id = $1', [bookId, userId]);
+    return { hidden: true };
+  }
   await query('DELETE FROM books WHERE id = $1', [bookId]);
+  return { hidden: false };
+}
+
+/** Vuelve a mostrar al alumnado un libro que habia quitado. Solo quien gestiona. */
+export async function restoreBook(bookId: string, userId: string): Promise<Book> {
+  const { permissions } = await loadContext(bookId, userId);
+  if (!permissions.isManager) throw HttpError.forbidden('Solo el profesorado puede reactivar un libro');
+  const { rows } = await query<BookRow>(
+    `UPDATE books SET hidden_at = NULL, hidden_by = NULL WHERE id = $1 RETURNING ${BOOK_COLUMNS}, hidden_at`,
+    [bookId],
+  );
+  return toBook(rows[0]);
 }
 
 async function touchBook(client: PoolClient, bookId: string): Promise<void> {
@@ -1279,10 +1329,10 @@ export async function addPage(bookId: string, userId: string, input: CreatePageI
     }
 
     const inserted = await client.query<PageRow>(
-      `INSERT INTO pages (book_id, page_number, background_color, background_pattern)
-       VALUES ($1, $2, $3, $4)
-       RETURNING id, book_id, page_number, background_color, background_pattern`,
-      [bookId, position + 1, input.backgroundColor, input.backgroundPattern],
+      `INSERT INTO pages (book_id, page_number, background_color, background_pattern, background_image)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING id, book_id, page_number, background_color, background_pattern, background_image`,
+      [bookId, position + 1, input.backgroundColor, input.backgroundPattern, input.backgroundImage ?? null],
     );
 
     const page = inserted.rows[0];
@@ -1321,6 +1371,7 @@ export async function addPage(bookId: string, userId: string, input: CreatePageI
       pageNumber: page.page_number,
       backgroundColor: page.background_color,
       backgroundPattern: page.background_pattern,
+      backgroundImage: page.background_image ?? null,
       elements,
     };
   });
@@ -1336,7 +1387,7 @@ export async function duplicatePage(bookId: string, pageId: string, userId: stri
     await client.query('SELECT 1 FROM books WHERE id = $1 FOR UPDATE', [bookId]);
 
     const source = await client.query<PageRow>(
-      `SELECT id, book_id, page_number, background_color, background_pattern
+      `SELECT id, book_id, page_number, background_color, background_pattern, background_image
        FROM pages WHERE id = $1 AND book_id = $2`,
       [pageId, bookId],
     );
@@ -1354,10 +1405,10 @@ export async function duplicatePage(bookId: string, pageId: string, userId: stri
     );
 
     const inserted = await client.query<PageRow>(
-      `INSERT INTO pages (book_id, page_number, background_color, background_pattern)
-       VALUES ($1, $2, $3, $4)
-       RETURNING id, book_id, page_number, background_color, background_pattern`,
-      [bookId, original.page_number + 1, original.background_color, original.background_pattern],
+      `INSERT INTO pages (book_id, page_number, background_color, background_pattern, background_image)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING id, book_id, page_number, background_color, background_pattern, background_image`,
+      [bookId, original.page_number + 1, original.background_color, original.background_pattern, original.background_image],
     );
     const copy = inserted.rows[0];
 
@@ -1382,6 +1433,7 @@ export async function duplicatePage(bookId: string, pageId: string, userId: stri
       pageNumber: copy.page_number,
       backgroundColor: copy.background_color,
       backgroundPattern: copy.background_pattern,
+      backgroundImage: copy.background_image ?? null,
       elements: elements.rows.map(toElement),
     };
   });
@@ -1405,10 +1457,14 @@ export async function updatePage(
     values.push(input.backgroundPattern);
     sets.push(`background_pattern = $${values.length}`);
   }
+  if (input.backgroundImage !== undefined) {
+    values.push(input.backgroundImage);
+    sets.push(`background_image = $${values.length}`);
+  }
 
   const { rows } = await query<PageRow>(
     `UPDATE pages SET ${sets.join(', ')} WHERE id = $1 AND book_id = $2
-     RETURNING id, book_id, page_number, background_color, background_pattern`,
+     RETURNING id, book_id, page_number, background_color, background_pattern, background_image`,
     values,
   );
   if (!rows[0]) throw HttpError.notFound('Página no encontrada');
@@ -1419,7 +1475,39 @@ export async function updatePage(
     pageNumber: rows[0].page_number,
     backgroundColor: rows[0].background_color,
     backgroundPattern: rows[0].background_pattern,
+    backgroundImage: rows[0].background_image ?? null,
   };
+}
+
+/**
+ * Cambia el fondo de TODAS las paginas del libro a la vez (la imagen de fondo
+ * "para todo el libro"). Una sola sentencia: o cambian todas o ninguna.
+ */
+export async function updateAllPages(
+  bookId: string,
+  userId: string,
+  input: UpdatePageInput,
+): Promise<{ updated: number }> {
+  await requireEdit(bookId, userId);
+
+  const sets: string[] = [];
+  const values: unknown[] = [bookId];
+  if (input.backgroundColor !== undefined) {
+    values.push(input.backgroundColor);
+    sets.push(`background_color = $${values.length}`);
+  }
+  if (input.backgroundPattern !== undefined) {
+    values.push(input.backgroundPattern);
+    sets.push(`background_pattern = $${values.length}`);
+  }
+  if (input.backgroundImage !== undefined) {
+    values.push(input.backgroundImage);
+    sets.push(`background_image = $${values.length}`);
+  }
+
+  const { rowCount } = await query(`UPDATE pages SET ${sets.join(', ')} WHERE book_id = $1`, values);
+  await query('UPDATE books SET updated_at = CURRENT_TIMESTAMP WHERE id = $1', [bookId]);
+  return { updated: rowCount ?? 0 };
 }
 
 export async function deletePage(bookId: string, pageId: string, userId: string): Promise<void> {

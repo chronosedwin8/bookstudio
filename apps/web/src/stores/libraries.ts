@@ -14,6 +14,11 @@ export const useLibrariesStore = defineStore('libraries', () => {
    * Apagado por omision: quien administra tambien usa la plataforma para lo suyo.
    */
   const verTodo = ref(false);
+  /**
+   * Aparte: los "Mis libros" de todo el colegio. Son los personales de cada
+   * alumno, muchisimos, y ver las bibliotecas de todos no debe arrastrarlos.
+   */
+  const verMisLibrosTodos = ref(false);
 
   async function fetchAll(): Promise<void> {
     loading.value = true;
@@ -55,5 +60,5 @@ export const useLibrariesStore = defineStore('libraries', () => {
     await fetchAll();
   }
 
-  return { items, loading, error, verTodo, fetchAll, alternarVerTodo, create, join, remove, upsert };
+  return { items, loading, error, verTodo, verMisLibrosTodos, fetchAll, alternarVerTodo, create, join, remove, upsert };
 });

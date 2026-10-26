@@ -78,6 +78,7 @@ onMounted(async () => {
           <PagePreview
             :background-color="page.backgroundColor"
             :background-pattern="page.backgroundPattern"
+            :background-image="page.backgroundImage"
             :elements="page.elements"
             :aspect-ratio="ASPECT[book.layoutFormat]"
             :width="PAGE_WIDTH"

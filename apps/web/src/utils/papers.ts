@@ -189,3 +189,57 @@ export function paperStyle(pattern: string | null | undefined): Record<string, s
   if (!pattern) return {};
   return PAPER_CATALOGUE[pattern as PaperName]?.style ?? {};
 }
+
+/** Parte una lista CSS por sus comas de primer nivel (no las de dentro de un gradiente). */
+function capasCss(valor: string): string[] {
+  const capas: string[] = [];
+  let nivel = 0;
+  let actual = '';
+  for (const c of valor) {
+    if (c === '(') nivel++;
+    else if (c === ')') nivel--;
+    if (c === ',' && nivel === 0) {
+      capas.push(actual.trim());
+      actual = '';
+    } else {
+      actual += c;
+    }
+  }
+  if (actual.trim()) capas.push(actual.trim());
+  return capas;
+}
+
+/**
+ * Fondo completo de una pagina: la pauta (cuadricula, rayas...) por encima y la
+ * imagen de fondo debajo, cubriendo toda la hoja. Va todo en un solo
+ * `background`, con una capa por cosa, para que cualquier sitio que pinte la
+ * pagina (editor, lector, miniaturas, impresion, exportacion) la vea igual.
+ *
+ * El color de la pagina sigue en `backgroundColor`, por debajo de las dos: se ve
+ * a traves de una imagen con transparencias.
+ */
+export function fondoDePagina(
+  pattern: string | null | undefined,
+  imagen: string | null | undefined,
+): Record<string, string> {
+  const papel = paperStyle(pattern);
+  if (!imagen) return papel;
+  const url = `url("${imagen.replace(/["\\n]/g, encodeURIComponent)}")`;
+  if (!papel.backgroundImage) {
+    return { backgroundImage: url, backgroundSize: 'cover', backgroundPosition: 'center', backgroundRepeat: 'no-repeat' };
+  }
+  // Las listas de tamano, posicion y repeticion de la pauta se alargan hasta su
+  // numero de capas (CSS las repite asi) y se les anade la de la imagen.
+  const n = capasCss(papel.backgroundImage).length;
+  const alargar = (valor: string | undefined, porDefecto: string) => {
+    const lista = valor ? capasCss(valor) : [porDefecto];
+    return Array.from({ length: n }, (_, i) => lista[i % lista.length]);
+  };
+  return {
+    ...papel,
+    backgroundImage: `${papel.backgroundImage}, ${url}`,
+    backgroundSize: [...alargar(papel.backgroundSize, 'auto'), 'cover'].join(', '),
+    backgroundPosition: [...alargar(papel.backgroundPosition, '0% 0%'), 'center'].join(', '),
+    backgroundRepeat: [...alargar(papel.backgroundRepeat, 'repeat'), 'no-repeat'].join(', '),
+  };
+}

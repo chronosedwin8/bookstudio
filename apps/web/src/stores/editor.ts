@@ -772,10 +772,18 @@ export const useEditorStore = defineStore('editor', () => {
     });
   }
 
+  /** La imagen de fondo que comparten TODAS las paginas (puesta "en todas"), si la hay. */
+  function fondoDelLibro(): string | undefined {
+    const paginas = book.value?.pages ?? [];
+    const primera = paginas[0]?.backgroundImage;
+    return primera && paginas.every((p) => p.backgroundImage === primera) ? primera : undefined;
+  }
+
   async function addPage(): Promise<void> {
     if (!book.value) return;
+    // Si el libro entero lleva la misma imagen de fondo, la hoja nueva tambien.
     const page = await withSaving(() =>
-      booksApi.addPage(book.value!.id, { afterPageNumber: currentPage.value?.pageNumber }),
+      booksApi.addPage(book.value!.id, { afterPageNumber: currentPage.value?.pageNumber, backgroundImage: fondoDelLibro() }),
     );
     if (!page) return;
     book.value = await booksApi.get(book.value.id);
@@ -800,6 +808,7 @@ export const useEditorStore = defineStore('editor', () => {
         afterPageNumber: currentPage.value?.pageNumber,
         backgroundColor: template.backgroundColor,
         backgroundPattern: template.backgroundPattern,
+        backgroundImage: fondoDelLibro(),
         elements: template.elements,
       }),
     );
@@ -891,6 +900,23 @@ export const useEditorStore = defineStore('editor', () => {
       booksApi.updatePage(book.value!.id, page.id, { backgroundPattern: pattern }),
     );
     if (!updated) page.backgroundPattern = previous;
+  }
+
+  /**
+   * Imagen de fondo (o null para quitarla), en esta pagina o en todas. En todas
+   * va en una sola peticion: o cambian todas o ninguna.
+   */
+  async function setPageImage(imagen: string | null, alcance: 'pagina' | 'todas' = 'pagina'): Promise<void> {
+    if (!book.value || !currentPage.value) return;
+    const paginas = alcance === 'todas' ? book.value.pages : [currentPage.value];
+    const antes = paginas.map((p) => p.backgroundImage ?? null);
+    paginas.forEach((p) => (p.backgroundImage = imagen));
+    const ok = await withSaving(async () => {
+      if (alcance === 'todas') await booksApi.updateAllPages(book.value!.id, { backgroundImage: imagen });
+      else await booksApi.updatePage(book.value!.id, currentPage.value!.id, { backgroundImage: imagen });
+      return true;
+    });
+    if (!ok) paginas.forEach((p, i) => (p.backgroundImage = antes[i]));
   }
 
   async function setPageBackground(color: string): Promise<void> {
@@ -987,6 +1013,7 @@ export const useEditorStore = defineStore('editor', () => {
     deleteCurrentPage,
     reorderPages,
     setPageBackground,
+    setPageImage,
     setPagePattern,
     applyShareState,
     setCollaborative,

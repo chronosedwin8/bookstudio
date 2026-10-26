@@ -126,6 +126,7 @@ function fecha(iso: string): string {
                 v-if="libro.cover"
                 :background-color="libro.cover.backgroundColor"
                 :background-pattern="libro.cover.backgroundPattern"
+                :background-image="libro.cover.backgroundImage"
                 :elements="libro.cover.elements"
                 :aspect-ratio="RATIO[libro.layoutFormat]"
                 :width="300"

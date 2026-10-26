@@ -5,6 +5,7 @@ import { booksApi } from '@/services/api';
 import { errorMessage } from '@/services/http';
 import { useCierreExterior } from '@/composables/useCierreExterior';
 import { fechaHora } from '@/utils/grades';
+import { duracion, resumenHecho } from '@/utils/bitacora';
 import type { BookActivity } from '@/types/api';
 
 /**
@@ -38,16 +39,6 @@ onMounted(async () => {
     cargando.value = false;
   }
 });
-
-/** "1 h 24 min", "7 min", "menos de 1 min". */
-function duracion(segundos: number): string {
-  if (segundos < 60) return 'menos de 1 min';
-  const minutos = Math.round(segundos / 60);
-  if (minutos < 60) return `${minutos} min`;
-  const horas = Math.floor(minutos / 60);
-  const resto = minutos % 60;
-  return resto ? `${horas} h ${resto} min` : `${horas} h`;
-}
 
 const totalSesiones = computed(() => datos.value?.sessions.length ?? 0);
 const totalTiempo = computed(() =>
@@ -100,6 +91,7 @@ const totalTiempo = computed(() =>
                   <th class="px-3 py-2">Persona</th>
                   <th class="px-3 py-2 text-right">Veces</th>
                   <th class="px-3 py-2 text-right">Tiempo</th>
+                  <th class="px-3 py-2">Lo realizado</th>
                   <th class="px-3 py-2">Primera vez</th>
                   <th class="px-3 py-2">Última vez</th>
                 </tr>
@@ -117,6 +109,7 @@ const totalTiempo = computed(() =>
                   <td class="px-3 py-2 text-right tabular-nums font-semibold text-slate-800">
                     {{ duracion(persona.totalSeconds) }}
                   </td>
+                  <td class="px-3 py-2 text-xs text-slate-600">{{ resumenHecho(persona.hecho) }}</td>
                   <td class="px-3 py-2 text-xs text-slate-500">{{ fechaHora(persona.firstAt) }}</td>
                   <td class="px-3 py-2 text-xs text-slate-500">{{ fechaHora(persona.lastAt) }}</td>
                 </tr>
@@ -138,7 +131,10 @@ const totalTiempo = computed(() =>
               :key="sesion.id"
               class="flex flex-wrap items-baseline justify-between gap-2 px-3 py-2 text-sm"
             >
-              <span class="font-medium text-slate-800">{{ sesion.userName }}</span>
+              <span class="font-medium text-slate-800">
+                {{ sesion.userName }}
+                <span class="block text-xs font-normal text-slate-500">{{ resumenHecho(sesion.hecho, sesion.startedAt) }}</span>
+              </span>
               <span class="text-xs text-slate-500">
                 {{ fechaHora(sesion.startedAt) }}
                 <span class="mx-1">→</span>

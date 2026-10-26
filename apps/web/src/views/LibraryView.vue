@@ -19,6 +19,7 @@ import { tieneLetrasDanadas } from '@/utils/nombres';
 import { ordenarPorAlumno } from '@/utils/ordenAlumnos';
 import EditarNombreDialog from '@/components/EditarNombreDialog.vue';
 import LibrosAlumnadoDialog from '@/components/library/LibrosAlumnadoDialog.vue';
+import StudentActivityPanel from '@/components/library/StudentActivityPanel.vue';
 import type {
   EditorTool,
   ElementType,
@@ -483,14 +484,37 @@ async function createBook(): Promise<void> {
 }
 
 async function removeBook(id: string, title: string): Promise<void> {
-  if (!window.confirm(`Eliminar "${title}"? Esta accion no se puede deshacer.`)) return;
+  // El alumnado no borra de verdad: el libro se oculta y su docente lo recupera.
+  const pregunta = isManager.value
+    ? `Eliminar "${title}"? Esta accion no se puede deshacer.`
+    : `¿Quitar "${title}" de la biblioteca? Dejarás de verlo; tu docente podrá recuperarlo si hace falta.`;
+  if (!window.confirm(pregunta)) return;
   try {
-    await booksApi.remove(id);
+    const { hidden } = await booksApi.remove(id);
     books.value = books.value.filter((b) => b.id !== id);
+    if (hidden) notice.value = `"${title}" se quitó de la biblioteca.`;
   } catch (err) {
     error.value = errorMessage(err);
   }
 }
+
+/** Devuelve al alumno un libro que habia quitado. */
+async function reactivar(book: Book): Promise<void> {
+  try {
+    const restaurado = await booksApi.restore(book.id);
+    books.value = books.value.map((b) => (b.id === book.id ? { ...b, hiddenAt: null, hiddenByName: null, updatedAt: restaurado.updatedAt } : b));
+    notice.value = `"${book.title}" vuelve a estar visible para su autor.`;
+  } catch (err) {
+    error.value = errorMessage(err);
+  }
+}
+
+/** Texto del aviso de un libro oculto: quien y cuando lo quito. */
+const motivoOculto = (b: Book) =>
+  `Lo quitó ${b.hiddenByName ?? 'el alumno'} el ${new Date(b.hiddenAt!).toLocaleString('es-CO', { dateStyle: 'medium', timeStyle: 'short' })}. Solo lo ve el profesorado.`;
+
+/** Alumno cuya bitacora se esta mirando. */
+const bitacoraAlumno = ref<{ id: string; nombre: string } | null>(null);
 
 onMounted(async () => {
   await loadAll();
@@ -737,6 +761,10 @@ function formatDate(value: string | null): string {
             @remove="removeBook($event.id, $event.title)"
           >
             <template v-if="isManager" #acciones>
+              <div v-if="book.hiddenAt" class="mt-2 rounded bg-amber-50 p-1.5 text-[11px] text-amber-800" :title="motivoOculto(book)">
+                Oculto por el alumno ·
+                <button type="button" class="font-bold underline" @click="reactivar(book)">Reactivar</button>
+              </div>
               <div class="mt-2 grid grid-cols-3 gap-1">
                 <button type="button" class="btn-secondary px-1 text-xs" @click="valorando = book">Valorar</button>
                 <button type="button" class="btn-secondary px-1 text-xs" @click="bitacora = book">Bitácora</button>
@@ -793,6 +821,12 @@ function formatDate(value: string | null): string {
                   <span v-if="book.originBookId" class="ml-2 rounded bg-sky-100 px-1.5 py-0.5 text-[11px] text-sky-700">
                     entregado
                   </span>
+                  <span
+                    v-if="book.hiddenAt"
+                    data-libro-oculto
+                    class="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-semibold text-amber-800"
+                    :title="motivoOculto(book)"
+                  >oculto por el alumno</span>
                 </td>
                 <td class="px-4 py-2 text-slate-600">{{ book.creatorSurnameFirst ?? book.creatorName ?? '—' }}</td>
                 <td class="px-4 py-2">
@@ -813,6 +847,13 @@ function formatDate(value: string | null): string {
                 </td>
                 <td class="px-4 py-2 text-right">
                   <span v-if="isManager" class="flex justify-end gap-3">
+                    <button
+                      v-if="book.hiddenAt"
+                      type="button"
+                      data-reactivar
+                      class="text-xs font-bold text-amber-700 hover:underline"
+                      @click="reactivar(book)"
+                    >Reactivar</button>
                     <button
                       type="button"
                       class="text-xs font-semibold text-brand-600 hover:underline"
@@ -857,7 +898,14 @@ function formatDate(value: string | null): string {
                 :book="book"
                 :can-delete="isManager || book.creatorId === auth.user?.id"
                 @remove="removeBook($event.id, $event.title)"
-              />
+              >
+                <template v-if="isManager && book.hiddenAt" #acciones>
+                  <div class="mt-2 rounded bg-amber-50 p-1.5 text-[11px] text-amber-800" :title="motivoOculto(book)">
+                    Oculto por el alumno ·
+                    <button type="button" class="font-bold underline" @click="reactivar(book)">Reactivar</button>
+                  </div>
+                </template>
+              </BookCard>
             </ul>
           </section>
         </div>
@@ -995,6 +1043,13 @@ function formatDate(value: string | null): string {
                 <td class="px-4 py-2 text-xs text-slate-500">{{ formatDate(alumno.lastActivityAt) }}</td>
                 <td class="px-4 py-2 text-right">
                   <span class="flex justify-end gap-3">
+                    <button
+                      type="button"
+                      data-bitacora-de
+                      class="text-xs font-semibold text-brand-600 hover:underline"
+                      title="Todo lo que ha trabajado en los libros de esta biblioteca"
+                      @click="bitacoraAlumno = { id: alumno.studentId, nombre: alumno.studentName }"
+                    >Bitácora</button>
                     <button
                       type="button"
                       class="text-xs font-semibold text-brand-600 hover:underline disabled:opacity-50"
@@ -1250,6 +1305,15 @@ function formatDate(value: string | null): string {
         :can-grade="isManager"
         @close="valorando = null"
         @changed="cuadricula?.recargar()"
+      />
+
+      <StudentActivityPanel
+        v-if="bitacoraAlumno"
+        :library-id="libraryId"
+        :student-id="bitacoraAlumno.id"
+        :student-name="bitacoraAlumno.nombre"
+        @close="bitacoraAlumno = null"
+        @abrir-libro="router.push({ name: 'book-reader', params: { id: $event } })"
       />
 
       <BookActivityPanel

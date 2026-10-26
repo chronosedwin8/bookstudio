@@ -40,6 +40,7 @@ const coverWidth = useElementWidth(coverBox);
           v-if="book.cover && coverWidth > 0"
           :background-color="book.cover.backgroundColor"
           :background-pattern="book.cover.backgroundPattern"
+          :background-image="book.cover.backgroundImage"
           :elements="book.cover.elements"
           :aspect-ratio="aspectRatio"
           :width="coverWidth"
@@ -63,6 +64,7 @@ const coverWidth = useElementWidth(coverBox);
       {{ book.pageCount ?? 0 }} {{ book.pageCount === 1 ? 'página' : 'páginas' }} · {{ NOMBRE_FORMATO[book.layoutFormat] }}
       <span v-if="book.isPublished" class="ml-1 rounded bg-emerald-100 px-1.5 py-0.5 text-emerald-700">Publicado</span>
       <span v-if="book.originBookId" class="ml-1 rounded bg-sky-100 px-1.5 py-0.5 text-sky-700">Entregado</span>
+      <span v-if="book.hiddenAt" class="ml-1 rounded bg-amber-100 px-1.5 py-0.5 font-semibold text-amber-800">Oculto</span>
     </p>
 
     <slot name="acciones" />
