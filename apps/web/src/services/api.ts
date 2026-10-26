@@ -572,6 +572,18 @@ export const usersApi = {
     const { data } = await http.delete<{ deleted: BorradoUsuario }>(`/users/${id}`);
     return data.deleted;
   },
+  /** Cuantas cuentas de prueba hay ("Invitado de prueba"). */
+  async contarPruebas() {
+    const { data } = await http.get<{ total: number }>('/users/pruebas');
+    return data.total;
+  },
+  /** Borra todas las cuentas de prueba, con sus libros y archivos. */
+  async borrarPruebas() {
+    const { data } = await http.post<{ cuentas: number; libros: number; archivos: number }>('/users/pruebas/borrar', {}, {
+      timeout: 300_000,
+    });
+    return data;
+  },
 };
 
 export const phidiasApi = {

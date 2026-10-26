@@ -113,6 +113,21 @@ usersRouter.get(
   }),
 );
 
+/** Cuentas de prueba: cuantas hay y borrarlas todas de una vez. */
+usersRouter.get(
+  '/pruebas',
+  asyncHandler(async (_req, res) => {
+    res.json({ total: await service.contarPruebas() });
+  }),
+);
+
+usersRouter.post(
+  '/pruebas/borrar',
+  asyncHandler(async (req, res) => {
+    res.json(await service.borrarPruebas(req.auth!.userId));
+  }),
+);
+
 usersRouter.get(
   '/stats',
   asyncHandler(async (_req, res) => {

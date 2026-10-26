@@ -32,6 +32,35 @@ const ROLES = [
 
 const roleLabel = (role: string) => ROLES.find((r) => r.id === role)?.label ?? role;
 
+/* --- Cuentas de prueba: se acumulan con cada "probar" de la portada --- */
+const pruebas = ref(0);
+const borrandoPruebas = ref(false);
+
+async function contarPruebas(): Promise<void> {
+  try {
+    pruebas.value = await usersApi.contarPruebas();
+  } catch {
+    pruebas.value = 0;
+  }
+}
+
+async function borrarPruebas(): Promise<void> {
+  const n = pruebas.value;
+  if (!n) return;
+  if (!window.confirm(`Vas a borrar ${n} ${n === 1 ? 'cuenta' : 'cuentas'} de prueba ("Invitado de prueba"), con sus libros y archivos. No se puede deshacer.`)) return;
+  borrandoPruebas.value = true;
+  error.value = null;
+  try {
+    const r = await usersApi.borrarPruebas();
+    notice.value = `Cuentas de prueba borradas: ${r.cuentas} · ${r.libros} libros · ${r.archivos} archivos`;
+    await Promise.all([load(), contarPruebas()]);
+  } catch (err) {
+    error.value = errorMessage(err);
+  } finally {
+    borrandoPruebas.value = false;
+  }
+}
+
 async function load(): Promise<void> {
   loading.value = true;
   error.value = null;
@@ -251,6 +280,7 @@ async function importSection(section: PhidiasSection): Promise<void> {
 
 onMounted(async () => {
   await load();
+  void contarPruebas();
   try {
     phidiasEnabled.value = await phidiasApi.status();
   } catch {
@@ -380,7 +410,16 @@ onMounted(async () => {
     <section class="mt-8">
       <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
         <h2 class="font-bold text-slate-800">Cuentas ({{ total }})</h2>
-        <div class="flex gap-2">
+        <div class="flex flex-wrap gap-2">
+          <button
+            v-if="pruebas"
+            type="button"
+            data-borrar-pruebas
+            class="btn-danger whitespace-nowrap text-sm"
+            :disabled="borrandoPruebas"
+            title="Las cuentas «Invitado de prueba» que deja el botón probar de la portada"
+            @click="borrarPruebas"
+          >{{ borrandoPruebas ? 'Borrando…' : `Borrar cuentas de prueba (${pruebas})` }}</button>
           <input v-model.trim="search" type="search" class="input max-w-xs" placeholder="Buscar por nombre o correo..." />
           <select v-model="roleFilter" class="input max-w-[10rem]">
             <option value="">Todos los roles</option>

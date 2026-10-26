@@ -369,6 +369,29 @@ export async function deleteUser(userId: string, actorId: string): Promise<Borra
   };
 }
 
+/** Cuantas cuentas de prueba ("Invitado de prueba", @trial.local) hay. */
+export async function contarPruebas(): Promise<number> {
+  const { rows } = await query<{ total: string }>('SELECT COUNT(*) AS total FROM users WHERE is_trial');
+  return Number(rows[0].total);
+}
+
+/**
+ * Borra todas las cuentas de prueba. Las deja quien pulsa "probar" en la portada
+ * (y las comprobaciones automaticas) y se acumulan en el listado de usuarios.
+ * Cada una se borra como cualquier otra cuenta, con sus libros y sus archivos.
+ */
+export async function borrarPruebas(actorId: string): Promise<{ cuentas: number; libros: number; archivos: number }> {
+  const { rows } = await query<{ id: string }>('SELECT id FROM users WHERE is_trial AND id <> $1', [actorId]);
+  let libros = 0;
+  let archivos = 0;
+  for (const { id } of rows) {
+    const borrado = await deleteUser(id, actorId);
+    libros += borrado.books;
+    archivos += borrado.mediaDeleted;
+  }
+  return { cuentas: rows.length, libros, archivos };
+}
+
 /**
  * Un docente solo puede borrar alumnado de sus propias bibliotecas. Sin esto,
  * cualquier profesor podria borrar la cuenta de un companero o de un alumno ajeno.
