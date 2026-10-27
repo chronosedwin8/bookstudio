@@ -21,6 +21,7 @@ import { magnificRouter } from './modules/magnific/magnific.routes.js';
 import { quizzesRouter } from './modules/quizzes/quizzes.routes.js';
 import { illustrationsRouter } from './modules/illustrations/illustrations.routes.js';
 import { usersRouter } from './modules/users/users.routes.js';
+import { settingsRouter } from './modules/settings/settings.routes.js';
 import { STORAGE_ROOT } from './modules/media/uploads.service.js';
 
 /**
@@ -100,6 +101,7 @@ export function createApp() {
   app.use('/api/public', publicRouter);
   app.use('/api/media', mediaRouter);
   app.use('/api/users', usersRouter);
+  app.use('/api/settings', settingsRouter);
   app.use('/api/phidias', phidiasRouter);
   app.use('/api/quizzes', quizzesRouter);
   app.use('/api/illustrations', illustrationsRouter);

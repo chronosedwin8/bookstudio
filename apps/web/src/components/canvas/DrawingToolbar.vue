@@ -2,7 +2,14 @@
 import { BRUSH_STYLES, usePreferencesStore } from '@/stores/preferences';
 import { BRUSH_PRESETS } from '@/utils/strokes';
 
-defineProps<{ tool: 'select' | 'draw' | 'fill'; onionSkin: boolean }>();
+/**
+ * `parte` separa la barra en dos: el modo (seleccionar, dibujar, bote), que el
+ * editor deja siempre a la vista, y las opciones del trazo, que van dentro de su
+ * categoria del acordeon. Sin `parte`, todo junto.
+ */
+withDefaults(defineProps<{ tool: 'select' | 'draw' | 'fill'; onionSkin: boolean; parte?: 'modo' | 'opciones' | 'todo' }>(), {
+  parte: 'todo',
+});
 
 const emit = defineEmits<{
   'update:tool': [tool: 'select' | 'draw' | 'fill'];
@@ -16,8 +23,8 @@ const STROKE_COLORS = ['#333333', '#E11D48', '#F59E0B', '#16A34A', '#2563EB', '#
 
 <template>
   <section class="space-y-3">
-    <div>
-      <h3 class="label">Herramienta</h3>
+    <div v-if="parte !== 'opciones'">
+      <h3 v-if="parte === 'todo'" class="label">Herramienta</h3>
       <div class="grid grid-cols-3 gap-1">
         <button
           type="button"
@@ -54,7 +61,7 @@ const STROKE_COLORS = ['#333333', '#E11D48', '#F59E0B', '#16A34A', '#2563EB', '#
       </div>
     </div>
 
-    <template v-if="tool === 'draw'">
+    <template v-if="parte !== 'modo' && tool === 'draw'">
       <div>
         <h3 class="label">Pincel</h3>
         <div class="grid grid-cols-2 gap-1">
@@ -82,7 +89,7 @@ const STROKE_COLORS = ['#333333', '#E11D48', '#F59E0B', '#16A34A', '#2563EB', '#
       </div>
     </template>
 
-    <div v-if="tool !== 'select'">
+    <div v-if="parte !== 'modo' && tool !== 'select'">
       <h3 class="label">Color</h3>
       <div class="flex flex-wrap gap-1.5">
         <button
@@ -104,7 +111,11 @@ const STROKE_COLORS = ['#333333', '#E11D48', '#F59E0B', '#16A34A', '#2563EB', '#
       </div>
     </div>
 
-    <label class="flex items-center gap-2 text-xs text-slate-700">
+    <p v-if="parte === 'opciones' && tool === 'select'" class="text-[11px] leading-snug text-slate-500">
+      Elige ✏️ o 🪣 arriba para ver el pincel, el grosor y el color.
+    </p>
+
+    <label v-if="parte !== 'modo'" class="flex items-center gap-2 text-xs text-slate-700">
       <input
         type="checkbox"
         class="h-4 w-4 rounded"

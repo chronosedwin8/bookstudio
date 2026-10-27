@@ -32,7 +32,7 @@ import MagnificDialog from '@/components/media/MagnificDialog.vue';
 import RecorderDialog from '@/components/media/RecorderDialog.vue';
 import StickerDialog from '@/components/media/StickerDialog.vue';
 import TemplateDialog from '@/components/media/TemplateDialog.vue';
-import { booksApi, magnificApi, mediaApi } from '@/services/api';
+import { booksApi, magnificApi, mediaApi, settingsApi } from '@/services/api';
 import { errorMessage } from '@/services/http';
 import { useAuthStore } from '@/stores/auth';
 import { useEditorStore } from '@/stores/editor';
@@ -59,6 +59,7 @@ import type { Tabla } from '@/utils/tablas';
 import { PAPER_CATALOGUE, PAPER_GROUPS, paperStyle } from '@/utils/papers';
 import { COLORES_GRAFICA, GRAFICA_POR_DEFECTO, funcionNueva } from '@/utils/graficas';
 import { SHAPES, ratioOf, type ShapeName } from '@/utils/shapes';
+import { categoriaDe, normalizarBarra, type ConfigBarra, type HerramientaId } from '@/utils/barraHerramientas';
 import type { QuestionBlock } from '@/utils/questions';
 import type { PageTemplate } from '@/utils/templates';
 
@@ -739,6 +740,118 @@ const puedeGenerarImagenes = ref(false);
  */
 const puedeUsar = (herramienta: ElementType): boolean =>
   !(editor.book?.disabledTools ?? []).includes(herramienta);
+
+/* --------------------------------------------------------------------------
+ * Barra de herramientas en acordeon
+ *
+ * La ubicacion (categorias, orden, que lleva cada una) la fija la
+ * administracion para todo el mundo; mientras llega, o si no llega, vale la de
+ * fabrica. Que categoria queda abierta es cosa de cada cual y se recuerda en
+ * este navegador.
+ * ----------------------------------------------------------------------- */
+const barra = ref<ConfigBarra>(normalizarBarra(null));
+const CLAVE_ABIERTA = 'bookstudio.barra.abierta';
+
+function leerAbierta(): string | null | undefined {
+  try {
+    const v = localStorage.getItem(CLAVE_ABIERTA);
+    // '' = la cerro a proposito; null = nunca eligio, vale la de la administracion.
+    return v === null ? undefined : v || null;
+  } catch {
+    return undefined;
+  }
+}
+
+const recordada = leerAbierta();
+const abierta = ref<string | null>(recordada === undefined ? barra.value.openByDefault : recordada);
+
+function alternarCategoria(id: string): void {
+  abierta.value = abierta.value === id ? null : id;
+  try {
+    localStorage.setItem(CLAVE_ABIERTA, abierta.value ?? '');
+  } catch {
+    // Sin almacenamiento solo se pierde el recuerdo para la proxima vez.
+  }
+}
+
+void settingsApi
+  .toolbar()
+  .then(({ value }) => {
+    barra.value = normalizarBarra(value);
+    const existe = (id: string | null) => Boolean(id && barra.value.categories.some((c) => c.id === id));
+    if (recordada === undefined || (recordada && !existe(recordada))) abierta.value = barra.value.openByDefault;
+  })
+  .catch(() => {
+    // Sin respuesta se queda la de fabrica: el editor no depende de esto.
+  });
+
+/** Si el boton de una herramienta se muestra a quien edita. */
+function herramientaVisible(h: HerramientaId): boolean {
+  switch (h) {
+    case 'pincel':
+      return puedeUsar('drawing');
+    case 'texto':
+      return puedeUsar('text');
+    case 'tabla':
+      return puedeUsar('table');
+    case 'imagen':
+    case 'gif':
+    case 'foto':
+    case 'recorte':
+      return puedeUsar('image');
+    case 'imagen-ia':
+      return puedeGenerarImagenes.value && puedeUsar('image');
+    case 'ilustracion':
+      return puedeUsar('illustration');
+    case 'marcos':
+      return puedeUsar('frame');
+    case 'grabar-pantalla':
+    case 'video':
+      return puedeUsar('video');
+    case 'voz':
+    case 'sonidos':
+      return puedeUsar('audio');
+    case 'formas':
+    case 'mas-formas':
+    case 'notas':
+    case 'nota-cinta':
+      return puedeUsar('shape');
+    case 'iconos':
+    case 'emojis':
+      return puedeUsar('icon');
+    case 'formula':
+      return puedeUsar('math');
+    case 'grafica':
+      return puedeUsar('chart');
+    case 'grafica-funciones':
+      return puedeUsar('plot');
+    case 'pregunta':
+      return puedeUsar('question');
+    case 'boton':
+      return puedeUsar('button');
+    case 'mapa':
+      return puedeUsar('map');
+    case 'incrustar':
+      return puedeUsar('embed');
+    // Subir del equipo y la pagina no dependen de la biblioteca.
+    default:
+      return true;
+  }
+}
+
+/** Las categorias con lo que cada cual puede usar; las que se quedan vacias no salen. */
+const categoriasVisibles = computed(() =>
+  barra.value.categories
+    .map((c) => ({ ...c, tools: c.tools.filter(herramientaVisible) }))
+    .filter((c) => c.tools.length),
+);
+
+/* Al pasar a dibujar o al bote se abre la categoria con el pincel y el color. */
+watch(tool, (modo) => {
+  if (modo === 'select') return;
+  const donde = categoriaDe(barra.value, 'pincel');
+  if (donde) abierta.value = donde;
+});
 
 void magnificApi
   .config()
@@ -1644,287 +1757,295 @@ async function saveTitle(): Promise<void> {
       </div>
 
       <div class="flex min-h-0 flex-1">
-        <!-- Herramientas -->
-        <aside v-if="editor.canEdit" class="flex w-52 shrink-0 flex-col gap-4 overflow-y-auto border-r border-slate-200 bg-white p-3">
-          <DrawingToolbar v-if="puedeUsar('drawing')" v-model:tool="tool" v-model:onion-skin="onionSkin" />
+        <!--
+          Herramientas, en acordeon por categorias: una abierta cada vez, para no
+          tener que bajar media pantalla buscando un boton. Que categorias hay, en
+          que orden y que lleva cada una lo decide la administracion para toda la
+          plataforma (Administracion > Herramientas); aqui solo se pintan.
+        -->
+        <aside
+          v-if="editor.canEdit"
+          data-barra-herramientas
+          class="flex w-56 shrink-0 flex-col gap-2 overflow-y-auto border-r border-slate-200 bg-white p-3"
+        >
+          <!-- El modo (seleccionar, dibujar, bote) siempre a la vista -->
+          <DrawingToolbar
+            v-if="puedeUsar('drawing')"
+            v-model:tool="tool"
+            v-model:onion-skin="onionSkin"
+            parte="modo"
+            class="mb-1"
+          />
 
-          <label v-if="tool === 'draw'" class="flex items-center gap-2 text-xs text-slate-600">
-            <input v-model="autoShape" type="checkbox" class="h-3.5 w-3.5 rounded" />
-            Autoforma
-          </label>
+          <input
+            ref="fileInput"
+            type="file"
+            class="hidden"
+            :accept="ACCEPT[fileKind]"
+            @change="onFileChosen"
+          />
 
-          <!--
-            Grabar va lo primero: grabar la pantalla es de lo que mas se usa en clase
-            y, al fondo de la lista de Insertar y dentro de un desplegable, habia que
-            bajar y abrir para encontrarlo. La pantalla queda a la vista; las demas
-            grabaciones, plegadas justo debajo para no empujar Insertar hacia abajo.
-          -->
-          <section v-if="puedeUsar('video')" class="space-y-1.5">
-            <h3 class="label">Grabar</h3>
-            <button type="button" class="btn-primary w-full justify-start" @click="dialog = 'screen'">
-              🖥️ Grabar pantalla
-            </button>
-          </section>
-
-          <details class="space-y-1.5">
-            <summary class="section-toggle">Más grabaciones</summary>
-            <button v-if="puedeUsar('audio')" type="button" class="btn-secondary w-full justify-start" @click="dialog = 'audio'">
-              🎤 Voz
-            </button>
-            <button v-if="puedeUsar('audio')" type="button" class="btn-secondary w-full justify-start" @click="dialog = 'sound'">
-              🔊 Biblioteca de sonidos
-            </button>
-            <button v-if="puedeUsar('image')" type="button" class="btn-secondary w-full justify-start" @click="dialog = 'photo'">
-              📷 Foto
-            </button>
-            <button v-if="puedeUsar('video')" type="button" class="btn-secondary w-full justify-start" @click="dialog = 'video'">
-              🎬 Video
-            </button>
-            <button v-if="puedeUsar('image')" type="button" class="btn-secondary w-full justify-start" @click="dialog = 'clip'">
-              ✂️ Recorte de pantalla
-            </button>
-          </details>
-
-          <section class="space-y-1.5">
-            <h3 class="label">Insertar</h3>
-            <button v-if="puedeUsar('text')" type="button" class="btn-secondary w-full justify-start" @click="dialog = 'texto'">
-              <span class="text-base">T</span> Texto
-            </button>
-            <button v-if="puedeUsar('image')" type="button" class="btn-secondary w-full justify-start" @click="dialog = 'image'">
-              🖼️ Imagen libre
-            </button>
-            <button v-if="puedeUsar('image')" type="button" class="btn-secondary w-full justify-start" @click="dialog = 'gif'">
-              🎞️ GIF animado
-            </button>
+          <div
+            v-for="categoria in categoriasVisibles"
+            :key="categoria.id"
+            :data-categoria="categoria.id"
+            class="shrink-0 rounded-lg border transition"
+            :class="abierta === categoria.id ? 'border-brand-300 bg-brand-50/40' : 'border-slate-200'"
+          >
             <button
-              v-if="puedeGenerarImagenes && puedeUsar('image')"
               type="button"
-              class="btn-secondary w-full justify-start"
-              @click="dialog = 'magnific'"
+              class="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              :aria-expanded="abierta === categoria.id"
+              :aria-controls="`categoria-${categoria.id}`"
+              @click="alternarCategoria(categoria.id)"
             >
-              ✨ Crear imagen con IA
+              <span class="w-5 shrink-0 text-center" aria-hidden="true">{{ categoria.icon }}</span>
+              <span class="min-w-0 flex-1 leading-tight">{{ categoria.label }}</span>
+              <span class="text-[10px] font-bold text-slate-400">{{ categoria.tools.length }}</span>
+              <span
+                class="text-xs text-slate-400 transition-transform"
+                :class="abierta === categoria.id && 'rotate-180'"
+                aria-hidden="true"
+              >▾</span>
             </button>
-            <button v-if="puedeUsar('map')" type="button" class="btn-secondary w-full justify-start" @click="dialog = 'map'">
-              🗺️ Mapa
-            </button>
-            <button v-if="puedeUsar('embed')" type="button" class="btn-secondary w-full justify-start" @click="dialog = 'embed'">
-              ⧉ Incrustar
-            </button>
-            <button v-if="puedeUsar('question')" type="button" class="btn-secondary w-full justify-start" @click="dialog = 'question'">
-              ❓ Pregunta
-            </button>
-            <button v-if="puedeUsar('chart')" type="button" class="btn-secondary w-full justify-start" @click="dialog = 'chart'">
-              📊 Gráfica
-            </button>
-            <button v-if="puedeUsar('table')" type="button" class="btn-secondary w-full justify-start" @click="dialog = 'table'">
-              &#9638; Tabla
-            </button>
-            <button
-              v-if="puedeUsar('illustration')"
-              type="button"
-              class="btn-secondary w-full justify-start"
-              @click="dialog = 'illustration'"
+
+            <div
+              v-if="abierta === categoria.id"
+              :id="`categoria-${categoria.id}`"
+              class="space-y-1.5 border-t border-slate-100 p-2"
             >
-              🎨 Ilustración educativa
-            </button>
-            <button v-if="puedeUsar('math')" type="button" class="btn-secondary w-full justify-start" @click="addMathElement">
-              ∑ Formula
-            </button>
-            <button v-if="puedeUsar('frame')" type="button" class="btn-secondary w-full justify-start" @click="dialog = 'marco'">
-              🖼️ Marcos
-            </button>
-            <button v-if="puedeUsar('plot')" type="button" class="btn-secondary w-full justify-start" @click="addPlotElement()">
-              📈 Gráfica de funciones
-            </button>
-            <button v-if="puedeUsar('button')" type="button" class="btn-secondary w-full justify-start" @click="addButtonElement">
-              ⬢ Botón
-            </button>
-          </section>
+              <template v-for="h in categoria.tools" :key="h">
+                <template v-if="h === 'pincel'">
+                  <DrawingToolbar v-model:tool="tool" v-model:onion-skin="onionSkin" parte="opciones" />
+                  <label v-if="tool === 'draw'" class="flex items-center gap-2 text-xs text-slate-600">
+                    <input v-model="autoShape" type="checkbox" class="h-3.5 w-3.5 rounded" />
+                    Autoforma
+                  </label>
+                </template>
 
-          <details class="space-y-1.5">
-            <summary class="section-toggle">Desde mi equipo</summary>
-            <button type="button" class="btn-secondary w-full justify-start" @click="pickFromComputer('image')">
-              📁 Imagen
-            </button>
-            <button type="button" class="btn-secondary w-full justify-start" @click="pickFromComputer('audio')">
-              🎵 Audio
-            </button>
-            <input
-              ref="fileInput"
-              type="file"
-              class="hidden"
-              :accept="ACCEPT[fileKind]"
-              @change="onFileChosen"
-            />
-            <p class="text-[11px] leading-tight text-slate-400">
-              Imagenes hasta 8 MB (PNG, JPG, WEBP, GIF) y audios hasta 20 MB (MP3, M4A, OGG, WAV).
-            </p>
-          </details>
-
-
-
-          <section v-if="puedeUsar('shape') || puedeUsar('icon')">
-            <h3 class="label">Formas</h3>
-            <div v-if="puedeUsar('shape')" class="grid grid-cols-3 gap-1.5">
-              <button
-                v-for="name in QUICK_SHAPES"
-                :key="name"
-                type="button"
-                class="grid aspect-square place-items-center rounded-lg border border-slate-300 bg-white p-1.5 transition hover:border-brand-400 hover:bg-brand-50"
-                :title="SHAPES[name].label"
-                :aria-label="SHAPES[name].label"
-                @click="onPickShape(name)"
-              >
-                <ShapeRenderer :shape="name" fill-color="#93C5FD" stroke-color="#1D4ED8" :stroke-width="2" />
-              </button>
-            </div>
-            <button
-              v-if="puedeUsar('shape')"
-              type="button"
-              class="btn-secondary mt-1.5 w-full justify-start"
-              @click="openStickers('shapes')"
-            >
-              ⬡ Más formas
-            </button>
-            <button
-              v-if="puedeUsar('icon')"
-              type="button"
-              class="btn-secondary w-full justify-start"
-              @click="openStickers('icons')"
-            >
-              ✦ Iconos
-            </button>
-            <button
-              v-if="puedeUsar('icon')"
-              type="button"
-              class="btn-secondary w-full justify-start"
-              @click="openStickers('emojis')"
-            >
-              😀 Emojis
-            </button>
-          </section>
-
-          <!-- Notas adhesivas: se insertan listas para escribir -->
-          <section v-if="puedeUsar('shape')">
-            <h3 class="label">Notas adhesivas</h3>
-            <div class="grid grid-cols-6 gap-1">
-              <button
-                v-for="c in COLORES_NOTA"
-                :key="c"
-                type="button"
-                class="aspect-square rounded shadow-sm ring-1 ring-black/10 transition hover:scale-110"
-                :style="{ backgroundColor: c }"
-                :title="'Nota adhesiva'"
-                :aria-label="`Nota adhesiva de color ${c}`"
-                @click="addNota(c)"
-              />
-            </div>
-            <button type="button" class="btn-secondary mt-1.5 w-full justify-start text-xs" @click="addNota('#FEF08A', 'nota-cinta')">
-              📌 Nota con cinta
-            </button>
-          </section>
-
-          <section>
-            <h3 class="label">Tipo de hoja</h3>
-            <details>
-              <summary class="section-toggle">
-                {{ editor.currentPage?.backgroundPattern
-                  ? PAPER_CATALOGUE[editor.currentPage.backgroundPattern as keyof typeof PAPER_CATALOGUE]?.label ?? 'Personalizado'
-                  : 'Hoja lisa' }}
-              </summary>
-
-              <div class="mt-1.5 max-h-64 overflow-y-auto rounded-lg border border-slate-200 px-2 py-2">
                 <button
+                  v-else-if="h === 'grabar-pantalla'"
                   type="button"
-                  class="mb-2 w-full rounded border border-slate-300 py-1 text-[11px] text-slate-600 hover:bg-slate-50"
-                  @click="editor.setPagePattern(null)"
-                >Sin patron</button>
+                  class="btn-primary w-full justify-start text-left leading-tight"
+                  @click="dialog = 'screen'"
+                >🖥️ Grabar pantalla</button>
+                <button v-else-if="h === 'voz'" type="button" class="btn-secondary w-full justify-start text-left leading-tight" @click="dialog = 'audio'">
+                  🎤 Voz
+                </button>
+                <button v-else-if="h === 'sonidos'" type="button" class="btn-secondary w-full justify-start text-left leading-tight" @click="dialog = 'sound'">
+                  🔊 Biblioteca de sonidos
+                </button>
+                <button v-else-if="h === 'foto'" type="button" class="btn-secondary w-full justify-start text-left leading-tight" @click="dialog = 'photo'">
+                  📷 Foto
+                </button>
+                <button v-else-if="h === 'video'" type="button" class="btn-secondary w-full justify-start text-left leading-tight" @click="dialog = 'video'">
+                  🎬 Video
+                </button>
+                <button v-else-if="h === 'recorte'" type="button" class="btn-secondary w-full justify-start text-left leading-tight" @click="dialog = 'clip'">
+                  ✂️ Recorte de pantalla
+                </button>
+                <button v-else-if="h === 'audio-equipo'" type="button" class="btn-secondary w-full justify-start text-left leading-tight" @click="pickFromComputer('audio')">
+                  🎵 Audio de mi equipo
+                </button>
 
-                <div v-for="group in PAPER_GROUPS" :key="group.label" class="mb-2">
-                  <p class="mb-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">{{ group.label }}</p>
-                  <div class="grid grid-cols-3 gap-1">
+                <button v-else-if="h === 'texto'" type="button" class="btn-secondary w-full justify-start text-left leading-tight" @click="dialog = 'texto'">
+                  <span class="text-base">T</span> Texto
+                </button>
+                <button v-else-if="h === 'tabla'" type="button" class="btn-secondary w-full justify-start text-left leading-tight" @click="dialog = 'table'">
+                  &#9638; Tabla
+                </button>
+
+                <button v-else-if="h === 'imagen'" type="button" class="btn-secondary w-full justify-start text-left leading-tight" @click="dialog = 'image'">
+                  🖼️ Imagen libre
+                </button>
+                <button
+                  v-else-if="h === 'imagen-equipo'"
+                  type="button"
+                  class="btn-secondary w-full justify-start text-left leading-tight"
+                  title="Imágenes hasta 8 MB (PNG, JPG, WEBP, GIF)"
+                  @click="pickFromComputer('image')"
+                >📁 Imagen de mi equipo</button>
+                <button v-else-if="h === 'gif'" type="button" class="btn-secondary w-full justify-start text-left leading-tight" @click="dialog = 'gif'">
+                  🎞️ GIF animado
+                </button>
+                <button v-else-if="h === 'imagen-ia'" type="button" class="btn-secondary w-full justify-start text-left leading-tight" @click="dialog = 'magnific'">
+                  ✨ Crear imagen con IA
+                </button>
+                <button v-else-if="h === 'ilustracion'" type="button" class="btn-secondary w-full justify-start text-left leading-tight" @click="dialog = 'illustration'">
+                  🎨 Ilustración educativa
+                </button>
+                <button v-else-if="h === 'marcos'" type="button" class="btn-secondary w-full justify-start text-left leading-tight" @click="dialog = 'marco'">
+                  🖼️ Marcos
+                </button>
+
+                <button v-else-if="h === 'formula'" type="button" class="btn-secondary w-full justify-start text-left leading-tight" @click="addMathElement">
+                  ∑ Fórmula
+                </button>
+                <button v-else-if="h === 'grafica'" type="button" class="btn-secondary w-full justify-start text-left leading-tight" @click="dialog = 'chart'">
+                  📊 Gráfica
+                </button>
+                <button v-else-if="h === 'grafica-funciones'" type="button" class="btn-secondary w-full justify-start text-left leading-tight" @click="addPlotElement()">
+                  📈 Gráfica de funciones
+                </button>
+
+                <button v-else-if="h === 'pregunta'" type="button" class="btn-secondary w-full justify-start text-left leading-tight" @click="dialog = 'question'">
+                  ❓ Pregunta
+                </button>
+                <button v-else-if="h === 'boton'" type="button" class="btn-secondary w-full justify-start text-left leading-tight" @click="addButtonElement">
+                  ⬢ Botón
+                </button>
+                <button v-else-if="h === 'mapa'" type="button" class="btn-secondary w-full justify-start text-left leading-tight" @click="dialog = 'map'">
+                  🗺️ Mapa
+                </button>
+                <button v-else-if="h === 'incrustar'" type="button" class="btn-secondary w-full justify-start text-left leading-tight" @click="dialog = 'embed'">
+                  ⧉ Incrustar
+                </button>
+
+                <div v-else-if="h === 'formas'" class="grid grid-cols-3 gap-1.5">
+                  <button
+                    v-for="name in QUICK_SHAPES"
+                    :key="name"
+                    type="button"
+                    class="grid aspect-square place-items-center rounded-lg border border-slate-300 bg-white p-1.5 transition hover:border-brand-400 hover:bg-brand-50"
+                    :title="SHAPES[name].label"
+                    :aria-label="SHAPES[name].label"
+                    @click="onPickShape(name)"
+                  >
+                    <ShapeRenderer :shape="name" fill-color="#93C5FD" stroke-color="#1D4ED8" :stroke-width="2" />
+                  </button>
+                </div>
+                <button v-else-if="h === 'mas-formas'" type="button" class="btn-secondary w-full justify-start text-left leading-tight" @click="openStickers('shapes')">
+                  ⬡ Más formas
+                </button>
+                <button v-else-if="h === 'iconos'" type="button" class="btn-secondary w-full justify-start text-left leading-tight" @click="openStickers('icons')">
+                  ✦ Iconos
+                </button>
+                <button v-else-if="h === 'emojis'" type="button" class="btn-secondary w-full justify-start text-left leading-tight" @click="openStickers('emojis')">
+                  😀 Emojis
+                </button>
+                <!-- Notas adhesivas: se insertan listas para escribir -->
+                <div v-else-if="h === 'notas'">
+                  <p class="mb-1 text-[11px] font-semibold text-slate-500">Notas adhesivas</p>
+                  <div class="grid grid-cols-6 gap-1">
                     <button
-                      v-for="name in group.papers"
-                      :key="name"
+                      v-for="c in COLORES_NOTA"
+                      :key="c"
                       type="button"
-                      class="h-10 rounded border-2 bg-white transition hover:border-brand-400"
-                      :class="editor.currentPage?.backgroundPattern === name ? 'border-brand-600' : 'border-slate-200'"
-                      :style="paperStyle(name)"
-                      :title="PAPER_CATALOGUE[name].label"
-                      :aria-label="PAPER_CATALOGUE[name].label"
-                      @click="editor.setPagePattern(name)"
+                      class="aspect-square rounded shadow-sm ring-1 ring-black/10 transition hover:scale-110"
+                      :style="{ backgroundColor: c }"
+                      :title="'Nota adhesiva'"
+                      :aria-label="`Nota adhesiva de color ${c}`"
+                      @click="addNota(c)"
                     />
                   </div>
                 </div>
-              </div>
-            </details>
-          </section>
+                <button v-else-if="h === 'nota-cinta'" type="button" class="btn-secondary w-full justify-start text-left text-xs leading-tight" @click="addNota('#FEF08A', 'nota-cinta')">
+                  📌 Nota con cinta
+                </button>
 
-          <!--
-            Imagen de fondo: debajo de todo, cubriendo la hoja. Se elige si va
-            solo en esta pagina o en todas las del libro.
-          -->
-          <section data-imagen-fondo>
-            <h3 class="label">Imagen de fondo</h3>
-            <div class="mb-1.5 grid grid-cols-2 gap-1 rounded-lg bg-slate-100 p-0.5 text-[11px] font-semibold">
-              <button
-                type="button"
-                class="rounded-md py-1"
-                :class="alcanceFondo === 'pagina' ? 'bg-white text-brand-700 shadow-sm' : 'text-slate-600'"
-                @click="alcanceFondo = 'pagina'"
-              >Esta página</button>
-              <button
-                type="button"
-                class="rounded-md py-1"
-                :class="alcanceFondo === 'todas' ? 'bg-white text-brand-700 shadow-sm' : 'text-slate-600'"
-                @click="alcanceFondo = 'todas'"
-              >Todas las páginas</button>
-            </div>
-            <div class="grid grid-cols-3 gap-1">
-              <button type="button" class="btn-secondary justify-center px-1 text-[11px]" @click="elegirFondo('buscar')">🔍 Buscar</button>
-              <button type="button" class="btn-secondary justify-center px-1 text-[11px]" @click="elegirFondo('equipo')">💻 Equipo</button>
-              <button
-                v-if="puedeGenerarImagenes"
-                type="button"
-                class="btn-secondary justify-center px-1 text-[11px]"
-                @click="elegirFondo('ia')"
-              >✨ IA</button>
-            </div>
-            <div v-if="editor.currentPage?.backgroundImage" class="mt-1.5 flex items-center gap-2">
-              <img :src="editor.currentPage.backgroundImage" alt="" class="h-9 w-12 rounded border border-slate-200 object-cover" />
-              <button type="button" class="text-[11px] font-semibold text-red-600 hover:underline" @click="quitarFondo('pagina')">
-                Quitar de esta página
-              </button>
-            </div>
-            <button
-              v-if="editor.currentPage?.backgroundImage || hayFondoEnOtras"
-              type="button"
-              class="mt-1 text-[11px] font-semibold text-slate-500 hover:text-red-600 hover:underline"
-              @click="quitarFondo('todas')"
-            >Quitar de todas las páginas</button>
-            <p v-if="fondoPendiente" class="mt-1.5 rounded bg-amber-50 px-2 py-1 text-[11px] text-amber-800">
-              Elige la imagen para el fondo
-              ({{ fondoPendiente === 'todas' ? 'todas las páginas' : 'esta página' }}).
-              <button type="button" class="font-semibold underline" @click="fondoPendiente = null">Cancelar</button>
-            </p>
-          </section>
+                <div v-else-if="h === 'color-fondo'">
+                  <p class="mb-1 text-[11px] font-semibold text-slate-500">Color de la página</p>
+                  <div class="flex flex-wrap gap-1.5">
+                    <button
+                      v-for="color in PAGE_COLORS"
+                      :key="color"
+                      type="button"
+                      class="h-7 w-7 rounded border-2"
+                      :class="editor.currentPage?.backgroundColor === color ? 'border-brand-600' : 'border-slate-300'"
+                      :style="{ backgroundColor: color }"
+                      :title="color"
+                      @click="editor.setPageBackground(color)"
+                    />
+                  </div>
+                </div>
 
-          <section>
-            <h3 class="label">Fondo de página</h3>
-            <div class="flex flex-wrap gap-1.5">
-              <button
-                v-for="color in PAGE_COLORS"
-                :key="color"
-                type="button"
-                class="h-7 w-7 rounded border-2"
-                :class="editor.currentPage?.backgroundColor === color ? 'border-brand-600' : 'border-slate-300'"
-                :style="{ backgroundColor: color }"
-                :title="color"
-                @click="editor.setPageBackground(color)"
-              />
-            </div>
-          </section>
+                <div v-else-if="h === 'tipo-hoja'">
+                  <p class="mb-1 text-[11px] font-semibold text-slate-500">Tipo de hoja</p>
+                  <details>
+                    <summary class="section-toggle">
+                      {{ editor.currentPage?.backgroundPattern
+                        ? PAPER_CATALOGUE[editor.currentPage.backgroundPattern as keyof typeof PAPER_CATALOGUE]?.label ?? 'Personalizado'
+                        : 'Hoja lisa' }}
+                    </summary>
 
+                    <div class="mt-1.5 max-h-64 overflow-y-auto rounded-lg border border-slate-200 bg-white px-2 py-2">
+                      <button
+                        type="button"
+                        class="mb-2 w-full rounded border border-slate-300 py-1 text-[11px] text-slate-600 hover:bg-slate-50"
+                        @click="editor.setPagePattern(null)"
+                      >Sin patron</button>
+
+                      <div v-for="group in PAPER_GROUPS" :key="group.label" class="mb-2">
+                        <p class="mb-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">{{ group.label }}</p>
+                        <div class="grid grid-cols-3 gap-1">
+                          <button
+                            v-for="name in group.papers"
+                            :key="name"
+                            type="button"
+                            class="h-10 rounded border-2 bg-white transition hover:border-brand-400"
+                            :class="editor.currentPage?.backgroundPattern === name ? 'border-brand-600' : 'border-slate-200'"
+                            :style="paperStyle(name)"
+                            :title="PAPER_CATALOGUE[name].label"
+                            :aria-label="PAPER_CATALOGUE[name].label"
+                            @click="editor.setPagePattern(name)"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </details>
+                </div>
+
+                <!--
+                  Imagen de fondo: debajo de todo, cubriendo la hoja. Se elige si va
+                  solo en esta pagina o en todas las del libro.
+                -->
+                <div v-else-if="h === 'imagen-fondo'" data-imagen-fondo>
+                  <p class="mb-1 text-[11px] font-semibold text-slate-500">Imagen de fondo</p>
+                  <div class="mb-1.5 grid grid-cols-2 gap-1 rounded-lg bg-slate-100 p-0.5 text-[11px] font-semibold">
+                    <button
+                      type="button"
+                      class="rounded-md py-1"
+                      :class="alcanceFondo === 'pagina' ? 'bg-white text-brand-700 shadow-sm' : 'text-slate-600'"
+                      @click="alcanceFondo = 'pagina'"
+                    >Esta página</button>
+                    <button
+                      type="button"
+                      class="rounded-md py-1"
+                      :class="alcanceFondo === 'todas' ? 'bg-white text-brand-700 shadow-sm' : 'text-slate-600'"
+                      @click="alcanceFondo = 'todas'"
+                    >Todas las páginas</button>
+                  </div>
+                  <div class="grid grid-cols-3 gap-1">
+                    <button type="button" class="btn-secondary justify-center px-1 text-[11px]" @click="elegirFondo('buscar')">🔍 Buscar</button>
+                    <button type="button" class="btn-secondary justify-center px-1 text-[11px]" @click="elegirFondo('equipo')">💻 Equipo</button>
+                    <button
+                      v-if="puedeGenerarImagenes"
+                      type="button"
+                      class="btn-secondary justify-center px-1 text-[11px]"
+                      @click="elegirFondo('ia')"
+                    >✨ IA</button>
+                  </div>
+                  <div v-if="editor.currentPage?.backgroundImage" class="mt-1.5 flex items-center gap-2">
+                    <img :src="editor.currentPage.backgroundImage" alt="" class="h-9 w-12 rounded border border-slate-200 object-cover" />
+                    <button type="button" class="text-[11px] font-semibold text-red-600 hover:underline" @click="quitarFondo('pagina')">
+                      Quitar de esta página
+                    </button>
+                  </div>
+                  <button
+                    v-if="editor.currentPage?.backgroundImage || hayFondoEnOtras"
+                    type="button"
+                    class="mt-1 text-[11px] font-semibold text-slate-500 hover:text-red-600 hover:underline"
+                    @click="quitarFondo('todas')"
+                  >Quitar de todas las páginas</button>
+                  <p v-if="fondoPendiente" class="mt-1.5 rounded bg-amber-50 px-2 py-1 text-[11px] text-amber-800">
+                    Elige la imagen para el fondo
+                    ({{ fondoPendiente === 'todas' ? 'todas las páginas' : 'esta página' }}).
+                    <button type="button" class="font-semibold underline" @click="fondoPendiente = null">Cancelar</button>
+                  </p>
+                </div>
+              </template>
+            </div>
+          </div>
         </aside>
 
         <!-- Lienzo -->

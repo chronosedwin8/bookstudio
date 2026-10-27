@@ -98,6 +98,12 @@ function handleLogout(): void {
             class="enlace-cabecera"
           >Planes</RouterLink>
 
+          <RouterLink
+            v-if="auth.user?.role === 'admin'"
+            :to="{ name: 'admin-toolbar' }"
+            class="enlace-cabecera"
+          >Herramientas</RouterLink>
+
           <!--
             Solo a quien tiene cuenta de cliente. Se consulta una vez al entrar: un
             enlace que lleva a una pantalla vacia es peor que no tener enlace.

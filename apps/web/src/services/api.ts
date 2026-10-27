@@ -1,4 +1,5 @@
 import { http } from './http';
+import type { ConfigBarra } from '@/utils/barraHerramientas';
 import type {
   StudentActivity,
   AdminOrganization,
@@ -949,5 +950,21 @@ export const illustrationsApi = {
       ilustracion: { id: string; prompt: string; escena: Record<string, unknown> };
     }>('/illustrations', payload);
     return data.ilustracion;
+  },
+};
+
+/** Ajustes de toda la plataforma: los lee cualquiera con sesion, los cambia la administracion. */
+export const settingsApi = {
+  /** Ubicacion de las herramientas del editor; `value` null = la de fabrica. */
+  async toolbar() {
+    const { data } = await http.get<{ value: Partial<ConfigBarra> | null; updatedAt: string | null }>('/settings/toolbar');
+    return data;
+  },
+  async saveToolbar(config: ConfigBarra) {
+    const { data } = await http.put<{ value: ConfigBarra; updatedAt: string }>('/settings/toolbar', config);
+    return data;
+  },
+  async resetToolbar() {
+    await http.delete('/settings/toolbar');
   },
 };
