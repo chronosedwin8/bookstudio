@@ -579,7 +579,7 @@ async function removeCoTeacher(teacherId: string): Promise<void> {
   }
 }
 
-type Ajuste = 'studentEditable' | 'studentPublishable' | 'commentsEnabled' | 'studentsSeePeers';
+type Ajuste = 'studentEditable' | 'studentsCanCreate' | 'studentPublishable' | 'commentsEnabled' | 'studentsSeePeers';
 
 async function toggleSetting(key: Ajuste): Promise<void> {
   if (!library.value) return;
@@ -1166,6 +1166,24 @@ function formatDate(value: string | null): string {
               <span>
                 Editar sus libros
                 <span class="block text-xs text-slate-500">Sin esto solo pueden leerlos.</span>
+              </span>
+            </label>
+
+            <label class="flex items-start gap-2">
+              <input
+                type="checkbox"
+                data-ajuste-crear
+                :checked="library.studentEditable && library.studentsCanCreate"
+                :disabled="!library.studentEditable"
+                class="mt-1 h-4 w-4 rounded"
+                @change="toggleSetting('studentsCanCreate')"
+              />
+              <span :class="{ 'text-slate-400': !library.studentEditable }">
+                Crear libros nuevos
+                <span class="block text-xs text-slate-500">
+                  Desmárcalo para bloquear los libros nuevos: siguen trabajando en los que ya tienen, pero no
+                  pueden empezar otros ni traerlos de Mis libros.
+                </span>
               </span>
             </label>
 

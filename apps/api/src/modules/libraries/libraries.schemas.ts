@@ -6,6 +6,8 @@ export const createLibrarySchema = z.object({
   name: z.string().min(2).max(100).trim(),
   studentBookLimit: z.number().int().min(1).max(500).default(40),
   studentEditable: z.boolean().default(true),
+  /** Empezar libros nuevos (o traerlos de Mis libros). Apagado, siguen con los suyos. */
+  studentsCanCreate: z.boolean().default(true),
   studentPublishable: z.boolean().default(false),
   commentsEnabled: z.boolean().default(true),
   studentsSeePeers: z.boolean().default(true),

@@ -73,6 +73,8 @@ export interface Library {
   ownerId: string;
   studentBookLimit: number;
   studentEditable: boolean;
+  /** Apagado: el alumnado sigue con sus libros pero no puede empezar otros. */
+  studentsCanCreate: boolean;
   studentPublishable: boolean;
   commentsEnabled: boolean;
   /** Si esta apagado, cada alumno solo ve lo suyo y lo que reparte el docente. */

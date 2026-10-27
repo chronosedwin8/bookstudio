@@ -216,6 +216,10 @@ const fecha = (iso: string): string =>
               {{ librosDe(library.id) }} de {{ library.studentBookLimit }} libros
             </span>
             <span v-if="library.studentEditable" class="rounded bg-emerald-100 px-2 py-0.5 text-emerald-700">Edición alumnos</span>
+            <span
+              v-if="library.studentEditable && !library.studentsCanCreate"
+              class="rounded bg-amber-100 px-2 py-0.5 text-amber-800"
+            >Sin libros nuevos</span>
             <span v-if="library.studentPublishable" class="rounded bg-brand-100 px-2 py-0.5 text-brand-700">Publicable</span>
           </div>
 
@@ -253,6 +257,10 @@ const fecha = (iso: string): string =>
             <td class="px-4 py-2 text-right tabular-nums text-slate-700">{{ librosDe(library.id) }}</td>
             <td class="px-4 py-2 text-xs">
               <span v-if="library.studentEditable" class="mr-1 rounded bg-emerald-100 px-1.5 py-0.5 text-emerald-700">Edita</span>
+              <span
+                v-if="library.studentEditable && !library.studentsCanCreate"
+                class="mr-1 rounded bg-amber-100 px-1.5 py-0.5 text-amber-800"
+              >Sin nuevos</span>
               <span v-if="library.studentPublishable" class="rounded bg-brand-100 px-1.5 py-0.5 text-brand-700">Publica</span>
               <span v-if="!library.studentEditable && !library.studentPublishable" class="text-slate-400">Solo lectura</span>
             </td>

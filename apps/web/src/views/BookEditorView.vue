@@ -1340,6 +1340,19 @@ const QUICK_SHAPES: ShapeName[] = ['rectangle', 'ellipse', 'triangle', 'star', '
 
 const PAGE_COLORS = ['#FFFFFF', '#F7F4EC', '#EDF2F0', '#FFF7ED', '#F1F5F9', '#1E293B'] as const;
 
+/*
+ * Pulsar fuera de la tira de paginas le quita el foco. Los objetos del lienzo
+ * anulan el `pointerdown` para poder arrastrarlos, y eso dejaba el foco en la
+ * miniatura pulsada antes: Supr preguntaba entonces por borrar la hoja en vez de
+ * borrar el objeto que se tiene seleccionado.
+ */
+function soltarTira(event: PointerEvent): void {
+  const activo = document.activeElement;
+  if (!(activo instanceof HTMLElement) || !activo.closest('[data-tira-paginas]')) return;
+  if (event.target instanceof Element && event.target.closest('[data-tira-paginas]')) return;
+  activo.blur();
+}
+
 function onKeydown(event: KeyboardEvent): void {
   const target = event.target as HTMLElement;
   if (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
@@ -1445,6 +1458,7 @@ onMounted(async () => {
   await editor.load(route.params.id as string);
   titleDraft.value = editor.book?.title ?? '';
   window.addEventListener('keydown', onKeydown);
+  window.addEventListener('pointerdown', soltarTira, true);
   window.addEventListener('paste', onPaste);
   window.addEventListener('copy', onCopy);
   window.addEventListener('cut', onCut);
@@ -1457,6 +1471,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeydown);
+  window.removeEventListener('pointerdown', soltarTira, true);
   window.removeEventListener('paste', onPaste);
   window.removeEventListener('copy', onCopy);
   window.removeEventListener('cut', onCut);

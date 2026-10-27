@@ -20,6 +20,7 @@ async function run(): Promise<void> {
     // La biblioteca de ejemplo nace con todas las herramientas disponibles.
     disabledTools: [],
     studentEditable: true,
+    studentsCanCreate: true,
     studentPublishable: false,
     commentsEnabled: true,
   });

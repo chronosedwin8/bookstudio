@@ -26,6 +26,8 @@ export interface Library {
   ownerId: string;
   studentBookLimit: number;
   studentEditable: boolean;
+  /** Si el alumnado puede empezar libros nuevos en la biblioteca. */
+  studentsCanCreate: boolean;
   studentPublishable: boolean;
   commentsEnabled: boolean;
   studentsSeePeers: boolean;
@@ -41,6 +43,7 @@ interface LibraryRow {
   owner_id: string;
   student_book_limit: number;
   student_editable: boolean;
+  students_can_create: boolean;
   student_publishable: boolean;
   comments_enabled: boolean;
   students_see_peers: boolean;
@@ -56,6 +59,7 @@ function toLibrary(row: LibraryRow): Library {
     ownerId: row.owner_id,
     studentBookLimit: row.student_book_limit,
     studentEditable: row.student_editable,
+    studentsCanCreate: row.students_can_create,
     studentPublishable: row.student_publishable,
     commentsEnabled: row.comments_enabled,
     studentsSeePeers: row.students_see_peers,
@@ -65,7 +69,7 @@ function toLibrary(row: LibraryRow): Library {
 }
 
 const LIBRARY_COLUMNS = `id, name, code_invite, owner_id, student_book_limit,
-  student_editable, student_publishable, comments_enabled, students_see_peers,
+  student_editable, students_can_create, student_publishable, comments_enabled, students_see_peers,
   disabled_tools, created_at`;
 
 /** Reintenta ante colision del indice unico de code_invite. */
@@ -74,8 +78,9 @@ export async function createLibrary(ownerId: string, input: CreateLibraryInput):
     try {
       const { rows } = await query<LibraryRow>(
         `INSERT INTO libraries (name, code_invite, owner_id, student_book_limit,
-           student_editable, student_publishable, comments_enabled, students_see_peers)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+           student_editable, student_publishable, comments_enabled, students_see_peers,
+           students_can_create)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
          RETURNING ${LIBRARY_COLUMNS}`,
         [
           input.name,
@@ -86,6 +91,7 @@ export async function createLibrary(ownerId: string, input: CreateLibraryInput):
           input.studentPublishable,
           input.commentsEnabled,
           input.studentsSeePeers,
+          input.studentsCanCreate,
         ],
       );
       return toLibrary(rows[0]);
@@ -170,6 +176,7 @@ const UPDATABLE: Record<keyof UpdateLibraryInput, string> = {
   name: 'name',
   studentBookLimit: 'student_book_limit',
   studentEditable: 'student_editable',
+  studentsCanCreate: 'students_can_create',
   studentPublishable: 'student_publishable',
   commentsEnabled: 'comments_enabled',
   studentsSeePeers: 'students_see_peers',

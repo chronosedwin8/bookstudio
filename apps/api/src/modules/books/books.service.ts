@@ -342,12 +342,12 @@ async function assertCanCreateInLibrary(libraryId: string, userId: string, isTem
   }
   if (isManager) return;
 
-  const library = await query<{ student_book_limit: number; student_editable: boolean }>(
-    'SELECT student_book_limit, student_editable FROM libraries WHERE id = $1',
+  const library = await query<{ student_book_limit: number; student_editable: boolean; students_can_create: boolean }>(
+    'SELECT student_book_limit, student_editable, students_can_create FROM libraries WHERE id = $1',
     [libraryId],
   );
-  if (!library.rows[0].student_editable) {
-    throw HttpError.forbidden('La creacion de libros esta deshabilitada en esta biblioteca');
+  if (!library.rows[0].student_editable || !library.rows[0].students_can_create) {
+    throw HttpError.forbidden('El docente ha bloqueado los libros nuevos en esta biblioteca');
   }
 
   const existing = await query<{ count: string }>(
