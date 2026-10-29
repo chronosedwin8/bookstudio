@@ -7,7 +7,7 @@
  */
 import { dibujarEscena } from './ilustracion/dibujo';
 import { normalizarEscena, resumirEscena } from './ilustracion/escena';
-import { TAMANO_BASE, estiloDe, normalizarTabla } from './tablas';
+import { TAMANO_BASE, estiloDe, normalizarTabla, tramosDe, type FormatoTexto } from './tablas';
 import { svgCompleto } from './ilustracion/primitivas';
 import { fondoDePagina } from './papers';
 import { estiloNumeroEnLinea, normalizarNumeracion, numeroDeHoja } from './numeracion';
@@ -16,6 +16,18 @@ import { PAISAJE_MUESTRA, cuerpoDe, encimaDe, marcoDe, mascaraUrl } from './marc
 import { dibujar2D, dibujar3D, normalizarGrafica } from './graficas';
 import { SHAPES, type ShapeName } from './shapes';
 import type { BookDetail, CanvasElement, Page, PageNumbering, RichBlock, RichSpan } from '@/types/api';
+
+/** CSS en linea de un formato de texto de tabla (celda o trozo). */
+function cssTexto(f: FormatoTexto): string {
+  return (
+    (f.negrita ? 'font-weight:700;' : '') +
+    (f.cursiva ? 'font-style:italic;' : '') +
+    (f.subrayado ? 'text-decoration:underline;' : '') +
+    (f.color ? `color:${f.color};` : '') +
+    (f.escala ? `font-size:${f.escala}em;` : '') +
+    (f.fuente ? `font-family:'${f.fuente}',sans-serif;` : '')
+  );
+}
 
 const ASPECT = { square: 1, portrait: 3 / 4, landscape: 4 / 3 } as const;
 
@@ -305,19 +317,21 @@ function elementHtml(element: CanvasElement, ratio = 1): string {
                 : t.diseno === 'minimal'
                   ? (cabecera ? `border-bottom:2px solid ${t.colorAcento};` : '')
                   : `border-bottom:${linea};`;
-              // El formato propio de la celda, igual que en el lienzo.
+              // El formato propio de la celda y de cada trozo, igual que en el lienzo.
               const e = estiloDe(t, { fila: i, columna: j });
               const propio =
                 `vertical-align:${t.alineacionVertical};` +
-                (e.negrita ? 'font-weight:700;' : '') +
-                (e.cursiva ? 'font-style:italic;' : '') +
-                (e.subrayado ? 'text-decoration:underline;' : '') +
-                (e.color ? `color:${e.color};` : '') +
+                cssTexto(e) +
                 (e.fondo ? `background:${e.fondo};` : '') +
-                (e.escala ? `font-size:${e.escala}em;` : '') +
                 (e.alineacion ? `text-align:${e.alineacion};` : '');
               const peso = cabecera ? 'font-weight:700;' : '';
-              return `<${etiqueta} style="padding:.35em .5em;overflow-wrap:anywhere;${peso}${borde}${fondoCabecera}${propio}">${escapeHtml(celda)}</${etiqueta}>`;
+              const contenido = tramosDe(t, { fila: i, columna: j })
+                .map((tr) => {
+                  const css = cssTexto(tr);
+                  return css ? `<span style="${css}">${escapeHtml(tr.t)}</span>` : escapeHtml(tr.t);
+                })
+                .join('') || escapeHtml(celda);
+              return `<${etiqueta} style="padding:.35em .5em;overflow-wrap:anywhere;${peso}${borde}${fondoCabecera}${propio}">${contenido}</${etiqueta}>`;
             })
             .join('');
           return `<tr style="${fondo}">${celdas}</tr>`;

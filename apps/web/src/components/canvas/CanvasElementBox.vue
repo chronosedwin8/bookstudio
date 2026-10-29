@@ -206,6 +206,9 @@ const PX_DOBLE_CLIC = 6;
 let ultimaPulsacion = { t: 0, x: 0, y: 0 };
 
 function onDragStart(event: PointerEvent): void {
+  // Escribiendo dentro, los clics son del contenido: Mayus+clic en una tabla
+  // elige celdas, no saca la tabla de la seleccion.
+  if (editingText.value && props.selected) return;
   const additive = event.shiftKey || event.ctrlKey || event.metaKey;
   // Si ya estaba elegido, un clic limpio despues lo deja solo (entrar en el grupo).
   const yaElegido = props.selected;

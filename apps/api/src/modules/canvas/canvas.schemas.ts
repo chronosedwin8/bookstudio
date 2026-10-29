@@ -116,6 +116,16 @@ export const shapeName = z.enum([
  * 20x10 no es arbitrario: por encima de eso la tabla deja de leerse en una
  * pagina y ademas cada celda viaja en el JSON del elemento.
  */
+/** Formato de un trozo de texto de una tabla (o del texto entero de una celda). */
+const formatoTextoTabla = z.object({
+  negrita: z.boolean().optional(),
+  cursiva: z.boolean().optional(),
+  subrayado: z.boolean().optional(),
+  color: hexColor.optional(),
+  escala: z.number().min(0.5).max(3).optional(),
+  fuente: fontFamily.optional(),
+});
+
 export const tablePropertiesSchema = z.object({
   celdas: z.array(z.array(z.string().max(300)).max(10)).min(1).max(20),
   filaCabecera: z.boolean().default(true),
@@ -135,18 +145,25 @@ export const tablePropertiesSchema = z.object({
     .array(
       z
         .array(
-          z
-            .object({
-              negrita: z.boolean().optional(),
-              cursiva: z.boolean().optional(),
-              subrayado: z.boolean().optional(),
-              color: hexColor.optional(),
+          formatoTextoTabla
+            .extend({
               fondo: hexColor.optional(),
-              escala: z.number().min(0.5).max(3).optional(),
               alineacion: z.enum(['left', 'center', 'right']).optional(),
             })
             .nullable(),
         )
+        .max(10),
+    )
+    .max(20)
+    .default([]),
+  /**
+   * Texto de cada celda en tramos con formato, cuando lo tiene; null si no. Al
+   * unirlos dan el texto de `celdas`, que sigue siendo el que vale para todo.
+   */
+  ricos: z
+    .array(
+      z
+        .array(z.array(formatoTextoTabla.extend({ t: z.string().min(1).max(300) })).max(60).nullable())
         .max(10),
     )
     .max(20)

@@ -21,9 +21,14 @@ import {
   normalizarTabla,
   quitarColumna,
   quitarFila,
-  celdasDe,
-  conEstilo,
+  conTramos,
   estiloDe,
+  filaEntera,
+  formatearCeldas,
+  formatearTexto,
+  formatoComun,
+  rectangulo,
+  tramosDe,
 } from './tablas.js';
 import { tablePropertiesSchema } from '../../../api/src/modules/canvas/canvas.schemas.js';
 
@@ -125,35 +130,69 @@ console.log('\n-- Formato del texto --');
 const antigua = normalizarTabla({ celdas: [['a', 'b'], ['c', 'd']], fontSize: 14 });
 check('una tabla de antes sale con el formato de siempre',
   antigua.fuente === 'Lato' && !antigua.negrita && antigua.alineacionVertical === 'middle' &&
-  antigua.estilos.every((f) => f.every((e) => e === null)));
+  antigua.estilos.every((f) => f.every((e) => e === null)) && antigua.ricos.every((f) => f.every((r) => r === null)));
 
-const base = crearTabla(3, 3);
-const negritaFila = conEstilo(base, celdasDe(base, { fila: 1, columna: 0 }, 'fila'), { negrita: true, color: '#FF0000' });
-check('el formato de una fila llega a todas sus celdas',
-  negritaFila.estilos[1].every((e) => e?.negrita === true && e.color === '#FF0000'));
-check('y no toca las demas', negritaFila.estilos[0].every((e) => e === null) && negritaFila.estilos[2].every((e) => e === null));
-const columna = conEstilo(base, celdasDe(base, { fila: 0, columna: 2 }, 'columna'), { escala: 1.5 });
-check('el de una columna, a toda la columna', columna.estilos.every((f) => f[2]?.escala === 1.5 && f[0] === null));
-const sinNegrita = conEstilo(negritaFila, [{ fila: 1, columna: 1 }], { negrita: undefined });
-check('quitar un formato deja el resto', !estiloDe(sinNegrita, { fila: 1, columna: 1 }).negrita &&
-  estiloDe(sinNegrita, { fila: 1, columna: 1 }).color === '#FF0000');
-check('quitarlo todo deja la celda limpia', conEstilo(negritaFila, [{ fila: 1, columna: 1 }], null).estilos[1][1] === null);
-check('una escala imposible se acota', normalizarTabla({ ...base, estilos: [[{ escala: 99 }]] }).estilos[0][0]?.escala === 3);
-check('un color que no es color se descarta', normalizarTabla({ ...base, estilos: [[{ color: 'rojo' }]] }).estilos[0][0] === null);
+const base = conCelda(conCelda(crearTabla(3, 3), 1, 0, 'Nota final'), 1, 1, '4,5');
 
-const conFila = anadirFila(negritaFila, 1);
-check('al anadir una fila el formato se queda con su celda',
-  conFila.estilos[2].every((e) => e?.negrita === true) && conFila.estilos[1].every((e) => e === null));
-const conCol = anadirColumna(columna, 0);
-check('al anadir una columna tambien', conCol.estilos.every((f) => f[3]?.escala === 1.5 && f[0] === null));
+// Solo un trozo del texto
+const trozo = formatearTexto(base, { fila: 1, columna: 0 }, { inicio: 5, fin: 10 }, { negrita: true, color: '#DC2626' });
+const tr = tramosDe(trozo, { fila: 1, columna: 0 });
+check('el formato va solo al texto seleccionado',
+  tr.length === 2 && tr[0].t === 'Nota ' && !tr[0].negrita && tr[1].t === 'final' && tr[1].negrita === true && tr[1].color === '#DC2626',
+  JSON.stringify(tr));
+check('el texto de la celda no cambia', trozo.celdas[1][0] === 'Nota final');
+check('ni las demas celdas', trozo.ricos[1][1] === null && trozo.estilos.every((f) => f.every((e) => e === null)));
+const medio = formatearTexto(trozo, { fila: 1, columna: 0 }, { inicio: 2, fin: 7 }, { cursiva: true });
+check('un rango que cruza dos trozos parte los dos',
+  tramosDe(medio, { fila: 1, columna: 0 }).map((x) => `${x.t}:${x.negrita ? 'b' : ''}${x.cursiva ? 'i' : ''}`).join('|') === 'No:|ta :i|fi:bi|nal:b',
+  JSON.stringify(tramosDe(medio, { fila: 1, columna: 0 })));
+const deshecho = formatearTexto(trozo, { fila: 1, columna: 0 }, { inicio: 5, fin: 10 }, { negrita: undefined, color: undefined });
+check('quitar el formato del trozo vuelve al texto plano', deshecho.ricos[1][0] === null);
+check('lo comun de un rango: negrita si todo es negrita',
+  formatoComun(trozo, { fila: 1, columna: 0 }, { inicio: 5, fin: 10 }).negrita === true &&
+  formatoComun(trozo, { fila: 1, columna: 0 }, { inicio: 0, fin: 10 }).negrita === undefined);
+const alineado = formatearTexto(base, { fila: 1, columna: 0 }, { inicio: 0, fin: 4 }, { alineacion: 'center' });
+check('la alineacion de un trozo va a su celda y solo a ella',
+  estiloDe(alineado, { fila: 1, columna: 0 }).alineacion === 'center' && estiloDe(alineado, { fila: 1, columna: 1 }).alineacion === undefined);
+
+// Celdas enteras
+const fila = formatearCeldas(base, filaEntera(base, 1), { negrita: true, fondo: '#FEF08A' });
+check('una fila entera recibe el formato', fila.estilos[1].every((e) => e?.negrita && e.fondo === '#FEF08A'));
+check('y no las otras filas', fila.estilos[0].every((e) => e === null) && fila.estilos[2].every((e) => e === null));
+const bloque = formatearCeldas(base, rectangulo({ fila: 2, columna: 2 }, { fila: 1, columna: 1 }), { color: '#16A34A' });
+check('un bloque de celdas, solo esas',
+  [[1, 1], [1, 2], [2, 1], [2, 2]].every(([f, c]) => bloque.estilos[f][c]?.color === '#16A34A') &&
+  bloque.estilos[1][0] === null && bloque.estilos[0][1] === null);
+const encima = formatearCeldas(trozo, [{ fila: 1, columna: 0 }], { color: '#2563EB' });
+check('el color de la celda pisa el de sus trozos',
+  estiloDe(encima, { fila: 1, columna: 0 }).color === '#2563EB' && tramosDe(encima, { fila: 1, columna: 0 }).every((x) => !x.color));
+check('sin tocar la negrita del trozo', tramosDe(encima, { fila: 1, columna: 0 }).some((x) => x.negrita));
+check('quitar el formato de la celda lo quita todo',
+  formatearCeldas(trozo, [{ fila: 1, columna: 0 }], null).ricos[1][0] === null);
+
+// Escribir con formato y la forma de la rejilla
+const escrito = conTramos(base, 2, 0, [{ t: 'Hola ' }, { t: 'mundo', subrayado: true }]);
+check('lo escrito con formato guarda texto y tramos',
+  escrito.celdas[2][0] === 'Hola mundo' && escrito.ricos[2][0]?.length === 2);
+check('unos tramos que no casan con el texto se descartan',
+  normalizarTabla({ ...escrito, celdas: escrito.celdas.map((f, i) => (i === 2 ? ['Otro', ...f.slice(1)] : f)) }).ricos[2][0] === null);
+check('escribir texto plano encima quita los tramos', conCelda(escrito, 2, 0, 'x').ricos[2][0] === null);
+check('se recorta a lo que cabe en una celda',
+  conTramos(base, 0, 0, [{ t: 'a'.repeat(200), negrita: true }, { t: 'b'.repeat(200) }]).celdas[0][0].length === MAX_CELDA);
+const conFila = anadirFila(escrito, 0);
+check('al anadir una fila los tramos se van con su celda', conFila.ricos[3][0]?.length === 2 && conFila.ricos[0][0] === null);
+const conCol = anadirColumna(escrito, 0);
+check('al anadir una columna tambien', conCol.ricos[2][1]?.length === 2 && conCol.ricos[2][0] === null);
 check('quitar fila y columna mantiene la forma',
-  quitarFila(conFila, 0).estilos.length === filasDe(quitarFila(conFila, 0)) &&
-  quitarColumna(conCol, 0).estilos.every((f) => f.length === columnasDe(quitarColumna(conCol, 0))));
+  quitarFila(conFila, 0).ricos.length === filasDe(quitarFila(conFila, 0)) &&
+  quitarColumna(conCol, 0).ricos.every((f) => f.length === columnasDe(quitarColumna(conCol, 0))));
 
-check('el servidor acepta el formato',
-  tablePropertiesSchema.safeParse({ ...negritaFila, fuente: 'Poppins', negrita: true, alineacionVertical: 'top' }).success);
+check('el servidor acepta el formato por trozos y por celdas',
+  tablePropertiesSchema.safeParse({ ...medio, ...fila, ricos: medio.ricos, fuente: 'Poppins', alineacionVertical: 'top' }).success);
 check('y rechaza una tipografia inventada',
   tablePropertiesSchema.safeParse({ ...base, fuente: 'Comic Sans' }).success === false);
+check('o un trozo con un color que no es color',
+  tablePropertiesSchema.safeParse({ ...base, ricos: [[[{ t: 'x', color: 'rojo' }]]] }).success === false);
 
 console.log('\n-- La interfaz tiene nombre para todo --');
 check('cada diseno tiene nombre', DISENOS.every((d) => (NOMBRES_DISENO[d] ?? '').length > 0));

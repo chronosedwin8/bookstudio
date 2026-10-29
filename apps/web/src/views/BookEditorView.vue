@@ -950,11 +950,20 @@ async function onPickMap(payload: {
  *
  * No se toca el pegado dentro de un campo de texto: ahi Ctrl+V debe pegar texto.
  */
+/**
+ * Si el foco esta en un sitio donde se escribe: un campo o un texto editable
+ * (las celdas de una tabla lo son). Ahi las teclas y el portapapeles son del
+ * texto, no del lienzo: sin esto, borrar una letra en una celda borraba la tabla.
+ */
+function escribiendoEn(destino: EventTarget | null): boolean {
+  const el = destino as HTMLElement | null;
+  return Boolean(el && (['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName) || el.isContentEditable));
+}
+
 /** Se copia un objeto del lienzo, y no texto de un campo. */
 function copiandoObjeto(event: ClipboardEvent): boolean {
   if (!editor.canEdit || !editor.selectedElementId) return false;
-  const destino = event.target as HTMLElement | null;
-  if (destino && ['INPUT', 'TEXTAREA'].includes(destino.tagName)) return false;
+  if (escribiendoEn(event.target)) return false;
   // Si hay texto seleccionado en la pagina, se copia el texto: es lo que se pidio
   return !window.getSelection()?.toString();
 }
@@ -980,8 +989,7 @@ async function onCut(event: ClipboardEvent): Promise<void> {
 async function onPaste(event: ClipboardEvent): Promise<void> {
   if (!editor.canEdit) return;
 
-  const destino = event.target as HTMLElement | null;
-  if (destino && ['INPUT', 'TEXTAREA'].includes(destino.tagName)) return;
+  if (escribiendoEn(event.target)) return;
 
   const datos = event.clipboardData;
   if (!datos) return;
@@ -1468,7 +1476,7 @@ function soltarTira(event: PointerEvent): void {
 
 function onKeydown(event: KeyboardEvent): void {
   const target = event.target as HTMLElement;
-  if (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
+  if (escribiendoEn(target)) return;
 
   // Deshacer va antes del guard de seleccion: se deshace lo ultimo que se hizo,
   // haya algo seleccionado o no.

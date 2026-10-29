@@ -14,14 +14,19 @@ import {
   ALINEACIONES_VERTICALES,
   anadirColumna,
   anadirFila,
-  celdasDe,
+  CLAVES_TEXTO,
+  columnaEntera,
   columnasDe,
-  conEstilo,
   DISENOS,
   ESCALA_MAX,
   ESCALA_MIN,
   estiloDe,
+  existeCelda,
+  filaEntera,
   filasDe,
+  formatearCeldas,
+  formatearTexto,
+  formatoComun,
   MAX_COLUMNAS,
   MAX_FILAS,
   NOMBRES_DISENO,
@@ -29,8 +34,10 @@ import {
   quitarColumna,
   quitarFila,
   TAMANO_BASE,
-  type AlcanceFormato,
+  type CambioFormato,
+  type Celda,
   type EstiloCelda,
+  type RangoTexto,
   type Tabla,
 } from '@/utils/tablas';
 import { useEditorStore } from '@/stores/editor';
@@ -217,41 +224,114 @@ const NOMBRE_ALINEACION = { left: 'Izquierda', center: 'Centro', right: 'Derecha
 const NOMBRE_VERTICAL = { top: 'Arriba', middle: 'Centro', bottom: 'Abajo' } as const;
 
 /*
- * Formato de una celda. La celda se elige en la pagina (doble clic en la tabla
- * y clic en la celda); desde aqui se le cambia el formato a ella sola, a su fila
- * o a su columna.
+ * Formato del texto de la tabla.
+ *
+ * Se aplica a lo elegido en la pagina (doble clic en la tabla para escribir):
+ *   - texto seleccionado dentro de una celda -> solo ese trozo;
+ *   - una o varias celdas (Mayus+clic, Ctrl+clic) -> todo su texto;
+ *   - nada elegido -> toda la tabla.
+ * El panel dice siempre a que se va a aplicar, para que no haya sorpresas.
  */
 const editorStore = useEditorStore();
-const alcanceFormato = ref<AlcanceFormato>('celda');
 
-/** La celda elegida, si es de la tabla seleccionada y sigue existiendo. */
-const celdaElegida = computed(() => {
-  const c = editorStore.celdaTabla;
+type Objetivo =
+  | { tipo: 'tabla' }
+  | { tipo: 'texto'; celda: Celda; rango: RangoTexto; muestra: string }
+  | { tipo: 'celdas'; celdas: Celda[] };
+
+const objetivo = computed<Objetivo>(() => {
+  const sel = editorStore.seleccionTabla;
   const t = tabla.value;
-  if (!c || !t || c.elementId !== props.element?.id) return null;
-  return t.celdas[c.fila]?.[c.columna] !== undefined ? { fila: c.fila, columna: c.columna } : null;
+  if (!t || !sel || sel.elementId !== props.element?.id) return { tipo: 'tabla' };
+  const celdas = sel.celdas.filter((c) => existeCelda(t, c));
+  if (!celdas.length) return { tipo: 'tabla' };
+  const r = sel.rango;
+  if (celdas.length === 1 && r && r.fin > r.inicio) {
+    const muestra = t.celdas[celdas[0].fila][celdas[0].columna].slice(r.inicio, r.fin);
+    if (muestra) return { tipo: 'texto', celda: celdas[0], rango: r, muestra };
+  }
+  return { tipo: 'celdas', celdas };
 });
 
-const estiloElegido = computed<EstiloCelda>(() =>
-  tabla.value && celdaElegida.value ? estiloDe(tabla.value, celdaElegida.value) : {},
-);
+const descripcionObjetivo = computed(() => {
+  const o = objetivo.value;
+  if (o.tipo === 'tabla') return 'Toda la tabla';
+  if (o.tipo === 'texto') return `Texto seleccionado: «${o.muestra.length > 24 ? `${o.muestra.slice(0, 24)}…` : o.muestra}»`;
+  if (o.celdas.length === 1) return `Celda · fila ${o.celdas[0].fila + 1}, columna ${o.celdas[0].columna + 1}`;
+  return `${o.celdas.length} celdas`;
+});
 
-function formatoCelda(cambio: Partial<EstiloCelda> | null): void {
+/** Lo que tiene ahora lo elegido, para encender botones y rellenar campos. */
+const formatoActual = computed<EstiloCelda>(() => {
   const t = tabla.value;
-  const c = celdaElegida.value;
-  if (!t || !c) return;
-  cambiarTabla(conEstilo(t, celdasDe(t, c, alcanceFormato.value), cambio));
+  const o = objetivo.value;
+  if (!t) return {};
+  if (o.tipo === 'tabla') {
+    return { negrita: t.negrita, cursiva: t.cursiva, subrayado: t.subrayado, color: t.colorTexto, fuente: t.fuente, alineacion: t.alineacion };
+  }
+  const celdas = o.tipo === 'texto' ? [o.celda] : o.celdas;
+  const formatos: EstiloCelda[] = celdas.map((c) => {
+    const e = estiloDe(t, c);
+    return { ...formatoComun(t, c, o.tipo === 'texto' ? o.rango : null), fondo: e.fondo, alineacion: e.alineacion };
+  });
+  const comun: EstiloCelda = {};
+  for (const k of [...CLAVES_TEXTO, 'fondo', 'alineacion'] as (keyof EstiloCelda)[]) {
+    const v = formatos[0][k];
+    if (v !== undefined && formatos.every((f) => f[k] === v)) (comun as Record<string, unknown>)[k] = v;
+  }
+  return comun;
+});
+
+/**
+ * Aplica un formato a lo elegido. Antes se cierra la celda que se este
+ * escribiendo, para que lo tecleado se guarde y no pise el formato nuevo.
+ */
+function aplicarFormato(cambio: CambioFormato | null): void {
+  const activo = document.activeElement as HTMLElement | null;
+  if (activo?.isContentEditable) activo.blur();
+  const t = tabla.value;
+  const o = objetivo.value;
+  if (!t) return;
+
+  if (o.tipo === 'tabla') {
+    if (!cambio) return;
+    const n: Tabla = { ...t };
+    if ('negrita' in cambio) n.negrita = Boolean(cambio.negrita);
+    if ('cursiva' in cambio) n.cursiva = Boolean(cambio.cursiva);
+    if ('subrayado' in cambio) n.subrayado = Boolean(cambio.subrayado);
+    if (cambio.color) n.colorTexto = cambio.color;
+    if (cambio.fuente) n.fuente = cambio.fuente;
+    if (cambio.alineacion) n.alineacion = cambio.alineacion;
+    cambiarTabla(n);
+    return;
+  }
+  if (o.tipo === 'texto') {
+    const quitar = Object.fromEntries(CLAVES_TEXTO.map((k) => [k, undefined])) as CambioFormato;
+    cambiarTabla(formatearTexto(t, o.celda, o.rango, cambio ?? quitar));
+    return;
+  }
+  cambiarTabla(formatearCeldas(t, o.celdas, cambio));
 }
 
-/** Negrita, cursiva, subrayado: se alterna segun como este la celda elegida. */
+/** Negrita, cursiva, subrayado: se encienden o se apagan segun como este lo elegido. */
 function alternarFormato(clave: 'negrita' | 'cursiva' | 'subrayado'): void {
-  formatoCelda({ [clave]: estiloElegido.value[clave] ? undefined : true });
+  aplicarFormato({ [clave]: formatoActual.value[clave] ? undefined : true });
 }
 
-function escalarCelda(paso: number): void {
-  const actual = estiloElegido.value.escala ?? 1;
+function escalarTexto(paso: number): void {
+  const actual = formatoActual.value.escala ?? 1;
   const nueva = Math.round(Math.min(Math.max(actual + paso, ESCALA_MIN), ESCALA_MAX) * 10) / 10;
-  formatoCelda({ escala: nueva === 1 ? undefined : nueva });
+  aplicarFormato({ escala: nueva === 1 ? undefined : nueva });
+}
+
+/** Atajos para elegir sin ir celda por celda. */
+function elegirCeldas(celdas: Celda[] | null): void {
+  const sel = editorStore.seleccionTabla;
+  if (!celdas || !props.element) {
+    editorStore.seleccionTabla = null;
+    return;
+  }
+  editorStore.seleccionTabla = { elementId: props.element.id, celdas, ancla: sel?.ancla ?? celdas[0], rango: null };
 }
 
 /** Tipos que admiten enlace; el resto no muestra el campo. */
@@ -1134,7 +1214,7 @@ const SOFT_BACKGROUNDS = ['transparent', '#F7F4EC', '#EDF2F0', '#FBF3E4', '#EFEA
         <h3 class="label">Tabla | {{ filasDe(tabla) }} x {{ columnasDe(tabla) }}</h3>
 
         <p class="rounded bg-slate-50 px-2 py-1.5 text-[11px] leading-tight text-slate-500">
-          Haz doble clic en una celda de la página para escribir. El tabulador pasa a la siguiente. Debajo, el formato del texto: de toda la tabla o de la celda que pulses.
+          Haz doble clic en una celda de la página para escribir. El tabulador pasa a la siguiente. Selecciona texto o celdas para darles formato solo a ellas.
         </p>
 
         <div>
@@ -1219,9 +1299,41 @@ const SOFT_BACKGROUNDS = ['transparent', '#F7F4EC', '#EDF2F0', '#FBF3E4', '#EFEA
           />
         </div>
 
-        <!-- Texto de toda la tabla -->
-        <div class="space-y-3 rounded-lg border border-slate-200 p-2.5" data-texto-tabla>
-          <p class="text-xs font-bold uppercase tracking-wide text-slate-500">Texto de la tabla</p>
+        <!--
+          Formato del texto: va a lo elegido en la pagina (texto seleccionado,
+          celdas) o, si no hay nada elegido, a toda la tabla.
+        -->
+        <div class="space-y-3 rounded-lg border border-slate-200 p-2.5" data-formato-tabla>
+          <div>
+            <p class="text-xs font-bold uppercase tracking-wide text-slate-500">Formato del texto</p>
+            <p
+              class="mt-1 rounded-md px-2 py-1 text-xs font-semibold"
+              :class="objetivo.tipo === 'tabla' ? 'bg-slate-100 text-slate-600' : 'bg-brand-50 text-brand-700'"
+              data-objetivo
+            >Se aplica a: {{ descripcionObjetivo }}</p>
+            <p v-if="objetivo.tipo === 'tabla'" class="mt-1 text-[11px] leading-tight text-slate-500">
+              Para dar formato solo a una parte, haz doble clic en la tabla y selecciona el texto dentro de una
+              celda, pulsa una celda, o elige varias con Mayús+clic (un bloque) o Ctrl+clic (sueltas).
+            </p>
+            <div v-else class="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] font-semibold">
+              <template v-if="objetivo.tipo === 'texto' || objetivo.celdas.length === 1">
+                <button
+                  type="button"
+                  class="text-brand-700 hover:underline"
+                  data-elegir-fila
+                  @click="elegirCeldas(filaEntera(tabla, (objetivo.tipo === 'texto' ? objetivo.celda : objetivo.celdas[0]).fila))"
+                >Toda su fila</button>
+                <button
+                  type="button"
+                  class="text-brand-700 hover:underline"
+                  @click="elegirCeldas(columnaEntera(tabla, (objetivo.tipo === 'texto' ? objetivo.celda : objetivo.celdas[0]).columna))"
+                >Toda su columna</button>
+              </template>
+              <button type="button" class="text-slate-500 hover:underline" data-elegir-tabla @click="elegirCeldas(null)">
+                Toda la tabla
+              </button>
+            </div>
+          </div>
 
           <div>
             <label class="label" :for="`tabla-fuente-${element.id}`">Tipografía</label>
@@ -1229,16 +1341,17 @@ const SOFT_BACKGROUNDS = ['transparent', '#F7F4EC', '#EDF2F0', '#FBF3E4', '#EFEA
               :id="`tabla-fuente-${element.id}`"
               class="input"
               data-tabla-fuente
-              :value="tabla.fuente"
-              @change="cambiarTabla({ ...tabla, fuente: ($event.target as HTMLSelectElement).value as Tabla['fuente'] })"
+              :value="formatoActual.fuente ?? ''"
+              @change="aplicarFormato({ fuente: (($event.target as HTMLSelectElement).value || undefined) as Tabla['fuente'] | undefined })"
             >
+              <option v-if="objetivo.tipo !== 'tabla'" value="">La de la tabla ({{ tabla.fuente }})</option>
               <optgroup v-for="group in FONT_GROUPS" :key="group.label" :label="group.label">
                 <option v-for="font in group.fonts" :key="font" :value="font" :style="{ fontFamily: `'${font}', sans-serif` }">{{ font }}</option>
               </optgroup>
             </select>
           </div>
 
-          <div>
+          <div v-if="objetivo.tipo === 'tabla'">
             <label class="label" :for="`tabla-tamano-${element.id}`">
               Tamaño · {{ Math.round((tabla.fontSize / TAMANO_BASE) * 100) }}%
             </label>
@@ -1253,37 +1366,57 @@ const SOFT_BACKGROUNDS = ['transparent', '#F7F4EC', '#EDF2F0', '#FBF3E4', '#EFEA
             <p class="mt-0.5 text-[11px] text-slate-400">El texto también crece al agrandar la tabla.</p>
           </div>
 
-          <div class="flex flex-wrap items-end gap-2">
-            <div class="flex gap-1">
-              <button type="button" class="btn-secondary px-2.5 py-1 text-xs font-bold" :class="tabla.negrita && 'bg-brand-50 text-brand-700'" title="Negrita" data-tabla-negrita @click="cambiarTabla({ ...tabla, negrita: !tabla.negrita })">B</button>
-              <button type="button" class="btn-secondary px-2.5 py-1 text-xs italic" :class="tabla.cursiva && 'bg-brand-50 text-brand-700'" title="Cursiva" @click="cambiarTabla({ ...tabla, cursiva: !tabla.cursiva })">I</button>
-              <button type="button" class="btn-secondary px-2.5 py-1 text-xs underline" :class="tabla.subrayado && 'bg-brand-50 text-brand-700'" title="Subrayado" @click="cambiarTabla({ ...tabla, subrayado: !tabla.subrayado })">U</button>
-            </div>
-            <div class="min-w-0 flex-1">
-              <label class="label" :for="`tabla-texto-${element.id}`">Color</label>
+          <div class="flex flex-wrap items-center gap-1">
+            <button type="button" class="btn-secondary px-2.5 py-1 text-xs font-bold" :class="formatoActual.negrita && 'bg-brand-50 text-brand-700'" title="Negrita" data-formato-negrita @click="alternarFormato('negrita')">B</button>
+            <button type="button" class="btn-secondary px-2.5 py-1 text-xs italic" :class="formatoActual.cursiva && 'bg-brand-50 text-brand-700'" title="Cursiva" data-formato-cursiva @click="alternarFormato('cursiva')">I</button>
+            <button type="button" class="btn-secondary px-2.5 py-1 text-xs underline" :class="formatoActual.subrayado && 'bg-brand-50 text-brand-700'" title="Subrayado" @click="alternarFormato('subrayado')">U</button>
+            <template v-if="objetivo.tipo !== 'tabla'">
+              <span class="mx-1 h-5 w-px bg-slate-200" aria-hidden="true" />
+              <button type="button" class="btn-secondary px-2 py-1 text-xs" title="Letra más pequeña" data-formato-menos @click="escalarTexto(-0.1)">A−</button>
+              <span class="w-10 text-center text-[11px] tabular-nums text-slate-600">{{ Math.round((formatoActual.escala ?? 1) * 100) }}%</span>
+              <button type="button" class="btn-secondary px-2 py-1 text-xs" title="Letra más grande" data-formato-mas @click="escalarTexto(0.1)">A+</button>
+            </template>
+          </div>
+
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="label" :for="`formato-color-${element.id}`">Color</label>
               <input
-                :id="`tabla-texto-${element.id}`"
+                :id="`formato-color-${element.id}`"
                 type="color"
                 class="h-8 w-full cursor-pointer rounded border border-slate-300"
-                :value="tabla.colorTexto"
-                @change="cambiarTabla({ ...tabla, colorTexto: ($event.target as HTMLInputElement).value })"
+                data-formato-color
+                :value="formatoActual.color ?? tabla.colorTexto"
+                @change="aplicarFormato({ color: ($event.target as HTMLInputElement).value })"
+              />
+            </div>
+            <div v-if="objetivo.tipo !== 'tabla'">
+              <label class="label" :for="`formato-fondo-${element.id}`">Relleno de celda</label>
+              <input
+                :id="`formato-fondo-${element.id}`"
+                type="color"
+                class="h-8 w-full cursor-pointer rounded border border-slate-300"
+                data-formato-fondo
+                :value="formatoActual.fondo ?? '#FFFFFF'"
+                @change="aplicarFormato({ fondo: ($event.target as HTMLInputElement).value })"
               />
             </div>
           </div>
 
           <div>
-            <p class="label">Alineación</p>
+            <p class="label">Alineación{{ objetivo.tipo === 'texto' ? ' (de la celda)' : '' }}</p>
             <div class="grid grid-cols-3 gap-1">
               <button
                 v-for="a in ALINEACIONES"
                 :key="a"
                 type="button"
                 class="btn-secondary px-0 py-1 text-xs"
-                :class="tabla.alineacion === a && 'bg-brand-50 text-brand-700'"
-                @click="cambiarTabla({ ...tabla, alineacion: a })"
+                :class="formatoActual.alineacion === a && 'bg-brand-50 text-brand-700'"
+                :data-formato-alinear="a"
+                @click="aplicarFormato({ alineacion: objetivo.tipo !== 'tabla' && formatoActual.alineacion === a ? undefined : a })"
               >{{ NOMBRE_ALINEACION[a] }}</button>
             </div>
-            <div class="mt-1 grid grid-cols-3 gap-1">
+            <div v-if="objetivo.tipo === 'tabla'" class="mt-1 grid grid-cols-3 gap-1">
               <button
                 v-for="v in ALINEACIONES_VERTICALES"
                 :key="v"
@@ -1294,88 +1427,14 @@ const SOFT_BACKGROUNDS = ['transparent', '#F7F4EC', '#EDF2F0', '#FBF3E4', '#EFEA
               >{{ NOMBRE_VERTICAL[v] }}</button>
             </div>
           </div>
-        </div>
 
-        <!-- Formato de una celda, su fila o su columna -->
-        <div class="space-y-3 rounded-lg border border-slate-200 p-2.5" data-formato-celda>
-          <p class="text-xs font-bold uppercase tracking-wide text-slate-500">
-            Formato de celda
-            <span v-if="celdaElegida" class="font-normal normal-case text-slate-400">
-              · fila {{ celdaElegida.fila + 1 }}, columna {{ celdaElegida.columna + 1 }}
-            </span>
-          </p>
-
-          <p v-if="!celdaElegida" class="text-[11px] leading-tight text-slate-500">
-            Haz doble clic en la tabla y pulsa una celda: aquí podrás cambiar su formato, el de su fila o el de su
-            columna.
-          </p>
-
-          <template v-else>
-            <div class="grid grid-cols-3 gap-1 rounded-lg bg-slate-100 p-0.5 text-[11px] font-semibold">
-              <button
-                v-for="a in (['celda', 'fila', 'columna'] as const)"
-                :key="a"
-                type="button"
-                class="rounded-md py-1"
-                :class="alcanceFormato === a ? 'bg-white text-brand-700 shadow-sm' : 'text-slate-600'"
-                :data-alcance="a"
-                @click="alcanceFormato = a"
-              >{{ a === 'celda' ? 'Esta celda' : a === 'fila' ? 'Su fila' : 'Su columna' }}</button>
-            </div>
-
-            <div class="flex flex-wrap items-center gap-1">
-              <button type="button" class="btn-secondary px-2.5 py-1 text-xs font-bold" :class="estiloElegido.negrita && 'bg-brand-50 text-brand-700'" title="Negrita" data-celda-negrita @click="alternarFormato('negrita')">B</button>
-              <button type="button" class="btn-secondary px-2.5 py-1 text-xs italic" :class="estiloElegido.cursiva && 'bg-brand-50 text-brand-700'" title="Cursiva" @click="alternarFormato('cursiva')">I</button>
-              <button type="button" class="btn-secondary px-2.5 py-1 text-xs underline" :class="estiloElegido.subrayado && 'bg-brand-50 text-brand-700'" title="Subrayado" @click="alternarFormato('subrayado')">U</button>
-              <span class="mx-1 h-5 w-px bg-slate-200" aria-hidden="true" />
-              <button type="button" class="btn-secondary px-2 py-1 text-xs" title="Letra más pequeña" data-celda-menos @click="escalarCelda(-0.1)">A−</button>
-              <span class="w-10 text-center text-[11px] tabular-nums text-slate-600">{{ Math.round((estiloElegido.escala ?? 1) * 100) }}%</span>
-              <button type="button" class="btn-secondary px-2 py-1 text-xs" title="Letra más grande" data-celda-mas @click="escalarCelda(0.1)">A+</button>
-            </div>
-
-            <div class="grid grid-cols-2 gap-2">
-              <div>
-                <label class="label" :for="`celda-color-${element.id}`">Texto</label>
-                <input
-                  :id="`celda-color-${element.id}`"
-                  type="color"
-                  class="h-8 w-full cursor-pointer rounded border border-slate-300"
-                  data-celda-color
-                  :value="estiloElegido.color ?? tabla.colorTexto"
-                  @change="formatoCelda({ color: ($event.target as HTMLInputElement).value })"
-                />
-              </div>
-              <div>
-                <label class="label" :for="`celda-fondo-${element.id}`">Relleno</label>
-                <input
-                  :id="`celda-fondo-${element.id}`"
-                  type="color"
-                  class="h-8 w-full cursor-pointer rounded border border-slate-300"
-                  data-celda-fondo
-                  :value="estiloElegido.fondo ?? '#FFFFFF'"
-                  @change="formatoCelda({ fondo: ($event.target as HTMLInputElement).value })"
-                />
-              </div>
-            </div>
-
-            <div class="grid grid-cols-3 gap-1">
-              <button
-                v-for="a in ALINEACIONES"
-                :key="a"
-                type="button"
-                class="btn-secondary px-0 py-1 text-xs"
-                :class="estiloElegido.alineacion === a && 'bg-brand-50 text-brand-700'"
-                @click="formatoCelda({ alineacion: estiloElegido.alineacion === a ? undefined : a })"
-              >{{ NOMBRE_ALINEACION[a] }}</button>
-            </div>
-
-            <button
-              type="button"
-              class="text-xs font-semibold text-slate-500 hover:text-red-600 hover:underline"
-              data-celda-limpiar
-              @click="formatoCelda(null)"
-            >Quitar el formato {{ alcanceFormato === 'celda' ? 'de la celda' : alcanceFormato === 'fila' ? 'de la fila' : 'de la columna' }}</button>
-          </template>
+          <button
+            v-if="objetivo.tipo !== 'tabla'"
+            type="button"
+            class="text-xs font-semibold text-slate-500 hover:text-red-600 hover:underline"
+            data-formato-limpiar
+            @click="aplicarFormato(null)"
+          >Quitar el formato {{ objetivo.tipo === 'texto' ? 'del texto seleccionado' : objetivo.celdas.length === 1 ? 'de la celda' : 'de las celdas' }}</button>
         </div>
       </section>
 

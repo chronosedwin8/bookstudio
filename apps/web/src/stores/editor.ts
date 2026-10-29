@@ -3,6 +3,16 @@ import { computed, ref, watch } from 'vue';
 import { booksApi } from '@/services/api';
 import { crearHistorial, describirElemento, NOMBRE_TIPO } from './historial';
 import { escalarCaja, escalarLetra, type Escala } from '@/utils/grupo';
+import type { Celda, RangoTexto } from '@/utils/tablas';
+
+/** Celdas elegidas de una tabla y, con una sola, el texto seleccionado en ella. */
+export interface SeleccionTabla {
+  elementId: string;
+  celdas: Celda[];
+  /** Desde donde se cuenta un rango con Mayus+clic. */
+  ancla: Celda;
+  rango: RangoTexto | null;
+}
 import { errorMessage } from '@/services/http';
 import type {
   BookDetail,
@@ -92,13 +102,14 @@ export const useEditorStore = defineStore('editor', () => {
   const editingElementId = ref<string | null>(null);
 
   /**
-   * Celda de tabla elegida para darle formato desde el inspector. La pone la
-   * tabla al pulsar una celda mientras se escribe en ella; se olvida al elegir
-   * otro elemento.
+   * Lo elegido dentro de una tabla para darle formato desde el inspector: una o
+   * varias celdas y, si se selecciono texto dentro de una celda, ese trozo. Lo
+   * pone la tabla mientras se escribe en ella; se olvida al elegir otro elemento.
+   * Sin nada elegido, el formato va a toda la tabla.
    */
-  const celdaTabla = ref<{ elementId: string; fila: number; columna: number } | null>(null);
+  const seleccionTabla = ref<SeleccionTabla | null>(null);
   watch(selectedElementId, (id) => {
-    if (celdaTabla.value && celdaTabla.value.elementId !== id) celdaTabla.value = null;
+    if (seleccionTabla.value && seleccionTabla.value.elementId !== id) seleccionTabla.value = null;
   });
 
   const historial = crearHistorial();
@@ -976,7 +987,7 @@ export const useEditorStore = defineStore('editor', () => {
     selectedElementId,
     selectedIds,
     editingElementId,
-    celdaTabla,
+    seleccionTabla,
     selectedElement,
     selectedElements,
     sortedElements,
