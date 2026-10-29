@@ -21,6 +21,9 @@ import {
   normalizarTabla,
   quitarColumna,
   quitarFila,
+  celdasDe,
+  conEstilo,
+  estiloDe,
 } from './tablas.js';
 import { tablePropertiesSchema } from '../../../api/src/modules/canvas/canvas.schemas.js';
 
@@ -117,6 +120,40 @@ check('y una tabla de 40 filas tampoco entra', demasiadas.success === false);
 check('los disenos del servidor son los mismos',
   DISENOS.every((d) => tablePropertiesSchema.safeParse({ celdas: [['a']], diseno: d }).success),
   DISENOS.join(', '));
+
+console.log('\n-- Formato del texto --');
+const antigua = normalizarTabla({ celdas: [['a', 'b'], ['c', 'd']], fontSize: 14 });
+check('una tabla de antes sale con el formato de siempre',
+  antigua.fuente === 'Lato' && !antigua.negrita && antigua.alineacionVertical === 'middle' &&
+  antigua.estilos.every((f) => f.every((e) => e === null)));
+
+const base = crearTabla(3, 3);
+const negritaFila = conEstilo(base, celdasDe(base, { fila: 1, columna: 0 }, 'fila'), { negrita: true, color: '#FF0000' });
+check('el formato de una fila llega a todas sus celdas',
+  negritaFila.estilos[1].every((e) => e?.negrita === true && e.color === '#FF0000'));
+check('y no toca las demas', negritaFila.estilos[0].every((e) => e === null) && negritaFila.estilos[2].every((e) => e === null));
+const columna = conEstilo(base, celdasDe(base, { fila: 0, columna: 2 }, 'columna'), { escala: 1.5 });
+check('el de una columna, a toda la columna', columna.estilos.every((f) => f[2]?.escala === 1.5 && f[0] === null));
+const sinNegrita = conEstilo(negritaFila, [{ fila: 1, columna: 1 }], { negrita: undefined });
+check('quitar un formato deja el resto', !estiloDe(sinNegrita, { fila: 1, columna: 1 }).negrita &&
+  estiloDe(sinNegrita, { fila: 1, columna: 1 }).color === '#FF0000');
+check('quitarlo todo deja la celda limpia', conEstilo(negritaFila, [{ fila: 1, columna: 1 }], null).estilos[1][1] === null);
+check('una escala imposible se acota', normalizarTabla({ ...base, estilos: [[{ escala: 99 }]] }).estilos[0][0]?.escala === 3);
+check('un color que no es color se descarta', normalizarTabla({ ...base, estilos: [[{ color: 'rojo' }]] }).estilos[0][0] === null);
+
+const conFila = anadirFila(negritaFila, 1);
+check('al anadir una fila el formato se queda con su celda',
+  conFila.estilos[2].every((e) => e?.negrita === true) && conFila.estilos[1].every((e) => e === null));
+const conCol = anadirColumna(columna, 0);
+check('al anadir una columna tambien', conCol.estilos.every((f) => f[3]?.escala === 1.5 && f[0] === null));
+check('quitar fila y columna mantiene la forma',
+  quitarFila(conFila, 0).estilos.length === filasDe(quitarFila(conFila, 0)) &&
+  quitarColumna(conCol, 0).estilos.every((f) => f.length === columnasDe(quitarColumna(conCol, 0))));
+
+check('el servidor acepta el formato',
+  tablePropertiesSchema.safeParse({ ...negritaFila, fuente: 'Poppins', negrita: true, alineacionVertical: 'top' }).success);
+check('y rechaza una tipografia inventada',
+  tablePropertiesSchema.safeParse({ ...base, fuente: 'Comic Sans' }).success === false);
 
 console.log('\n-- La interfaz tiene nombre para todo --');
 check('cada diseno tiene nombre', DISENOS.every((d) => (NOMBRES_DISENO[d] ?? '').length > 0));

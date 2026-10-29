@@ -125,6 +125,32 @@ export const tablePropertiesSchema = z.object({
   colorTexto: hexColor.default('#1E293B'),
   fontSize: z.number().min(8).max(48).default(14),
   alineacion: z.enum(['left', 'center', 'right']).default('left'),
+  alineacionVertical: z.enum(['top', 'middle', 'bottom']).default('middle'),
+  fuente: fontFamily.default('Lato'),
+  negrita: z.boolean().default(false),
+  cursiva: z.boolean().default(false),
+  subrayado: z.boolean().default(false),
+  /** Formato por celda, con la forma de `celdas`; null = el de la tabla. */
+  estilos: z
+    .array(
+      z
+        .array(
+          z
+            .object({
+              negrita: z.boolean().optional(),
+              cursiva: z.boolean().optional(),
+              subrayado: z.boolean().optional(),
+              color: hexColor.optional(),
+              fondo: hexColor.optional(),
+              escala: z.number().min(0.5).max(3).optional(),
+              alineacion: z.enum(['left', 'center', 'right']).optional(),
+            })
+            .nullable(),
+        )
+        .max(10),
+    )
+    .max(20)
+    .default([]),
   linkUrl: linkUrl.default(''),
 });
 

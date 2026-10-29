@@ -404,6 +404,7 @@ const textLines = computed(() => {
     v-else-if="element.type === 'table'"
     :tabla="element.properties as never"
     :editable="Boolean(editingText)"
+    :element-id="element.id"
     @cambiar="emit('updateTable', $event)"
   />
 

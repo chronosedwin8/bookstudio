@@ -7,7 +7,7 @@
  */
 import { dibujarEscena } from './ilustracion/dibujo';
 import { normalizarEscena, resumirEscena } from './ilustracion/escena';
-import { normalizarTabla } from './tablas';
+import { TAMANO_BASE, estiloDe, normalizarTabla } from './tablas';
 import { svgCompleto } from './ilustracion/primitivas';
 import { fondoDePagina } from './papers';
 import { estiloNumeroEnLinea, normalizarNumeracion, numeroDeHoja } from './numeracion';
@@ -305,7 +305,19 @@ function elementHtml(element: CanvasElement, ratio = 1): string {
                 : t.diseno === 'minimal'
                   ? (cabecera ? `border-bottom:2px solid ${t.colorAcento};` : '')
                   : `border-bottom:${linea};`;
-              return `<${etiqueta} style="padding:.35em .5em;${borde}${fondoCabecera}">${escapeHtml(celda)}</${etiqueta}>`;
+              // El formato propio de la celda, igual que en el lienzo.
+              const e = estiloDe(t, { fila: i, columna: j });
+              const propio =
+                `vertical-align:${t.alineacionVertical};` +
+                (e.negrita ? 'font-weight:700;' : '') +
+                (e.cursiva ? 'font-style:italic;' : '') +
+                (e.subrayado ? 'text-decoration:underline;' : '') +
+                (e.color ? `color:${e.color};` : '') +
+                (e.fondo ? `background:${e.fondo};` : '') +
+                (e.escala ? `font-size:${e.escala}em;` : '') +
+                (e.alineacion ? `text-align:${e.alineacion};` : '');
+              const peso = cabecera ? 'font-weight:700;' : '';
+              return `<${etiqueta} style="padding:.35em .5em;overflow-wrap:anywhere;${peso}${borde}${fondoCabecera}${propio}">${escapeHtml(celda)}</${etiqueta}>`;
             })
             .join('');
           return `<tr style="${fondo}">${celdas}</tr>`;
@@ -315,10 +327,18 @@ function elementHtml(element: CanvasElement, ratio = 1): string {
       const marco = t.diseno === 'tarjeta'
         ? `border:${linea};border-radius:.6em;overflow:hidden;`
         : '';
+      // Como en el lienzo: el texto crece con el recuadro y el tamano elegido lo escala.
+      const letra =
+        `font-family:'${t.fuente}',sans-serif;` +
+        `font-size:calc(clamp(6px,7cqmin,40px) * ${t.fontSize / TAMANO_BASE});` +
+        (t.negrita ? 'font-weight:700;' : '') +
+        (t.cursiva ? 'font-style:italic;' : '') +
+        (t.subrayado ? 'text-decoration:underline;' : '');
       inner =
+        `<div style="width:100%;height:100%;container-type:size;padding:4px;box-sizing:border-box">` +
         `<table style="width:100%;height:100%;border-collapse:collapse;table-layout:fixed;` +
-        `color:${t.colorTexto};text-align:${t.alineacion};font-size:${t.fontSize}px;${marco}">` +
-        `<tbody>${filas}</tbody></table>`;
+        `color:${t.colorTexto};text-align:${t.alineacion};${letra}${marco}">` +
+        `<tbody>${filas}</tbody></table></div>`;
       break;
     }
     case 'illustration': {

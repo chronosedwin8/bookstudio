@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia';
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { booksApi } from '@/services/api';
 import { crearHistorial, describirElemento, NOMBRE_TIPO } from './historial';
 import { escalarCaja, escalarLetra, type Escala } from '@/utils/grupo';
@@ -90,6 +90,16 @@ export const useEditorStore = defineStore('editor', () => {
    * escribir la primera letra.
    */
   const editingElementId = ref<string | null>(null);
+
+  /**
+   * Celda de tabla elegida para darle formato desde el inspector. La pone la
+   * tabla al pulsar una celda mientras se escribe en ella; se olvida al elegir
+   * otro elemento.
+   */
+  const celdaTabla = ref<{ elementId: string; fila: number; columna: number } | null>(null);
+  watch(selectedElementId, (id) => {
+    if (celdaTabla.value && celdaTabla.value.elementId !== id) celdaTabla.value = null;
+  });
 
   const historial = crearHistorial();
 
@@ -966,6 +976,7 @@ export const useEditorStore = defineStore('editor', () => {
     selectedElementId,
     selectedIds,
     editingElementId,
+    celdaTabla,
     selectedElement,
     selectedElements,
     sortedElements,

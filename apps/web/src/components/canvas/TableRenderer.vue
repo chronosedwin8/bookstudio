@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue';
-import { columnasDe, normalizarTabla, type Tabla } from '@/utils/tablas';
+import { useEditorStore } from '@/stores/editor';
+import { TAMANO_BASE, columnasDe, estiloDe, normalizarTabla, type Tabla } from '@/utils/tablas';
 
 /**
  * Tabla del lienzo.
@@ -14,7 +15,11 @@ const props = defineProps<{
   tabla: Tabla | Record<string, unknown> | null | undefined;
   /** En el editor se puede escribir dentro; en la lectura no. */
   editable?: boolean;
+  /** Para marcar la celda elegida y darle formato desde el inspector. */
+  elementId?: string;
 }>();
+
+const editorStore = useEditorStore();
 
 const emit = defineEmits<{ cambiar: [tabla: Tabla] }>();
 
@@ -38,6 +43,40 @@ const guardarCampo = (el: unknown): void => {
 
 const esCabecera = (fila: number, columna: number): boolean =>
   (tabla.value.filaCabecera && fila === 0) || (tabla.value.columnaCabecera && columna === 0);
+
+/** La celda elegida para el formato, si es de esta tabla. */
+function esElegida(fila: number, columna: number): boolean {
+  const c = editorStore.celdaTabla;
+  return Boolean(props.elementId && c && c.elementId === props.elementId && c.fila === fila && c.columna === columna);
+}
+
+/** Formato de toda la tabla: tipografia, tamano y el del cuerpo. */
+const estiloTabla = computed(() => {
+  const t = tabla.value;
+  return {
+    color: t.colorTexto,
+    textAlign: t.alineacion,
+    fontFamily: `"${t.fuente}", sans-serif`,
+    fontWeight: t.negrita ? 700 : 400,
+    fontStyle: t.cursiva ? 'italic' : 'normal',
+    textDecoration: t.subrayado ? 'underline' : 'none',
+    '--escala-tabla': String(t.fontSize / TAMANO_BASE),
+  };
+});
+
+/** Lo propio de cada celda, encima del diseno y del formato de la tabla. */
+function estiloCelda(fila: number, columna: number): Record<string, string | number> {
+  const e = estiloDe(tabla.value, { fila, columna });
+  const r: Record<string, string | number> = { verticalAlign: tabla.value.alineacionVertical };
+  if (e.negrita) r.fontWeight = 700;
+  if (e.cursiva) r.fontStyle = 'italic';
+  if (e.subrayado) r.textDecoration = 'underline';
+  if (e.color) r.color = e.color;
+  if (e.fondo) r.backgroundColor = e.fondo;
+  if (e.escala) r.fontSize = `${e.escala}em`;
+  if (e.alineacion) r.textAlign = e.alineacion;
+  return r;
+}
 
 /** Cada diseno decide lineas y fondos; el color lo pone quien la usa. */
 const estilos = computed(() => {
@@ -78,6 +117,7 @@ function fondoFila(fila: number): string | undefined {
  */
 async function abrir(fila: number, columna: number): Promise<void> {
   if (!props.editable) return;
+  if (props.elementId) editorStore.celdaTabla = { elementId: props.elementId, fila, columna };
   editando.value = { fila, columna };
   await nextTick();
   campo.value?.focus();
@@ -120,7 +160,7 @@ function siguiente(evento: KeyboardEvent, valor: string): void {
   <div class="tabla-caja h-full w-full overflow-hidden p-1">
     <table
       class="tabla h-full w-full border-collapse"
-      :style="{ ...estilos.tabla, color: tabla.colorTexto, textAlign: tabla.alineacion }"
+      :style="{ ...estilos.tabla, ...estiloTabla }"
     >
       <tbody>
         <tr v-for="(fila, i) in tabla.celdas" :key="i" :style="{ backgroundColor: fondoFila(i) }">
@@ -130,8 +170,9 @@ function siguiente(evento: KeyboardEvent, valor: string): void {
             :key="j"
             :scope="esCabecera(i, j) ? (i === 0 && tabla.filaCabecera ? 'col' : 'row') : undefined"
             class="tabla-celda"
-            :class="[esCabecera(i, j) && 'font-bold', editable && 'cursor-text']"
-            :style="{ ...estilos.celda, ...(esCabecera(i, j) ? estilos.cabecera : {}) }"
+            :class="[esCabecera(i, j) && 'font-bold', editable && 'cursor-text', esElegida(i, j) && 'tabla-elegida']"
+            :style="{ ...estilos.celda, ...(esCabecera(i, j) ? estilos.cabecera : {}), ...estiloCelda(i, j) }"
+            :data-celda="`${i},${j}`"
             @click="abrir(i, j)"
           >
             <input
@@ -139,7 +180,7 @@ function siguiente(evento: KeyboardEvent, valor: string): void {
               :ref="guardarCampo"
               class="tabla-campo"
               :value="celda"
-              :style="{ textAlign: tabla.alineacion }"
+              :style="{ textAlign: estiloDe(tabla, { fila: i, columna: j }).alineacion ?? tabla.alineacion }"
               @blur="guardar(($event.target as HTMLInputElement).value)"
               @keydown.enter.prevent="guardar(($event.target as HTMLInputElement).value)"
               @keydown.esc.prevent="editando = null"
@@ -161,9 +202,18 @@ function siguiente(evento: KeyboardEvent, valor: string): void {
 }
 
 .tabla {
-  /* El tamano base lo pone quien edita; a partir de ahi manda el recuadro. */
-  font-size: clamp(6px, 7cqmin, 40px);
+  /*
+   * El texto crece y encoge con el recuadro; el tamano que elige quien edita lo
+   * agranda o lo achica sobre eso (14 = 1, el de siempre).
+   */
+  font-size: calc(clamp(6px, 7cqmin, 40px) * var(--escala-tabla, 1));
   table-layout: fixed;
+}
+
+/* La celda a la que se esta dando formato desde el inspector. */
+.tabla-elegida {
+  outline: 2px dashed #2563eb;
+  outline-offset: -3px;
 }
 
 .tabla-celda {
