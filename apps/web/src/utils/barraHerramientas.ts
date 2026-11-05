@@ -31,6 +31,7 @@ export const HERRAMIENTAS = {
   'mas-formas': { label: 'Más formas', icono: '⬡', categoria: 'formas' },
   iconos: { label: 'Iconos', icono: '✦', categoria: 'formas' },
   emojis: { label: 'Emojis', icono: '😀', categoria: 'formas' },
+  openmoji: { label: 'OpenMoji', icono: '🙂', categoria: 'formas' },
   notas: { label: 'Notas adhesivas', icono: '🟨', categoria: 'formas' },
   'nota-cinta': { label: 'Nota con cinta', icono: '📌', categoria: 'formas' },
   formula: { label: 'Fórmula', icono: '∑', categoria: 'matematicas' },

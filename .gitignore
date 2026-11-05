@@ -15,3 +15,6 @@ storage/
 # Certificados HTTPS autofirmados para la red local
 .certs/
 *.pem
+
+# Dibujos de OpenMoji: los copia scripts/openmoji.mjs desde el paquete npm
+apps/web/public/openmoji/

@@ -4,6 +4,15 @@ import IconRenderer from '@/components/canvas/IconRenderer.vue';
 import ShapeRenderer from '@/components/canvas/ShapeRenderer.vue';
 import { EMOJI_GROUPS, ALL_EMOJIS } from '@/utils/emojis';
 import { SHAPES, SHAPE_GROUPS, type ShapeName } from '@/utils/shapes';
+import {
+  OPENMOJI,
+  TONOS_PIEL,
+  buscarOpenmoji,
+  conTono,
+  urlOpenmoji,
+  type CatalogoOpenmoji,
+  type EntradaOpenmoji,
+} from '@/utils/openmoji';
 
 interface IconEntry {
   n: string;
@@ -16,11 +25,13 @@ const emit = defineEmits<{
   pickShape: [shape: ShapeName];
   pickIcon: [icon: { name: string; paths: string[]; viewBox: string }];
   pickEmoji: [char: string];
+  pickOpenmoji: [emoji: { hexcode: string; nombre: string }];
 }>();
 
-const props = defineProps<{ tab?: 'shapes' | 'icons' | 'emojis' }>();
+type Pestana = 'shapes' | 'icons' | 'emojis' | 'openmoji';
+const props = defineProps<{ tab?: Pestana }>();
 
-const tab = ref<'shapes' | 'icons' | 'emojis'>(props.tab ?? 'shapes');
+const tab = ref<Pestana>(props.tab ?? 'shapes');
 const search = ref('');
 
 // --- Iconos: el catalogo (505 kB) solo se descarga al abrir su pestana ---
@@ -46,6 +57,58 @@ async function loadIcons(): Promise<void> {
 }
 
 watch(tab, (value) => value === 'icons' && void loadIcons(), { immediate: true });
+
+/*
+ * OpenMoji: el catalogo (2400 emojis con su nombre en castellano) tambien se
+ * descarga solo al abrir su pestana. Cada dibujo es un SVG aparte que el
+ * navegador pide al verlo (`loading="lazy"`), asi que la rejilla no carga los
+ * 4000 de golpe.
+ */
+const catalogoOm = shallowRef<CatalogoOpenmoji | null>(null);
+const cargandoOm = ref(false);
+const grupoOm = ref<number | null>(null);
+const POR_PAGINA_OM = 240;
+const mostrandoOm = ref(POR_PAGINA_OM);
+
+/** El tono de piel elegido se recuerda en este navegador. */
+const CLAVE_TONO = 'bookstudio.openmoji.tono';
+function leerTono(): number {
+  try {
+    const n = Number(localStorage.getItem(CLAVE_TONO));
+    return Number.isInteger(n) && n >= 0 && n <= 5 ? n : 0;
+  } catch {
+    return 0;
+  }
+}
+const tono = ref(leerTono());
+watch(tono, (t) => {
+  try {
+    localStorage.setItem(CLAVE_TONO, String(t));
+  } catch {
+    // Sin almacenamiento solo se pierde el recuerdo.
+  }
+});
+
+async function cargarOpenmoji(): Promise<void> {
+  if (catalogoOm.value || cargandoOm.value) return;
+  cargandoOm.value = true;
+  try {
+    catalogoOm.value = (await import('@/assets/openmoji.json')).default as CatalogoOpenmoji;
+  } finally {
+    cargandoOm.value = false;
+  }
+}
+
+watch(tab, (value) => value === 'openmoji' && void cargarOpenmoji(), { immediate: true });
+
+const resultadosOm = computed(() =>
+  catalogoOm.value ? buscarOpenmoji(catalogoOm.value, search.value, grupoOm.value) : [],
+);
+watch([search, grupoOm], () => (mostrandoOm.value = POR_PAGINA_OM));
+
+function elegirOpenmoji(e: EntradaOpenmoji): void {
+  emit('pickOpenmoji', { hexcode: conTono(e, tono.value), nombre: e.n });
+}
 
 const query = computed(() => search.value.trim().toLowerCase());
 
@@ -75,6 +138,7 @@ const TABS = [
   { id: 'shapes', label: 'Formas' },
   { id: 'icons', label: 'Iconos' },
   { id: 'emojis', label: 'Emojis' },
+  { id: 'openmoji', label: 'OpenMoji' },
 ] as const;
 
 const placeholder = computed(
@@ -83,6 +147,7 @@ const placeholder = computed(
       shapes: 'Buscar forma (estrella, flecha...)',
       icons: 'Buscar icono en ingles (house, cat, star...)',
       emojis: 'Buscar emoji (perro, sol, libro...)',
+      openmoji: 'Buscar en OpenMoji (perro, reciclar, planeta...)',
     })[tab.value],
 );
 </script>
@@ -164,6 +229,76 @@ const placeholder = computed(
             </p>
             <p class="mt-4 text-center text-[11px] text-slate-400">
               Iconos de Lucide, licencia ISC (open source).
+            </p>
+          </template>
+        </template>
+
+        <!-- OpenMoji -->
+        <template v-else-if="tab === 'openmoji'">
+          <p v-if="cargandoOm || !catalogoOm" class="py-8 text-center text-sm text-slate-500">Cargando OpenMoji...</p>
+
+          <template v-else>
+            <div class="mb-3 flex flex-wrap items-center gap-1.5" role="group" aria-label="Categorías">
+              <button
+                type="button"
+                class="rounded-full border px-2.5 py-1 text-xs font-semibold transition"
+                :class="grupoOm === null ? 'border-brand-600 bg-brand-600 text-white' : 'border-slate-200 text-slate-600 hover:bg-slate-50'"
+                @click="grupoOm = null"
+              >Todas</button>
+              <button
+                v-for="(g, i) in catalogoOm.grupos"
+                :key="g.id"
+                type="button"
+                class="rounded-full border px-2.5 py-1 text-xs font-semibold transition"
+                :class="grupoOm === i ? 'border-brand-600 bg-brand-600 text-white' : 'border-slate-200 text-slate-600 hover:bg-slate-50'"
+                :data-grupo-om="g.id"
+                @click="grupoOm = i"
+              >{{ g.label }}</button>
+            </div>
+
+            <div class="mb-3 flex items-center gap-2 text-xs text-slate-600">
+              <span class="font-semibold">Tono de piel</span>
+              <button
+                v-for="t in TONOS_PIEL"
+                :key="t.id"
+                type="button"
+                class="h-6 w-6 rounded-full border-2 transition"
+                :class="tono === t.id ? 'border-brand-600 ring-2 ring-brand-200' : 'border-white ring-1 ring-slate-300'"
+                :style="{ backgroundColor: t.color }"
+                :title="t.label"
+                :aria-label="`Tono de piel: ${t.label}`"
+                :aria-pressed="tono === t.id"
+                :data-tono-om="t.id"
+                @click="tono = t.id"
+              />
+            </div>
+
+            <div class="grid grid-cols-6 gap-1.5 sm:grid-cols-8 md:grid-cols-10">
+              <button
+                v-for="e in resultadosOm.slice(0, mostrandoOm)"
+                :key="e.h"
+                type="button"
+                class="grid aspect-square place-items-center rounded-lg border border-transparent p-1 transition hover:border-brand-300 hover:bg-brand-50"
+                :title="e.n"
+                :aria-label="e.n"
+                :data-openmoji="e.h"
+                @click="elegirOpenmoji(e)"
+              >
+                <img :src="urlOpenmoji(conTono(e, tono))" alt="" loading="lazy" width="48" height="48" class="h-full w-full" />
+              </button>
+            </div>
+
+            <p v-if="!resultadosOm.length" class="py-8 text-center text-sm text-slate-500">
+              Ningún OpenMoji coincide con "{{ search }}".
+            </p>
+            <div v-else-if="resultadosOm.length > mostrandoOm" class="mt-4 text-center">
+              <button type="button" class="btn-secondary text-sm" @click="mostrandoOm += POR_PAGINA_OM">
+                Mostrar más ({{ resultadosOm.length - mostrandoOm }} restantes)
+              </button>
+            </div>
+            <p class="mt-4 text-center text-[11px] text-slate-400" data-credito-openmoji>
+              {{ OPENMOJI.credito }}
+              <a :href="OPENMOJI.web" target="_blank" rel="noopener" class="underline hover:text-brand-700">openmoji.org</a>
             </p>
           </template>
         </template>

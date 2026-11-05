@@ -1,12 +1,17 @@
 <script setup lang="ts">
+import { computed } from 'vue';
+import { urlOpenmoji } from '@/utils/openmoji';
+
 /**
- * Dibuja un icono de la biblioteca o un emoji. Los iconos se pintan siempre con
- * <path :d>, nunca con v-html: las propiedades vienen de la base de datos y el
- * marcado libre seria un vector de inyeccion.
+ * Dibuja un icono de la biblioteca, un emoji o un OpenMoji. Los iconos se pintan
+ * siempre con <path :d>, nunca con v-html: las propiedades vienen de la base de
+ * datos y el marcado libre seria un vector de inyeccion. Los OpenMoji son una
+ * imagen nuestra (/openmoji/<codigo>.svg), con el codigo ya validado.
  */
 const props = defineProps<{
-  source: 'emoji' | 'library';
+  source: 'emoji' | 'library' | 'openmoji';
   char?: string;
+  hexcode?: string;
   paths?: string[];
   viewBox?: string;
   color: string;
@@ -14,6 +19,8 @@ const props = defineProps<{
   filled?: boolean;
   label?: string;
 }>();
+
+const dibujo = computed(() => (props.source === 'openmoji' ? urlOpenmoji(props.hexcode ?? '') : ''));
 </script>
 
 <template>
@@ -25,6 +32,14 @@ const props = defineProps<{
       role="img"
       :aria-label="label || 'emoji'"
     >{{ char }}</span>
+
+    <img
+      v-else-if="source === 'openmoji'"
+      :src="dibujo"
+      :alt="label || 'emoji'"
+      class="pointer-events-none h-full w-full select-none object-contain"
+      draggable="false"
+    />
 
     <svg
       v-else

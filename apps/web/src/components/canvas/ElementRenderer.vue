@@ -101,8 +101,9 @@ const mapProps = computed(() => {
 const icon = computed(() => {
   const p = props.element.properties;
   return {
-    source: (p.source === 'emoji' ? 'emoji' : 'library') as 'emoji' | 'library',
+    source: (p.source === 'emoji' || p.source === 'openmoji' ? p.source : 'library') as 'emoji' | 'library' | 'openmoji',
     char: String(p.char ?? ''),
+    hexcode: String(p.hexcode ?? ''),
     paths: Array.isArray(p.paths) ? (p.paths as string[]) : [],
     viewBox: String(p.viewBox ?? '0 0 24 24'),
     color: String(p.color ?? '#333333'),
@@ -332,6 +333,7 @@ const textLines = computed(() => {
     v-else-if="element.type === 'icon'"
     :source="icon.source"
     :char="icon.char"
+    :hexcode="icon.hexcode"
     :paths="icon.paths"
     :view-box="icon.viewBox"
     :color="icon.color"

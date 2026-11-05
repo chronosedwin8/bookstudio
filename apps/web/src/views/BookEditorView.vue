@@ -216,9 +216,9 @@ const dialog = ref<
   | 'texto'
   | 'marco'
 >('none');
-const stickerTab = ref<'shapes' | 'icons' | 'emojis'>('shapes');
+const stickerTab = ref<'shapes' | 'icons' | 'emojis' | 'openmoji'>('shapes');
 
-function openStickers(tab: 'shapes' | 'icons' | 'emojis'): void {
+function openStickers(tab: 'shapes' | 'icons' | 'emojis' | 'openmoji'): void {
   stickerTab.value = tab;
   dialog.value = 'sticker';
 }
@@ -722,6 +722,16 @@ async function onPickEmoji(char: string): Promise<void> {
     { source: 'emoji', char, label: char },
   );
 }
+
+/** Un OpenMoji: se guarda su codigo y se pinta su dibujo, igual en cualquier equipo. */
+async function onPickOpenmoji(emoji: { hexcode: string; nombre: string }): Promise<void> {
+  dialog.value = 'none';
+  await editor.addElement(
+    'icon',
+    { x: 35, y: 30, width: 15, height: heightForRatio(15, 1), angle: 0 },
+    { source: 'openmoji', hexcode: emoji.hexcode, label: emoji.nombre },
+  );
+}
 const uploading = ref(false);
 
 /**
@@ -818,6 +828,7 @@ function herramientaVisible(h: HerramientaId): boolean {
       return puedeUsar('shape');
     case 'iconos':
     case 'emojis':
+    case 'openmoji':
       return puedeUsar('icon');
     case 'formula':
       return puedeUsar('math');
@@ -1931,6 +1942,14 @@ async function saveTitle(): Promise<void> {
                 <button v-else-if="h === 'emojis'" type="button" class="btn-secondary w-full justify-start text-left leading-tight" @click="openStickers('emojis')">
                   😀 Emojis
                 </button>
+                <button
+                  v-else-if="h === 'openmoji'"
+                  type="button"
+                  class="btn-secondary w-full justify-start text-left leading-tight"
+                  title="Más de 2.400 emojis dibujados, iguales en cualquier equipo"
+                  data-abrir-openmoji
+                  @click="openStickers('openmoji')"
+                ><img src="/openmoji/1F642.svg" alt="" class="h-5 w-5" /> OpenMoji</button>
                 <!-- Notas adhesivas: se insertan listas para escribir -->
                 <div v-else-if="h === 'notas'">
                   <p class="mb-1 text-[11px] font-semibold text-slate-500">Notas adhesivas</p>
@@ -2408,6 +2427,7 @@ async function saveTitle(): Promise<void> {
       @pick-shape="onPickShape"
       @pick-icon="onPickIcon"
       @pick-emoji="onPickEmoji"
+      @pick-openmoji="onPickOpenmoji"
     />
 
     <SoundLibraryDialog v-if="dialog === 'sound'" @close="dialog = 'none'" @pick="onPickSound" />

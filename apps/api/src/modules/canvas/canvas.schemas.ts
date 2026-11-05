@@ -326,9 +326,18 @@ export const buttonPropertiesSchema = z.object({
 
 export const iconPropertiesSchema = z
   .object({
-    source: z.enum(['emoji', 'library']).default('library'),
+    source: z.enum(['emoji', 'library', 'openmoji']).default('library'),
     /** Caracter Unicode cuando source = emoji. */
     char: z.string().max(16).default(''),
+    /**
+     * Codigo del dibujo de OpenMoji cuando source = openmoji (1F415 = perro). Solo
+     * grupos hexadecimales con guiones: forma parte de una direccion.
+     */
+    hexcode: z
+      .string()
+      .regex(/^([0-9A-F]{2,6}(-[0-9A-F]{2,6}){0,12})?$/, 'Codigo de OpenMoji no valido')
+      .max(90)
+      .default(''),
     name: z.string().max(80).default(''),
     paths: z.array(z.string().max(8000)).max(24).default([]),
     viewBox: z.string().max(60).default('0 0 24 24'),
@@ -340,8 +349,9 @@ export const iconPropertiesSchema = z
     linkUrl: linkUrl.default(''),
   })
   .refine(
-    (v) => (v.source === 'emoji' ? v.char.length > 0 : v.paths.length > 0),
-    'Un emoji necesita `char` y un icono necesita `paths`',
+    (v) =>
+      v.source === 'emoji' ? v.char.length > 0 : v.source === 'openmoji' ? v.hexcode.length > 0 : v.paths.length > 0,
+    'Un emoji necesita `char`, un OpenMoji `hexcode` y un icono `paths`',
   );
 
 /**

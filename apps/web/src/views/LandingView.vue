@@ -9,6 +9,7 @@ import type { BillingPlan } from '@/types/api';
 import { FAQS, FEATURES, MARKETING_POR_DEFECTO, PLAN_MARKETING, SITE, STEPS, USE_CASES } from '@/utils/site';
 import { notaDelPrecio, periodoTexto, pesos, precioDestacado } from '@/utils/precio';
 import { DOCUMENTOS_LEGALES, TITULAR } from '@/utils/legal';
+import { OPENMOJI } from '@/utils/openmoji';
 
 const auth = useAuthStore();
 const router = useRouter();
@@ -469,6 +470,10 @@ const NAV = [
 
       <p class="mt-8 text-center text-xs text-slate-500">
         © {{ new Date().getFullYear() }} {{ TITULAR.nombre }} · {{ SITE.name }}, libros interactivos para el aula y el trabajo.
+      </p>
+      <p class="mt-2 text-center text-[11px] text-slate-400">
+        {{ OPENMOJI.credito }}
+        <a :href="OPENMOJI.web" target="_blank" rel="noopener" class="underline hover:text-brand-700">openmoji.org</a>
       </p>
     </footer>
   </div>

@@ -12,6 +12,7 @@ import { svgCompleto } from './ilustracion/primitivas';
 import { fondoDePagina } from './papers';
 import { estiloNumeroEnLinea, normalizarNumeracion, numeroDeHoja } from './numeracion';
 import { estiloEfecto } from './efectosTexto';
+import { OPENMOJI, urlOpenmoji } from './openmoji';
 import { PAISAJE_MUESTRA, cuerpoDe, encimaDe, marcoDe, mascaraUrl } from './marcos';
 import { dibujar2D, dibujar3D, normalizarGrafica } from './graficas';
 import { SHAPES, type ShapeName } from './shapes';
@@ -212,6 +213,12 @@ function elementHtml(element: CanvasElement, ratio = 1): string {
     case 'icon':
       if (p.source === 'emoji') {
         inner = `<span class="emo">${escapeHtml(String(p.char ?? ''))}</span>`;
+      } else if (p.source === 'openmoji') {
+        // El libro exportado se abre fuera de la plataforma: direccion completa.
+        const src = urlOpenmoji(String(p.hexcode ?? ''), typeof location === 'undefined' ? '' : location.origin);
+        inner = src
+          ? `<img src="${escapeHtml(src)}" alt="${escapeHtml(String(p.label ?? 'emoji'))}" style="object-fit:contain"/>`
+          : '';
       } else {
         const paths = (Array.isArray(p.paths) ? (p.paths as string[]) : [])
           .map(
@@ -542,6 +549,11 @@ function pageHtml(page: Page, index: number, numbering: PageNumbering | null = n
 }
 
 /** Documento completo, con navegacion propia y sin dependencias externas. */
+/** Si el libro lleva algun OpenMoji: entonces hay que citarlo (CC BY-SA 4.0). */
+function usaOpenmoji(book: BookDetail): boolean {
+  return book.pages.some((pg) => pg.elements.some((el) => el.type === 'icon' && el.properties.source === 'openmoji'));
+}
+
 export function bookToHtml(book: BookDetail): string {
   const ratio = ASPECT[book.layoutFormat];
   const numbering = normalizarNumeracion(book.pageNumbering);
@@ -600,6 +612,7 @@ export function bookToHtml(book: BookDetail): string {
   .ptit { font-weight:700; margin:0 0 .4rem; }
   .preg ul { margin:0; padding-left:1.1rem; }
   footer { text-align:center; padding:.6rem; color:#94a3b8; font-size:.8rem; }
+  footer a { color:#cbd5e1; }
 
   /* Al imprimir, cada pagina ocupa una hoja: sirve para "guardar como PDF". */
   @media print {
@@ -664,7 +677,7 @@ export function bookToHtml(book: BookDetail): string {
 
 <main>${pages}</main>
 
-<footer>Creado con BookStudio</footer>
+<footer>Creado con BookStudio${usaOpenmoji(book) ? `<br><small>${escapeHtml(OPENMOJI.credito)} <a href="${OPENMOJI.web}">openmoji.org</a></small>` : ''}</footer>
 
 <div id="globo" role="tooltip">
   <img alt="" hidden>
