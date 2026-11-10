@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import AlertMessage from '@/components/AlertMessage.vue';
+import CriteriosDialog from '@/components/library/CriteriosDialog.vue';
 import { useDictado } from '@/composables/useDictado';
 import { booksApi } from '@/services/api';
 import { errorMessage } from '@/services/http';
@@ -12,7 +13,7 @@ import {
   fechaHora,
   formatoNota,
 } from '@/utils/grades';
-import type { Grade } from '@/types/api';
+import type { CriterioValoracion, Grade } from '@/types/api';
 
 /**
  * Pone o corrige una valoracion.
@@ -44,6 +45,45 @@ const guardando = ref(false);
 const error = ref<string | null>(null);
 const campo = ref<HTMLInputElement | null>(null);
 
+/*
+ * Criterio de la nota ("Trabajos", "Seguimientos", "Otros" y los del docente).
+ * Al crear una nota sale marcado el ultimo que se uso: lo normal es poner varias
+ * seguidas del mismo.
+ */
+const CLAVE_CRITERIO = 'bookstudio.valoracion.criterio';
+const criterios = ref<CriterioValoracion[]>([]);
+const libraryId = ref<string | null>(null);
+const criterioId = ref<string>(props.grade?.criterionId ?? '');
+const gestionando = ref(false);
+
+async function cargarCriterios(): Promise<void> {
+  if (!props.editable) return;
+  try {
+    const r = await booksApi.gradeCriteria(props.bookId);
+    libraryId.value = r.libraryId;
+    criterios.value = r.criteria;
+    if (!criterioId.value || !criterios.value.some((c) => c.id === criterioId.value)) {
+      if (props.grade?.criterionId) return;
+      let recordado: string | null = null;
+      try {
+        recordado = localStorage.getItem(CLAVE_CRITERIO);
+      } catch {
+        recordado = null;
+      }
+      criterioId.value = criterios.value.find((c) => c.id === recordado)?.id ?? criterios.value[0]?.id ?? '';
+    }
+  } catch (err) {
+    error.value = errorMessage(err);
+  }
+}
+
+/** Si la nota usa un criterio que aqui no aparece (de otro docente), se ofrece igual. */
+const criterioAjeno = computed(() =>
+  props.grade?.criterionId && !criterios.value.some((c) => c.id === props.grade!.criterionId)
+    ? { id: props.grade.criterionId, name: props.grade.criterionName }
+    : null,
+);
+
 /**
  * Dictado del comentario. Se anade al final de lo ya escrito, separado por un
  * espacio, para poder combinar teclado y voz sin pisar nada.
@@ -55,6 +95,7 @@ const dictado = useDictado((texto) => {
 
 onMounted(() => {
   if (editando.value) campo.value?.focus();
+  void cargarCriterios();
 });
 
 /** Se acepta la coma: es lo que tiene el teclado en espanol. */
@@ -66,7 +107,9 @@ const notaValida = computed(
     notaNumero.value >= NOTA_MINIMA &&
     notaNumero.value <= NOTA_MAXIMA,
 );
-const puedeGuardar = computed(() => titulo.value.trim().length >= 2 && notaValida.value && !guardando.value);
+const puedeGuardar = computed(
+  () => titulo.value.trim().length >= 2 && notaValida.value && Boolean(criterioId.value) && !guardando.value,
+);
 
 async function guardar(): Promise<void> {
   if (!puedeGuardar.value) return;
@@ -76,7 +119,13 @@ async function guardar(): Promise<void> {
     title: titulo.value.trim(),
     score: Math.round(notaNumero.value * 10) / 10,
     description: descripcion.value.trim(),
+    criterionId: criterioId.value || undefined,
   };
+  try {
+    localStorage.setItem(CLAVE_CRITERIO, criterioId.value);
+  } catch {
+    // Sin almacenamiento solo se pierde el recuerdo.
+  }
   try {
     const guardada = props.grade
       ? await booksApi.updateGrade(props.bookId, props.grade.id, cuerpo)
@@ -139,6 +188,9 @@ async function borrar(): Promise<void> {
             <div class="min-w-0">
               <p class="font-bold text-slate-900">{{ grade.title }}</p>
               <p class="text-sm text-slate-500">{{ etiquetaNota(grade.score) }}</p>
+              <span class="mt-1 inline-block rounded-full bg-brand-50 px-2 py-0.5 text-xs font-semibold text-brand-700" data-criterio-nota>
+                {{ grade.criterionName }}
+              </span>
             </div>
           </div>
 
@@ -168,6 +220,26 @@ async function borrar(): Promise<void> {
 
         <!-- Formulario -->
         <form v-else class="space-y-4" @submit.prevent="guardar">
+          <div>
+            <div class="flex items-center justify-between gap-2">
+              <label class="label mb-0" for="grade-criterio">Criterio</label>
+              <button
+                v-if="libraryId"
+                type="button"
+                class="text-xs font-semibold text-brand-700 hover:underline"
+                data-gestionar-criterios
+                @click="gestionando = true"
+              >Gestionar criterios</button>
+            </div>
+            <select id="grade-criterio" v-model="criterioId" class="input mt-1" data-grade-criterio required>
+              <option v-if="!criterios.length && !criterioAjeno" value="" disabled>Cargando...</option>
+              <option v-for="c in criterios" :key="c.id" :value="c.id">
+                {{ c.name }}{{ c.alcance === 'biblioteca' ? ' · esta biblioteca' : c.alcance === 'docente' ? ' · mis bibliotecas' : '' }}
+              </option>
+              <option v-if="criterioAjeno" :value="criterioAjeno.id">{{ criterioAjeno.name }}</option>
+            </select>
+          </div>
+
           <div>
             <label class="label" for="grade-titulo">Título</label>
             <input
@@ -306,5 +378,14 @@ async function borrar(): Promise<void> {
         </div>
       </footer>
     </div>
+
+    <Teleport to="body">
+      <CriteriosDialog
+        v-if="gestionando && libraryId"
+        :library-id="libraryId"
+        @close="gestionando = false; cargarCriterios()"
+        @changed="cargarCriterios"
+      />
+    </Teleport>
   </div>
 </template>

@@ -50,6 +50,16 @@ const media = computed(() => {
   return Math.round((suma / grades.value.length) * 100) / 100;
 });
 
+/** Media de cada criterio, en el orden en que aparecen. */
+const porCriterio = computed(() => {
+  const grupos = new Map<string, number[]>();
+  for (const g of grades.value) grupos.set(g.criterionName, [...(grupos.get(g.criterionName) ?? []), g.score]);
+  return [...grupos].map(([nombre, notas]) => ({
+    nombre,
+    media: Math.round((notas.reduce((a, n) => a + n, 0) / notas.length) * 100) / 100,
+  }));
+});
+
 function onSaved(): void {
   creando.value = false;
   abierta.value = null;
@@ -106,6 +116,18 @@ function onSaved(): void {
             </span>
           </div>
 
+          <!-- Media de cada criterio -->
+          <div v-if="porCriterio.length > 1" class="mb-4 flex flex-wrap gap-2" data-medias-criterio>
+            <span
+              v-for="c in porCriterio"
+              :key="c.nombre"
+              class="flex items-center gap-1.5 rounded-full border border-slate-200 py-0.5 pl-2.5 pr-1 text-xs text-slate-600"
+            >
+              {{ c.nombre }}
+              <span class="rounded-full border px-1.5 font-bold tabular-nums" :class="colorNota(c.media)">{{ formatoNota(c.media) }}</span>
+            </span>
+          </div>
+
           <ol class="space-y-3">
             <li
               v-for="grade in grades"
@@ -120,7 +142,12 @@ function onSaved(): void {
 
                 <div class="min-w-0 flex-1">
                   <div class="flex flex-wrap items-baseline justify-between gap-2">
-                    <p class="font-bold text-slate-900">{{ grade.title }}</p>
+                    <p class="font-bold text-slate-900">
+                      {{ grade.title }}
+                      <span class="ml-1 rounded-full bg-brand-50 px-2 py-0.5 align-middle text-[11px] font-semibold text-brand-700">
+                        {{ grade.criterionName }}
+                      </span>
+                    </p>
                     <p class="text-xs text-slate-500">{{ etiquetaNota(grade.score) }}</p>
                   </div>
                   <p class="mt-0.5 text-xs text-slate-500">

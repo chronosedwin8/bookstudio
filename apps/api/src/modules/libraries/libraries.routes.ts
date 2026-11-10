@@ -22,7 +22,8 @@ import {
 } from './libraries.schemas.js';
 import * as service from './libraries.service.js';
 import { alumnadoSinCopia, crearLibrosEnBlanco, distribute } from './distribute.service.js';
-import { getGradeBook } from '../books/grades.service.js';
+import { getGradeBook, informeAlumno } from '../books/grades.service.js';
+import { borrarCriterio, crearCriterio, listarCriterios, renombrarCriterio } from '../books/criterios.service.js';
 import { studentActivity } from '../books/activity.service.js';
 
 export const librariesRouter = Router();
@@ -171,6 +172,71 @@ librariesRouter.get(
   validate(libraryIdSchema, 'params'),
   asyncHandler(async (req, res) => {
     res.json(await getGradeBook(req.params.id, req.auth!.userId));
+  }),
+);
+
+/*
+ * Criterios de valoracion ("Trabajos", "Seguimientos", "Otros" y los que cree cada
+ * docente, para esta biblioteca o para todas las suyas).
+ */
+const criterioParamsSchema = libraryIdSchema.extend({ criterionId: z.string().uuid() });
+const criterioSchema = z.object({
+  name: z.string().trim().min(2, 'Escribe un nombre de al menos dos letras').max(60),
+  alcance: z.enum(['biblioteca', 'todas']).default('biblioteca'),
+});
+
+librariesRouter.get(
+  '/:id/grade-criteria',
+  requireRole('teacher', 'admin'),
+  validate(libraryIdSchema, 'params'),
+  asyncHandler(async (req, res) => {
+    res.json({ criteria: await listarCriterios(req.params.id, req.auth!.userId) });
+  }),
+);
+
+librariesRouter.post(
+  '/:id/grade-criteria',
+  requireRole('teacher', 'admin'),
+  validate(libraryIdSchema, 'params'),
+  validate(criterioSchema),
+  asyncHandler(async (req, res) => {
+    res.status(201).json({ criterion: await crearCriterio(req.params.id, req.auth!.userId, req.body) });
+  }),
+);
+
+librariesRouter.patch(
+  '/:id/grade-criteria/:criterionId',
+  requireRole('teacher', 'admin'),
+  validate(criterioParamsSchema, 'params'),
+  validate(criterioSchema.pick({ name: true })),
+  asyncHandler(async (req, res) => {
+    res.json({
+      criterion: await renombrarCriterio(req.params.id, req.params.criterionId, req.auth!.userId, req.body.name),
+    });
+  }),
+);
+
+librariesRouter.delete(
+  '/:id/grade-criteria/:criterionId',
+  requireRole('teacher', 'admin'),
+  validate(criterioParamsSchema, 'params'),
+  asyncHandler(async (req, res) => {
+    await borrarCriterio(req.params.id, req.params.criterionId, req.auth!.userId);
+    res.status(204).end();
+  }),
+);
+
+/**
+ * Seguimiento de un alumno: sus valoraciones por criterio. El alumno ve el suyo
+ * (sin `studentId`); el docente, el de cualquiera de la clase.
+ */
+librariesRouter.get(
+  '/:id/report',
+  validate(libraryIdSchema, 'params'),
+  validate(z.object({ studentId: z.string().uuid().optional() }), 'query'),
+  asyncHandler(async (req, res) => {
+    const studentId = (req.query.studentId as string | undefined) ?? req.auth!.userId;
+    res.json(await informeAlumno(req.params.id, req.auth!.userId, studentId));
   }),
 );
 

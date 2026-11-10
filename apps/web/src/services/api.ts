@@ -50,8 +50,10 @@ import type {
   MuralPage,
   MuralState,
   ElementType,
+  CriterioValoracion,
   Grade,
   GradeBook,
+  InformeAlumno,
   SourceGroup,
   GeocodeResult,
   LayoutFormat,
@@ -215,6 +217,32 @@ export const librariesApi = {
     const { data } = await http.get<GradeBook>(`/libraries/${id}/gradebook`);
     return data;
   },
+  /** Criterios de valoracion que se pueden usar en la biblioteca. */
+  async gradeCriteria(id: string) {
+    const { data } = await http.get<{ criteria: CriterioValoracion[] }>(`/libraries/${id}/grade-criteria`);
+    return data.criteria;
+  },
+  async createCriterion(id: string, payload: { name: string; alcance: 'biblioteca' | 'todas' }) {
+    const { data } = await http.post<{ criterion: CriterioValoracion }>(`/libraries/${id}/grade-criteria`, payload);
+    return data.criterion;
+  },
+  async renameCriterion(id: string, criterionId: string, name: string) {
+    const { data } = await http.patch<{ criterion: CriterioValoracion }>(
+      `/libraries/${id}/grade-criteria/${criterionId}`,
+      { name },
+    );
+    return data.criterion;
+  },
+  async removeCriterion(id: string, criterionId: string) {
+    await http.delete(`/libraries/${id}/grade-criteria/${criterionId}`);
+  },
+  /** Seguimiento por criterios: el propio (alumno) o el de un alumno (docente). */
+  async report(id: string, studentId?: string) {
+    const { data } = await http.get<InformeAlumno>(`/libraries/${id}/report`, {
+      params: studentId ? { studentId } : {},
+    });
+    return data;
+  },
   async bulkDeleteBooks(id: string, bookIds: string[]) {
     const { data } = await http.post<{ deleted: number; ignored: number }>(
       `/libraries/${id}/books/bulk-delete`,
@@ -331,14 +359,21 @@ export const booksApi = {
     const { data } = await http.get<{ grades: Grade[] }>(`/books/${bookId}/grades`);
     return data.grades;
   },
-  async addGrade(bookId: string, payload: { title: string; score: number; description: string }) {
+  /** Los criterios con los que se puede valorar el libro, y su biblioteca. */
+  async gradeCriteria(bookId: string) {
+    const { data } = await http.get<{ libraryId: string; criteria: CriterioValoracion[] }>(
+      `/books/${bookId}/grade-criteria`,
+    );
+    return data;
+  },
+  async addGrade(bookId: string, payload: { title: string; score: number; description: string; criterionId?: string }) {
     const { data } = await http.post<{ grade: Grade }>(`/books/${bookId}/grades`, payload);
     return data.grade;
   },
   async updateGrade(
     bookId: string,
     gradeId: string,
-    payload: { title: string; score: number; description: string },
+    payload: { title: string; score: number; description: string; criterionId?: string },
   ) {
     const { data } = await http.patch<{ grade: Grade }>(`/books/${bookId}/grades/${gradeId}`, payload);
     return data.grade;

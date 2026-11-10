@@ -148,6 +148,8 @@ export const gradeSchema = z.object({
     // exactamente 11 en coma flotante.
     .refine((n) => Math.abs(n * 10 - Math.round(n * 10)) < 1e-9, 'Usa como mucho un decimal'),
   description: z.string().max(4000).trim().default(''),
+  /** "Trabajos", "Seguimientos"... Sin el, la nota va a "Otros". */
+  criterionId: z.string().uuid('El criterio no es valido').optional(),
 });
 
 export const gradeParamsSchema = bookIdSchema.extend({

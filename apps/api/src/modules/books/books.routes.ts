@@ -26,6 +26,9 @@ import {
 import * as service from './books.service.js';
 import * as mural from './mural.service.js';
 import * as grades from './grades.service.js';
+import { listarCriterios } from './criterios.service.js';
+import { query } from '../../db/pool.js';
+import { HttpError } from '../../lib/http-error.js';
 import * as activity from './activity.service.js';
 import * as adminBooks from './admin-books.service.js';
 
@@ -198,6 +201,23 @@ booksRouter.get(
   validate(bookIdSchema, 'params'),
   asyncHandler(async (req, res) => {
     res.json({ grades: await grades.listGrades(req.params.id, req.auth!.userId) });
+  }),
+);
+
+/** Los criterios con los que se puede valorar este libro (los de su biblioteca). */
+booksRouter.get(
+  '/:id/grade-criteria',
+  validate(bookIdSchema, 'params'),
+  asyncHandler(async (req, res) => {
+    const { rows } = await query<{ library_id: string | null }>('SELECT library_id FROM books WHERE id = $1', [
+      req.params.id,
+    ]);
+    if (!rows[0]) throw HttpError.notFound('Libro no encontrado');
+    if (!rows[0].library_id) throw HttpError.badRequest('Un libro personal no se valora');
+    res.json({
+      libraryId: rows[0].library_id,
+      criteria: await listarCriterios(rows[0].library_id, req.auth!.userId),
+    });
   }),
 );
 

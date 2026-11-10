@@ -179,6 +179,9 @@ export interface Grade {
   title: string;
   score: number;
   description: string;
+  /** Criterio en el que se puso ("Trabajos", "Seguimientos", "Otros"...). */
+  criterionId: string | null;
+  criterionName: string;
   teacherId: string | null;
   teacherName: string | null;
   createdAt: string;
@@ -190,13 +193,40 @@ export interface GradeBookEntry {
   studentName: string;
   course: string | null;
   average: number | null;
+  /** Media de cada criterio en el que tiene notas. */
+  averages: Record<string, number>;
   grades: Array<Grade & { bookTitle: string }>;
 }
 
 export interface GradeBook {
   titles: string[];
+  /** Criterios con alguna nota, los de la plataforma primero. */
+  criteria: string[];
   students: GradeBookEntry[];
   classAverage: number | null;
+}
+
+/**
+ * Criterio de valoracion. `plataforma`: los tres de siempre, de todos;
+ * `biblioteca`: solo de una biblioteca; `docente`: de un docente, en todas las suyas.
+ */
+export interface CriterioValoracion {
+  id: string;
+  name: string;
+  alcance: 'plataforma' | 'biblioteca' | 'docente';
+  libraryId: string | null;
+  teacherId: string | null;
+  teacherName: string | null;
+  editable: boolean;
+  usos: number;
+}
+
+/** Seguimiento de un alumno en una biblioteca: sus notas por criterio. */
+export interface InformeAlumno {
+  studentId: string;
+  studentName: string;
+  average: number | null;
+  criteria: Array<{ criterion: string; average: number; grades: Array<Grade & { bookTitle: string }> }>;
 }
 
 /** Una sesion de trabajo sobre un libro: desde que se abrio hasta el ultimo aviso. */

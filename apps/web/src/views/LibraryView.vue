@@ -9,6 +9,7 @@ import BookGradesPanel from '@/components/library/BookGradesPanel.vue';
 import ClavesEntregadas from '@/components/library/ClavesEntregadas.vue';
 import DistributeDialog from '@/components/library/DistributeDialog.vue';
 import GradeBookGrid from '@/components/library/GradeBookGrid.vue';
+import SeguimientoAlumno from '@/components/library/SeguimientoAlumno.vue';
 import PhidiasImportDialog from '@/components/media/PhidiasImportDialog.vue';
 import QuizList from '@/components/quizzes/QuizList.vue';
 import { authApi, booksApi, librariesApi, phidiasApi, usersApi } from '@/services/api';
@@ -86,18 +87,28 @@ async function copyJoinUrl(): Promise<void> {
  * La pestana viaja en la URL para que recargar no devuelva al principio y para poder
  * pasarle a un companero el enlace de la cuadricula de notas.
  */
-type Pestana = 'libros' | 'examenes' | 'notas' | 'alumnado' | 'ajustes';
+type Pestana = 'libros' | 'examenes' | 'notas' | 'seguimiento' | 'alumnado' | 'ajustes';
 
-const PESTANAS: Array<{ id: Pestana; label: string; icono: string; soloDocente: boolean }> = [
-  { id: 'libros', label: 'Libros', icono: '📚', soloDocente: false },
+/** `para`: quien la ve. El alumnado tiene su propio seguimiento por criterios. */
+const PESTANAS: Array<{ id: Pestana; label: string; icono: string; para: 'todos' | 'docente' | 'alumno' }> = [
+  { id: 'libros', label: 'Libros', icono: '📚', para: 'todos' },
   // Visible tambien para el alumnado: ahi ve los examenes que le han enviado.
-  { id: 'examenes', label: 'Cuestionarios', icono: '📝', soloDocente: false },
-  { id: 'notas', label: 'Valoraciones', icono: '🎯', soloDocente: true },
-  { id: 'alumnado', label: 'Alumnado', icono: '👥', soloDocente: true },
-  { id: 'ajustes', label: 'Ajustes', icono: '⚙️', soloDocente: true },
+  { id: 'examenes', label: 'Cuestionarios', icono: '📝', para: 'todos' },
+  { id: 'notas', label: 'Valoraciones', icono: '🎯', para: 'docente' },
+  { id: 'seguimiento', label: 'Mi seguimiento', icono: '🎯', para: 'alumno' },
+  { id: 'alumnado', label: 'Alumnado', icono: '👥', para: 'docente' },
+  { id: 'ajustes', label: 'Ajustes', icono: '⚙️', para: 'docente' },
 ];
 
-const pestanasVisibles = computed(() => PESTANAS.filter((p) => !p.soloDocente || isManager.value));
+const pestanasVisibles = computed(() =>
+  PESTANAS.filter(
+    (p) =>
+      p.para === 'todos' ||
+      (p.para === 'docente' && isManager.value) ||
+      // Hasta que carga la biblioteca no se sabe si quien mira es docente.
+      (p.para === 'alumno' && Boolean(library.value) && !isManager.value),
+  ),
+);
 
 const pestana = computed<Pestana>({
   get() {
@@ -916,6 +927,13 @@ function formatDate(value: string | null): string {
            sentido pedirla a quien nunca abre esta pestana. -->
       <div v-if="isManager && pestana === 'notas'" class="mt-5">
         <GradeBookGrid ref="cuadricula" :library-id="libraryId" />
+      </div>
+
+      <!-- ================= Mi seguimiento (alumnado) ================= -->
+      <div v-if="!isManager && pestana === 'seguimiento'" class="mt-5">
+        <h2 class="mb-1 font-bold text-slate-800">Mi seguimiento</h2>
+        <p class="mb-4 text-sm text-slate-500">Las valoraciones de tus profesores en esta biblioteca, por criterio.</p>
+        <SeguimientoAlumno :library-id="libraryId" />
       </div>
 
       <!-- ================= Alumnado ================= -->
